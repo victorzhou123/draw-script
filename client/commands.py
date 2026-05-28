@@ -4,7 +4,6 @@ import io
 import json
 import logging
 import os
-import time
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
@@ -36,32 +35,63 @@ def _run_blocking(fn, *args, **kwargs):
     return loop.run_in_executor(None, lambda: fn(*args, **kwargs))
 
 
-def _countdown(seconds: int) -> None:
-    for i in range(seconds, 0, -1):
-        print(f"  {i}...", flush=True)
-        time.sleep(1)
+def _wait_for_click_or_esc() -> tuple[int, int] | None:
+    """Block until left-click (returns coords) or ESC (returns None)."""
+    from pynput import mouse as _mouse, keyboard as _keyboard
+    import threading
+
+    result: dict = {}
+    done = threading.Event()
+
+    def on_click(x, y, button, pressed):
+        if pressed and button == _mouse.Button.left:
+            result["x"], result["y"] = x, y
+            done.set()
+            return False  # stop listener
+
+    def on_press(key):
+        if key == _keyboard.Key.esc:
+            result["cancelled"] = True
+            done.set()
+            return False  # stop listener
+
+    m_listener = _mouse.Listener(on_click=on_click, suppress=True)
+    k_listener = _keyboard.Listener(on_press=on_press)
+    m_listener.start()
+    k_listener.start()
+    done.wait()
+    m_listener.stop()
+    k_listener.stop()
+
+    if result.get("cancelled"):
+        return None
+    return result["x"], result["y"]
 
 
-def _capture_point(name: str) -> dict:
-    import pyautogui
-    print(f"\n  将鼠标移到 [{name}] 的目标位置，3 秒后自动记录坐标")
-    _countdown(3)
-    x, y = pyautogui.position()
-    print(f"  记录坐标: ({x}, {y})")
+def _capture_point(name: str) -> dict | None:
+    print(f"\n  [{name}] 左键点击目标位置确认，ESC 取消全部标注")
+    pos = _wait_for_click_or_esc()
+    if pos is None:
+        return None
+    x, y = pos
+    print(f"  已记录: ({x}, {y})")
     return {"x": x, "y": y}
 
 
-def _capture_box(name: str) -> dict:
-    import pyautogui
-    print(f"\n  将鼠标移到 [{name}] 区域的左上角，3 秒后记录起点")
-    _countdown(3)
-    x1, y1 = pyautogui.position()
-    print(f"  起点: ({x1}, {y1})")
+def _capture_box(name: str) -> dict | None:
+    print(f"\n  [{name}] 左键点击区域左上角，ESC 取消全部标注")
+    pos1 = _wait_for_click_or_esc()
+    if pos1 is None:
+        return None
+    x1, y1 = pos1
+    print(f"  左上角: ({x1}, {y1})")
 
-    print(f"  将鼠标移到 [{name}] 区域的右下角，3 秒后记录终点")
-    _countdown(3)
-    x2, y2 = pyautogui.position()
-    print(f"  终点: ({x2}, {y2})")
+    print(f"  [{name}] 再次左键点击区域右下角，ESC 取消全部标注")
+    pos2 = _wait_for_click_or_esc()
+    if pos2 is None:
+        return None
+    x2, y2 = pos2
+    print(f"  右下角: ({x2}, {y2})")
 
     x, y = min(x1, x2), min(y1, y2)
     w, h = abs(x2 - x1), abs(y2 - y1)
@@ -73,34 +103,44 @@ def _run_annotation(project_id: str, project_name: str, markers: list[dict]) -> 
     print(f"\n{'='*50}")
     print(f"  开始标注项目: {project_name}")
     print(f"  共 {len(markers)} 个标记")
+    print(f"  操作：左键点击确认位置，ESC 取消全部标注")
     print(f"{'='*50}")
 
     results = []
+    cancelled = False
     for i, marker in enumerate(markers, 1):
         name = marker["name"]
         mtype = marker["type"]
         print(f"\n[{i}/{len(markers)}] 标记: {name}  类型: {mtype}")
 
         try:
-            if mtype == "point":
-                coords = _capture_point(name)
-            else:
-                coords = _capture_box(name)
-            results.append({"name": name, "type": mtype, **coords})
+            coords = _capture_point(name) if mtype == "point" else _capture_box(name)
         except Exception as e:
             logger.error(f"标注 [{name}] 失败: {e}")
             results.append({"name": name, "type": mtype, "error": str(e)})
+            continue
 
-    # Persist
-    data = _load_markers()
-    project_data = data.get(project_id, {})
-    for r in results:
-        if "error" not in r:
-            project_data[r["name"]] = {k: v for k, v in r.items() if k != "name"}
-    data[project_id] = project_data
-    _save_markers(data)
+        if coords is None:
+            print("\n  已取消标注")
+            cancelled = True
+            break
 
-    print(f"\n  标注完成，数据已保存到 markers.json")
+        results.append({"name": name, "type": mtype, **coords})
+
+    # Persist whatever was captured before cancellation
+    if results:
+        data = _load_markers()
+        project_data = data.get(project_id, {})
+        for r in results:
+            if "error" not in r:
+                project_data[r["name"]] = {k: v for k, v in r.items() if k != "name"}
+        data[project_id] = project_data
+        _save_markers(data)
+        saved = len([r for r in results if "error" not in r])
+        print(f"\n  已保存 {saved}/{len(markers)} 个标记到 markers.json")
+
+    if cancelled:
+        print(f"  （剩余标记未完成）")
     print(f"{'='*50}\n")
     return results
 
