@@ -13,11 +13,13 @@ class ActionNodeHandler(BaseNodeHandler):
         action_type = data.get("action_type", "mouse_click")
         params = data.get("params", {})
 
-        # Resolve variable references for coordinates
-        if "x" in params and isinstance(params["x"], str) and params["x"].startswith("$"):
-            params["x"] = self._resolve_var(params["x"])
-        if "y" in params and isinstance(params["y"], str) and params["y"].startswith("$"):
-            params["y"] = self._resolve_var(params["y"])
+        # Resolve server-side variables ($last_vision_result etc.) but NOT $markers.*
+        # Marker coords are stored on the client and must be resolved there with
+        # the current window position applied.
+        for coord in ("x", "y"):
+            val = params.get(coord)
+            if isinstance(val, str) and val.startswith("$") and not val.startswith("$markers."):
+                params[coord] = self._resolve_var(val)
 
         request_id = str(uuid.uuid4())
         future: asyncio.Future = asyncio.get_event_loop().create_future()
@@ -28,6 +30,7 @@ class ActionNodeHandler(BaseNodeHandler):
             "node_id": self.ctx.node.id,
             "request_id": request_id,
             "node_type": action_type,
+            "project_id": self.ctx.project_id,
             "params": params,
         })
 

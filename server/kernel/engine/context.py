@@ -17,6 +17,7 @@ class ExecutionContext:
     ws_manager: "ClientWSManager"
     ui_manager: "UIWSManager"
     session_factory: "async_sessionmaker"
+    project_id: str | None = None
     variables: dict[str, Any] = field(default_factory=dict)
     stop_event: asyncio.Event = field(default_factory=asyncio.Event)
     loop_stack: list[dict] = field(default_factory=list)

@@ -98,6 +98,7 @@ async def run_script(
             script_id,
             body.client_id,
             json.loads(script.flow_json) if script.flow_json else {},
+            script.project_id,
         )
 
     return execution

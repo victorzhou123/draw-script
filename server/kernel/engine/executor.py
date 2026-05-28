@@ -24,11 +24,12 @@ class ExecutionEngine:
         script_id: str,
         client_id: str,
         flow_json: dict[str, Any],
+        project_id: str | None = None,
     ) -> None:
         stop_event = asyncio.Event()
         self._stop_events[execution_id] = stop_event
         task = asyncio.create_task(
-            self._execute(execution_id, client_id, flow_json, stop_event)
+            self._execute(execution_id, client_id, flow_json, stop_event, project_id)
         )
         self._tasks[execution_id] = task
         try:
@@ -56,6 +57,7 @@ class ExecutionEngine:
         client_id: str,
         flow_json: dict[str, Any],
         stop_event: asyncio.Event,
+        project_id: str | None = None,
     ) -> None:
         graph = FlowGraph.from_x6_json(flow_json)
         current = graph.get_start_node()
@@ -77,6 +79,7 @@ class ExecutionEngine:
             ws_manager=self.ws_manager,
             ui_manager=self.ui_manager,
             session_factory=self.session_factory,
+            project_id=project_id,
             stop_event=stop_event,
             log=log,
         )
