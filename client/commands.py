@@ -47,13 +47,13 @@ def _wait_for_click_or_esc() -> tuple[int, int] | None:
         if pressed and button == _mouse.Button.left:
             result["x"], result["y"] = x, y
             done.set()
-            return False  # stop listener
+            return False
 
     def on_press(key):
         if key == _keyboard.Key.esc:
             result["cancelled"] = True
             done.set()
-            return False  # stop listener
+            return False
 
     m_listener = _mouse.Listener(on_click=on_click, suppress=True)
     k_listener = _keyboard.Listener(on_press=on_press)
@@ -68,8 +68,44 @@ def _wait_for_click_or_esc() -> tuple[int, int] | None:
     return result["x"], result["y"]
 
 
-def _capture_point(name: str) -> dict | None:
-    print(f"\n  [{name}] 左键点击目标位置确认，ESC 取消全部标注")
+def _wait_for_nav() -> str:
+    """After capture, wait for navigation key.
+    Returns 'next' | 'prev' | 'redo' | 'cancel'.
+    """
+    from pynput import keyboard as _keyboard
+    import threading
+
+    action: dict = {}
+    done = threading.Event()
+
+    def on_press(key):
+        if key in (_keyboard.Key.enter, _keyboard.Key.down):
+            action["v"] = "next"
+        elif key == _keyboard.Key.up:
+            action["v"] = "prev"
+        elif key == _keyboard.Key.esc:
+            action["v"] = "cancel"
+        else:
+            try:
+                if key.char and key.char.lower() == "r":
+                    action["v"] = "redo"
+            except AttributeError:
+                return  # special key, ignore
+        if action:
+            done.set()
+            return False
+
+    k = _keyboard.Listener(on_press=on_press)
+    k.start()
+    done.wait()
+    k.stop()
+    return action.get("v", "next")
+
+
+def _capture_point(name: str, prev: dict | None = None) -> dict | None:
+    if prev:
+        print(f"  上次记录: ({prev['x']}, {prev['y']})")
+    print(f"  [{name}] 左键点击目标位置，ESC 取消全部标注")
     pos = _wait_for_click_or_esc()
     if pos is None:
         return None
@@ -78,15 +114,17 @@ def _capture_point(name: str) -> dict | None:
     return {"x": x, "y": y}
 
 
-def _capture_box(name: str) -> dict | None:
-    print(f"\n  [{name}] 左键点击区域左上角，ESC 取消全部标注")
+def _capture_box(name: str, prev: dict | None = None) -> dict | None:
+    if prev:
+        print(f"  上次记录: x={prev['x']} y={prev['y']} w={prev['w']} h={prev['h']}")
+    print(f"  [{name}] 左键点击区域左上角，ESC 取消全部标注")
     pos1 = _wait_for_click_or_esc()
     if pos1 is None:
         return None
     x1, y1 = pos1
     print(f"  左上角: ({x1}, {y1})")
 
-    print(f"  [{name}] 再次左键点击区域右下角，ESC 取消全部标注")
+    print(f"  [{name}] 左键点击区域右下角，ESC 取消全部标注")
     pos2 = _wait_for_click_or_esc()
     if pos2 is None:
         return None
@@ -100,24 +138,32 @@ def _capture_box(name: str) -> dict | None:
 
 
 def _run_annotation(project_id: str, project_name: str, markers: list[dict]) -> list[dict]:
+    total = len(markers)
     print(f"\n{'='*50}")
-    print(f"  开始标注项目: {project_name}")
-    print(f"  共 {len(markers)} 个标记")
-    print(f"  操作：左键点击确认位置，ESC 取消全部标注")
+    print(f"  开始标注项目: {project_name}  共 {total} 个标记")
+    print(f"  点击确认位置后：Enter/↓=下一个  ↑=上一个  R=重新标记  ESC=取消")
     print(f"{'='*50}")
 
-    results = []
+    captured: dict[int, dict] = {}  # index → coords dict
+    idx = 0
     cancelled = False
-    for i, marker in enumerate(markers, 1):
+
+    while 0 <= idx < total:
+        marker = markers[idx]
         name = marker["name"]
         mtype = marker["type"]
-        print(f"\n[{i}/{len(markers)}] 标记: {name}  类型: {mtype}")
+        prev = captured.get(idx)
+
+        print(f"\n[{idx + 1}/{total}] {name}  ({'点' if mtype == 'point' else '框'})")
 
         try:
-            coords = _capture_point(name) if mtype == "point" else _capture_box(name)
+            coords = (
+                _capture_point(name, prev) if mtype == "point"
+                else _capture_box(name, prev)
+            )
         except Exception as e:
             logger.error(f"标注 [{name}] 失败: {e}")
-            results.append({"name": name, "type": mtype, "error": str(e)})
+            idx += 1
             continue
 
         if coords is None:
@@ -125,22 +171,39 @@ def _run_annotation(project_id: str, project_name: str, markers: list[dict]) -> 
             cancelled = True
             break
 
-        results.append({"name": name, "type": mtype, **coords})
+        captured[idx] = coords
 
-    # Persist whatever was captured before cancellation
+        print(f"  Enter/↓=下一个  ↑=上一个  R=重新标记  ESC=取消")
+        nav = _wait_for_nav()
+
+        if nav == "cancel":
+            print("\n  已取消标注")
+            cancelled = True
+            break
+        elif nav == "prev":
+            idx = max(0, idx - 1)
+        elif nav == "redo":
+            pass  # stay at current idx
+        else:  # next
+            idx += 1
+
+    # Build ordered results from captured dict
+    results = [
+        {"name": markers[i]["name"], "type": markers[i]["type"], **captured[i]}
+        for i in sorted(captured)
+    ]
+
     if results:
         data = _load_markers()
         project_data = data.get(project_id, {})
         for r in results:
-            if "error" not in r:
-                project_data[r["name"]] = {k: v for k, v in r.items() if k != "name"}
+            project_data[r["name"]] = {k: v for k, v in r.items() if k not in ("name", "type")}
         data[project_id] = project_data
         _save_markers(data)
-        saved = len([r for r in results if "error" not in r])
-        print(f"\n  已保存 {saved}/{len(markers)} 个标记到 markers.json")
+        print(f"\n  已保存 {len(results)}/{total} 个标记到 markers.json")
 
-    if cancelled:
-        print(f"  （剩余标记未完成）")
+    if cancelled and len(results) < total:
+        print(f"  （{total - len(results)} 个标记未完成）")
     print(f"{'='*50}\n")
     return results
 
