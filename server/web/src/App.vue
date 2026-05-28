@@ -1,0 +1,170 @@
+<template>
+  <a-config-provider :theme="darkTheme">
+    <a-layout class="app-layout">
+      <!-- Toolbar -->
+      <a-layout-header class="app-header">
+        <Toolbar
+          @save="onSave"
+          @undo="graphEditor?.undo()"
+          @redo="graphEditor?.redo()"
+          @open-projects="projectGroupDrawerOpen = true"
+          @open-clients="clientsDrawerOpen = true"
+        />
+      </a-layout-header>
+
+      <!-- Main body: full height -->
+      <a-layout class="app-body">
+        <!-- Left sider: scripts + node palette -->
+        <a-layout-sider class="left-sider" :width="190" theme="dark">
+          <a-tabs v-model:activeKey="leftTabKey" size="small" class="left-tabs">
+            <a-tab-pane key="scripts" tab="脚本">
+              <ScriptSidebar @script-selected="onScriptSelected" />
+            </a-tab-pane>
+            <a-tab-pane key="nodes" tab="节点">
+              <NodePalette @drag-start="onDragStart" />
+            </a-tab-pane>
+          </a-tabs>
+        </a-layout-sider>
+
+        <!-- Center: graph canvas -->
+        <a-layout-content class="graph-area">
+          <div v-if="!scriptStore.currentScript" class="empty-canvas">
+            <div class="empty-hint">
+              <FileAddOutlined class="empty-icon" />
+              <div class="empty-text">选择或新建一个脚本开始编辑</div>
+            </div>
+          </div>
+          <GraphEditor
+            v-else
+            ref="graphEditor"
+            @node-selected="onNodeSelected"
+            @edge-selected="onEdgeSelected"
+            @selection-cleared="selectedNode = null"
+          />
+        </a-layout-content>
+
+        <!-- Right: property panel — only visible when node selected -->
+        <transition name="slide-right">
+          <div v-if="selectedNode" class="right-sider">
+            <PropertyPanel
+              :selected-node="selectedNode"
+              @update="onNodeDataUpdate"
+              @close="selectedNode = null"
+            />
+          </div>
+        </transition>
+      </a-layout>
+    </a-layout>
+
+    <ProjectGroupDrawer :open="projectGroupDrawerOpen" @close="projectGroupDrawerOpen = false" />
+    <ClientsDrawer :open="clientsDrawerOpen" @close="clientsDrawerOpen = false" />
+  </a-config-provider>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { theme } from 'ant-design-vue'
+import { FileAddOutlined } from '@ant-design/icons-vue'
+import GraphEditor from './components/GraphEditor.vue'
+import NodePalette from './components/NodePalette.vue'
+import PropertyPanel from './components/PropertyPanel.vue'
+import ScriptSidebar from './components/ScriptSidebar.vue'
+import Toolbar from './components/Toolbar.vue'
+import ClientsDrawer from './components/ClientsDrawer.vue'
+import ProjectGroupDrawer from './components/ProjectGroupDrawer.vue'
+import { useScriptStore } from './stores/scriptStore'
+import { uiWS } from './services/websocket'
+
+const darkTheme = { algorithm: theme.darkAlgorithm }
+
+const scriptStore = useScriptStore()
+const graphEditor = ref<InstanceType<typeof GraphEditor>>()
+const selectedNode = ref<{ id: string; data: any } | null>(null)
+const clientsDrawerOpen = ref(false)
+const projectGroupDrawerOpen = ref(false)
+const leftTabKey = ref('scripts')
+
+onMounted(() => uiWS.connect())
+
+async function onScriptSelected(id: string) {
+  const script = await scriptStore.selectScript(id)
+  try {
+    const flow = JSON.parse(script.flow_json || '{"cells":[]}')
+    graphEditor.value?.loadJSON(flow)
+  } catch {
+    graphEditor.value?.loadJSON({ cells: [] })
+  }
+  leftTabKey.value = 'nodes'
+}
+
+function onSave() {
+  if (!scriptStore.currentScript) return
+  const json = graphEditor.value?.getJSON()
+  if (json) scriptStore.saveScript(json)
+}
+
+function onDragStart(shape: string, defaultData: object, event: MouseEvent) {
+  graphEditor.value?.startDragNode(shape, defaultData, event)
+}
+
+function onNodeSelected(node: { id: string; data: any }) {
+  selectedNode.value = node
+}
+
+function onEdgeSelected() {
+  selectedNode.value = null
+}
+
+function onNodeDataUpdate(_data: any) {
+  // TODO: push updated data back to graph node
+}
+</script>
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #app { height: 100%; background: #141414; }
+
+.app-layout { height: 100vh; overflow: hidden; background: #141414 !important; }
+.app-header { padding: 0 !important; height: 48px !important; line-height: 48px !important; background: #1a1a1a !important; }
+.app-body { height: calc(100vh - 48px); overflow: hidden; background: #141414; }
+.left-sider { border-right: 1px solid #222 !important; overflow: hidden; background: #161616 !important; }
+.left-tabs { height: 100%; }
+.left-tabs .ant-tabs-nav { padding: 0 6px; background: #161616; }
+.left-tabs .ant-tabs-content-holder { height: calc(100% - 38px); overflow: hidden; }
+.left-tabs .ant-tabs-content { height: 100%; }
+.left-tabs .ant-tabs-tabpane { height: 100%; overflow: hidden; }
+.graph-area { overflow: hidden; position: relative; background: #1a1a1a; }
+
+.right-sider {
+  width: 260px;
+  flex-shrink: 0;
+  border-left: 1px solid #222;
+  overflow: hidden;
+  background: #1a1a1a;
+}
+
+/* Empty canvas */
+.empty-canvas {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a1a;
+}
+.empty-hint { text-align: center; }
+.empty-icon { font-size: 40px; color: #2a2a2a; display: block; }
+.empty-text { font-size: 13px; color: #3a3a3a; margin-top: 14px; }
+
+/* Right panel slide transition */
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: width 0.22s ease, opacity 0.22s ease;
+  overflow: hidden;
+}
+.slide-right-enter-from,
+.slide-right-leave-to {
+  width: 0 !important;
+  opacity: 0;
+}
+</style>

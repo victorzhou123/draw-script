@@ -1,0 +1,141 @@
+import json
+import logging
+from datetime import datetime
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from database import AsyncSessionLocal, Client
+from ws_manager import client_ws_manager, ui_ws_manager
+
+logger = logging.getLogger(__name__)
+router = APIRouter(tags=["websocket"])
+
+
+async def _upsert_client(client_id: str, name: str, platform: str) -> None:
+    async with AsyncSessionLocal() as db:
+        client = await db.get(Client, client_id)
+        if client:
+            client.name = name
+            client.platform = platform
+            client.status = "idle"
+            client.last_seen = datetime.utcnow()
+        else:
+            client = Client(id=client_id, name=name, platform=platform, status="idle")
+            db.add(client)
+        await db.commit()
+
+
+async def _update_client_status(client_id: str, status: str) -> None:
+    async with AsyncSessionLocal() as db:
+        client = await db.get(Client, client_id)
+        if client:
+            client.status = status
+            client.last_seen = datetime.utcnow()
+            await db.commit()
+
+
+async def _handle_client_message(client_id: str, msg: dict) -> None:
+    msg_type = msg.get("type")
+
+    if msg_type == "register":
+        name = msg.get("name", client_id)
+        platform = msg.get("platform", "unknown")
+        await _upsert_client(client_id, name, platform)
+        await ui_ws_manager.broadcast_event("client_connected", {
+            "client_id": client_id,
+            "name": name,
+            "platform": platform,
+        })
+        logger.info(f"Client registered: {client_id} ({name} / {platform})")
+
+    elif msg_type == "heartbeat":
+        client_ws_manager.update_heartbeat(client_id)
+        await _update_client_status(client_id, msg.get("status", "idle"))
+        await ui_ws_manager.broadcast_event("client_heartbeat", {
+            "client_id": client_id,
+            "status": msg.get("status", "idle"),
+        })
+
+    elif msg_type == "screenshot_response":
+        request_id = msg.get("request_id")
+        if request_id:
+            client_ws_manager.resolve_pending(request_id, msg.get("data"))
+
+    elif msg_type == "node_result":
+        node_id = msg.get("node_id")
+        request_id = msg.get("request_id", node_id)
+        if request_id:
+            client_ws_manager.resolve_pending(request_id, {
+                "success": msg.get("success", True),
+                "output": msg.get("output", {}),
+                "error": msg.get("error"),
+            })
+
+    elif msg_type == "markers_captured":
+        project_id = msg.get("project_id")
+        count = len(msg.get("markers", []))
+        logger.info(f"Client {client_id} captured {count} markers for project {project_id}")
+        await ui_ws_manager.broadcast_event("markers_captured", {
+            "client_id": client_id,
+            "project_id": project_id,
+            "count": count,
+        })
+
+    elif msg_type == "error":
+        logger.warning(f"Client {client_id} error: {msg.get('message')}")
+
+    else:
+        logger.debug(f"Unknown message type from {client_id}: {msg_type}")
+
+
+@router.websocket("/ws/client")
+async def client_websocket(ws: WebSocket):
+    await ws.accept()
+    client_id = None
+    try:
+        raw = await ws.receive_text()
+        first_msg = json.loads(raw)
+        client_id = first_msg.get("client_id") or first_msg.get("data", {}).get("client_id")
+        if not client_id:
+            await ws.close(code=4000, reason="Missing client_id in first message")
+            return
+
+        await client_ws_manager.connect(client_id, ws)
+        await _handle_client_message(client_id, first_msg)
+
+        while True:
+            raw = await ws.receive_text()
+            msg = json.loads(raw)
+            await _handle_client_message(client_id, msg)
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.exception(f"Client WS error ({client_id}): {e}")
+    finally:
+        if client_id:
+            await client_ws_manager.disconnect(client_id)
+            await _update_client_status(client_id, "disconnected")
+            await ui_ws_manager.broadcast_event("client_disconnected", {"client_id": client_id})
+            logger.info(f"Client disconnected: {client_id}")
+
+
+@router.websocket("/ws/ui")
+async def ui_websocket(ws: WebSocket):
+    await ws.accept()
+    await ui_ws_manager.connect(ws)
+    try:
+        connected_ids = client_ws_manager.get_connected_ids()
+        await ws.send_text(json.dumps({
+            "type": "init",
+            "connected_clients": connected_ids,
+        }))
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.debug(f"UI WS closed: {e}")
+    finally:
+        await ui_ws_manager.disconnect(ws)
