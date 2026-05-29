@@ -13,6 +13,8 @@ import {
   SyncOutlined,
   GlobalOutlined,
   LinkOutlined,
+  CodeOutlined,
+  ApartmentOutlined,
 } from '@ant-design/icons-vue'
 
 export const ICON_MAP: Record<string, Component> = {
@@ -26,6 +28,8 @@ export const ICON_MAP: Record<string, Component> = {
   SyncOutlined,
   GlobalOutlined,
   LinkOutlined,
+  CodeOutlined,
+  ApartmentOutlined,
 }
 
 // Port appearance: hidden by default, revealed by graph hover events
@@ -78,10 +82,25 @@ const PORTS_CONDITION = {
   ],
 }
 
+// Loop: input top, loop body=right, exit=bottom
+const PORTS_LOOP = {
+  groups: {
+    in:   { position: 'top',    attrs: PORT_ATTRS },
+    loop: { position: 'right',  attrs: PORT_ATTRS },
+    exit: { position: 'bottom', attrs: PORT_ATTRS },
+  },
+  items: [
+    { group: 'in',   id: 'in'   },
+    { group: 'loop', id: 'loop' },
+    { group: 'exit', id: 'exit' },
+  ],
+}
+
 function portsFor(shape: string) {
   if (shape === 'node-start')     return PORTS_START
   if (shape === 'node-end')       return PORTS_END
   if (shape === 'node-condition') return PORTS_CONDITION
+  if (shape === 'node-loop')      return PORTS_LOOP
   return PORTS_DEFAULT
 }
 
@@ -96,6 +115,8 @@ const NODE_DEFS = [
   { shape: 'node-loop',       icon: 'SyncOutlined',        label: 'Loop',       w: 120, h: 60  },
   { shape: 'node-http',       icon: 'GlobalOutlined',      label: 'HTTP',       w: 120, h: 60  },
   { shape: 'node-webhook',    icon: 'LinkOutlined',        label: 'Webhook',    w: 120, h: 60  },
+  { shape: 'node-compute',    icon: 'CodeOutlined',        label: 'Compute',    w: 120, h: 60  },
+  { shape: 'node-script',     icon: 'ApartmentOutlined',   label: 'Script',     w: 120, h: 60  },
 ]
 
 export function registerNodes() {

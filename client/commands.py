@@ -588,6 +588,24 @@ def _run_annotation(project_id: str, project_name: str, markers: list[dict]) -> 
     return results
 
 
+# ── Unicode text input via clipboard ─────────────────────────────────────────
+
+def _type_text(text: str) -> None:
+    """Input *text* into the focused field via clipboard paste.
+
+    Ctrl+A clears any existing content, then the text is pasted via Ctrl+V.
+    Handles all Unicode characters (Chinese, etc.) without key-mapping issues.
+    """
+    import pyperclip
+    import pyautogui
+    import time
+
+    pyautogui.hotkey("ctrl", "a")
+    time.sleep(0.05)
+    pyperclip.copy(text)
+    pyautogui.hotkey("ctrl", "v")
+
+
 # ── Async helper ──────────────────────────────────────────────────────────────
 
 def _run_blocking(fn, *args, **kwargs):
@@ -606,6 +624,7 @@ class CommandHandler:
             "set_markers":        self.handle_set_markers,
             "stop":               self.handle_stop,
             "get_status":         self.handle_get_status,
+            "compute_node":       self.handle_compute_node,
         }
         self._stop_flag = False
 
@@ -647,12 +666,15 @@ class CommandHandler:
     async def handle_execute_node(self, msg: dict) -> None:
         node_type  = msg.get("node_type")
         params     = dict(msg.get("params", {}))
-        project_id = msg.get("project_id")
+        project_id = msg.get("project_id", "")
         request_id = msg.get("request_id") or msg.get("node_id")
         if project_id:
             params = _resolve_marker_params(params, project_id)
         try:
-            success, output, error = await self._execute_action(node_type, params)
+            if node_type in ("template_match", "ocr", "ai_vision", "color_detect"):
+                success, output, error = await self._execute_vision(node_type, params, project_id)
+            else:
+                success, output, error = await self._execute_action(node_type, params)
         except Exception as e:
             success, output, error = False, {}, str(e)
         await self._send({
@@ -687,9 +709,8 @@ class CommandHandler:
             return True, {}, None
 
         if action_type == "keyboard_type":
-            text = params.get("text", "")
-            await _run_blocking(pyautogui.typewrite, text,
-                                interval=float(params.get("interval",0.02)))
+            text = str(params.get("text", ""))
+            await _run_blocking(_type_text, text)
             return True, {"length": len(text)}, None
 
         if action_type == "keyboard_hotkey":
@@ -710,6 +731,106 @@ class CommandHandler:
             return True, {}, None
 
         return False, {}, f"Unknown action_type: {action_type}"
+
+    async def _execute_vision(self, vision_type: str, params: dict, project_id: str) -> tuple[bool, dict, str | None]:
+        import pyautogui
+
+        range_marker_name = params.get("range_marker", "").strip()
+        if not range_marker_name:
+            return False, {}, "Vision node: no range_marker specified"
+
+        marker = get_marker(project_id, range_marker_name) if project_id else None
+        if not marker:
+            return False, {}, f"Vision node: marker '{range_marker_name}' not found for project '{project_id}'"
+
+        mx = int(marker.get("x", 0))
+        my = int(marker.get("y", 0))
+        mw = int(marker.get("w", 0))
+        mh = int(marker.get("h", 0))
+
+        if mw <= 0 or mh <= 0:
+            return False, {}, f"Vision node: marker '{range_marker_name}' 不是方框标记（缺少 w/h）"
+
+        screenshot = await _run_blocking(pyautogui.screenshot, region=(mx, my, mw, mh))
+
+        if vision_type == "template_match":
+            template_b64 = params.get("template", "")
+            if not template_b64:
+                return False, {}, "Template match: no template configured"
+
+            threshold = float(params.get("threshold", 0.8))
+            # marker offset for converting local match coords back to screen coords
+            region_offset = (mx, my)
+
+            def _do_match():
+                import cv2
+                import numpy as np
+
+                buf = io.BytesIO()
+                screenshot.save(buf, format="PNG")
+                sc_arr = np.frombuffer(buf.getvalue(), np.uint8)
+                sc_img = cv2.imdecode(sc_arr, cv2.IMREAD_COLOR)
+
+                tmpl_bytes = base64.b64decode(template_b64)
+                tmpl_arr = np.frombuffer(tmpl_bytes, np.uint8)
+                tmpl_img = cv2.imdecode(tmpl_arr, cv2.IMREAD_COLOR)
+
+                if sc_img is None or tmpl_img is None:
+                    return {"found": False, "confidence": 0.0, "location": None, "error": "Failed to decode images"}
+
+                res = cv2.matchTemplate(sc_img, tmpl_img, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, max_loc = cv2.minMaxLoc(res)
+
+                found = float(max_val) >= threshold
+                h, w = tmpl_img.shape[:2]
+                cx = region_offset[0] + max_loc[0] + w // 2
+                cy = region_offset[1] + max_loc[1] + h // 2
+
+                return {
+                    "found": found,
+                    "confidence": float(max_val),
+                    "location": {"x": cx, "y": cy} if found else None,
+                }
+
+            try:
+                result = await _run_blocking(_do_match)
+                return True, result, None
+            except Exception as e:
+                return False, {}, str(e)
+
+        else:
+            # OCR / AI vision / color detect: return cropped screenshot to server
+            buf = io.BytesIO()
+            screenshot.save(buf, format="PNG")
+            screenshot_b64 = base64.b64encode(buf.getvalue()).decode()
+            return True, {"screenshot": screenshot_b64}, None
+
+    async def handle_compute_node(self, msg: dict) -> None:
+        request_id = msg.get("request_id") or msg.get("node_id")
+        code: str = msg.get("code", "")
+        context: dict = dict(msg.get("context", {}))
+        try:
+            namespace: dict = {"context": context}
+            exec(compile(code, "<compute>", "exec"), namespace)
+            updated_context = namespace.get("context", context)
+            await self._send({
+                "type": "node_result",
+                "request_id": request_id,
+                "node_id": msg.get("node_id"),
+                "success": True,
+                "output": {"updated_context": updated_context},
+                "error": None,
+            })
+        except Exception as e:
+            logger.error(f"Compute node execution failed: {e}")
+            await self._send({
+                "type": "node_result",
+                "request_id": request_id,
+                "node_id": msg.get("node_id"),
+                "success": False,
+                "output": {},
+                "error": str(e),
+            })
 
     async def handle_stop(self, msg: dict) -> None:
         logger.info(f"Stop signal received: {msg.get('reason')}")

@@ -23,17 +23,16 @@
       </a-tooltip>
     </div>
 
-    <div class="toolbar-divider" />
-
-    <div class="toolbar-group">
-      <a-tooltip title="保存">
-        <a-button size="small" class="tool-btn" :loading="saving" @click="onSave">
-          <SaveOutlined /> 保存
-        </a-button>
-      </a-tooltip>
-    </div>
-
     <div class="toolbar-spacer" />
+
+    <transition name="fade">
+      <span v-if="saveStatus === 'saving'" class="save-status saving">
+        <LoadingOutlined spin /> 保存中…
+      </span>
+      <span v-else-if="saveStatus === 'saved'" class="save-status saved">
+        <CheckOutlined /> 已保存
+      </span>
+    </transition>
 
     <div class="toolbar-group">
       <a-tooltip title="项目组管理">
@@ -48,44 +47,41 @@
           <span v-if="connectedCount > 0" class="client-badge">{{ connectedCount }}</span>
         </a-button>
       </a-tooltip>
+      <div class="toolbar-divider" />
+      <a-tooltip title="使用帮助">
+        <a-button size="small" class="tool-btn help-btn" @click="emit('openHelp')">
+          <QuestionCircleOutlined /> 帮助
+        </a-button>
+      </a-tooltip>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { message } from 'ant-design-vue'
+import { computed } from 'vue'
 import {
-  UndoOutlined, RedoOutlined, SaveOutlined,
-  FileTextOutlined, LaptopOutlined, FolderOutlined,
+  UndoOutlined, RedoOutlined, LoadingOutlined, CheckOutlined,
+  FileTextOutlined, LaptopOutlined, FolderOutlined, QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { useScriptStore } from '@/stores/scriptStore'
 import { useClientStore } from '@/stores/clientStore'
 
+defineProps<{
+  saveStatus: 'saving' | 'saved' | ''
+}>()
+
 const emit = defineEmits<{
-  (e: 'save'): void
   (e: 'undo'): void
   (e: 'redo'): void
   (e: 'openProjects'): void
   (e: 'openClients'): void
+  (e: 'openHelp'): void
 }>()
 
 const scriptStore = useScriptStore()
 const clientStore = useClientStore()
 
-const saving = ref(false)
 const connectedCount = computed(() => clientStore.connectedIds.size)
-
-async function onSave() {
-  saving.value = true
-  try {
-    emit('save')
-    await new Promise(r => setTimeout(r, 300))
-    message.success('保存成功')
-  } finally {
-    saving.value = false
-  }
-}
 </script>
 
 <style scoped>
@@ -122,4 +118,14 @@ async function onSave() {
   min-width: 16px; height: 16px; background: #52c41a; color: #000;
   font-size: 10px; font-weight: 700; border-radius: 8px; padding: 0 4px; margin-left: 2px;
 }
+.save-status {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; margin-right: 8px;
+}
+.save-status.saving { color: #888; }
+.save-status.saved  { color: #52c41a; }
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+.help-btn { color: #597ef7 !important; }
+.help-btn:hover { color: #85a5ff !important; background: #1f2a4a !important; }
 </style>

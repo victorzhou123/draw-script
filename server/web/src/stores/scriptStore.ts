@@ -45,5 +45,17 @@ export const useScriptStore = defineStore('script', () => {
     if (currentScript.value?.id === id) currentScript.value = null
   }
 
-  return { scripts, currentScript, loading, fetchScripts, selectScript, createScript, saveScript, deleteScript }
+  async function duplicateScript(id: string) {
+    const original = scripts.value.find(s => s.id === id)
+    if (!original) return
+    const copy = await api.createScript({
+      name: `${original.name} 的副本`,
+      description: original.description,
+      flow_json: original.flow_json,
+    })
+    scripts.value.unshift(copy)
+    return copy
+  }
+
+  return { scripts, currentScript, loading, fetchScripts, selectScript, createScript, saveScript, deleteScript, duplicateScript }
 })

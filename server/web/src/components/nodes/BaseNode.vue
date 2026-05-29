@@ -1,12 +1,12 @@
 <template>
   <div class="draw-node" :class="[`node-type-${nodeType}`, { 'node-active': isActive }]">
     <component :is="iconComp" class="node-icon" />
-    <div class="node-label">{{ label }}</div>
+    <div class="node-label">{{ displayLabel }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, inject } from 'vue'
+import { ref, computed, inject, onMounted, onBeforeUnmount } from 'vue'
 import { useExecutionStore } from '@/stores/executionStore'
 import { ICON_MAP } from './index'
 
@@ -20,6 +20,25 @@ const getNode = inject<() => any>('getNode')
 const executionStore = useExecutionStore()
 
 const iconComp = computed(() => ICON_MAP[props.icon])
+
+const customLabel = ref('')
+
+function syncLabel() {
+  customLabel.value = getNode?.()?.getData()?.label?.trim() ?? ''
+}
+
+onMounted(() => {
+  const node = getNode?.()
+  if (!node) return
+  syncLabel()
+  node.on('change:data', syncLabel)
+})
+
+onBeforeUnmount(() => {
+  getNode?.()?.off('change:data', syncLabel)
+})
+
+const displayLabel = computed(() => customLabel.value || props.label)
 
 const isActive = computed(() => {
   const node = getNode?.()

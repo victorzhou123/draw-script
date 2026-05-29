@@ -59,6 +59,14 @@ export interface Marker {
   created_at: string
 }
 
+export interface Template {
+  id: string
+  project_id: string
+  name: string
+  filename: string
+  created_at: string
+}
+
 export const api = {
   // Scripts
   getScripts: () => http.get<Script[]>('/scripts').then(r => r.data),
@@ -107,4 +115,18 @@ export const api = {
     http.delete(`/projects/${projectId}/markers/${markerId}`).then(r => r.data),
   sendMarkers: (projectId: string, clientId: string) =>
     http.post(`/projects/${projectId}/markers/send`, { client_id: clientId }).then(r => r.data),
+
+  // Templates
+  getTemplates: (projectId: string) =>
+    http.get<Template[]>(`/projects/${projectId}/templates`).then(r => r.data),
+  uploadTemplate: (projectId: string, name: string, file: File) => {
+    const form = new FormData()
+    form.append('name', name)
+    form.append('file', file)
+    return http.post<Template>(`/projects/${projectId}/templates`, form).then(r => r.data)
+  },
+  deleteTemplate: (projectId: string, templateId: string) =>
+    http.delete(`/projects/${projectId}/templates/${templateId}`).then(r => r.data),
+  templateImageUrl: (projectId: string, templateId: string) =>
+    `/api/projects/${projectId}/templates/${templateId}/image`,
 }

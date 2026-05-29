@@ -80,6 +80,17 @@ class Execution(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     log: Mapped[str] = mapped_column(Text, default="")
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Template(Base):
+    __tablename__ = "templates"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id: Mapped[str] = mapped_column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    filename: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class Webhook(Base):
@@ -87,10 +98,13 @@ class Webhook(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
-    url: Mapped[str] = mapped_column(String, nullable=False)
+    url: Mapped[str] = mapped_column(String, default="")
     events: Mapped[str] = mapped_column(Text, default="[]")
     secret: Mapped[str] = mapped_column(String, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # inbound trigger fields
+    script_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    client_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 async def init_db() -> None:
@@ -100,7 +114,20 @@ async def init_db() -> None:
         try:
             await conn.execute(text("ALTER TABLE scripts ADD COLUMN project_id TEXT"))
         except Exception:
-            pass  # column already exists
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE webhooks ADD COLUMN script_id TEXT"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE webhooks ADD COLUMN client_id TEXT"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE executions ADD COLUMN result_json TEXT"))
+        except Exception:
+            pass
+        # templates table is created by Base.metadata.create_all above (no ALTER needed)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

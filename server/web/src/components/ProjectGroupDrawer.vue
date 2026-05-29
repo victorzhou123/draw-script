@@ -177,6 +177,33 @@
               </div>
             </a-tab-pane>
 
+            <!-- ── 模板 tab ── -->
+            <a-tab-pane key="templates">
+              <template #tab><PictureOutlined /> 模板 <span class="tab-count">{{ currentTemplates.length }}</span></template>
+              <div class="tab-content">
+                <div class="tab-toolbar">
+                  <a-input v-model:value="newTemplateName" size="small" placeholder="模板名称" style="flex:1" />
+                  <a-upload
+                    :show-upload-list="false"
+                    accept="image/*"
+                    :before-upload="(f: File) => { handleTemplateUpload(f); return false }"
+                  >
+                    <a-button size="small" type="primary" :loading="uploadingTemplate" :disabled="!newTemplateName.trim()">
+                      <UploadOutlined /> 上传
+                    </a-button>
+                  </a-upload>
+                </div>
+                <div v-if="currentTemplates.length === 0" class="empty-hint">暂无模板，输入名称后上传图片</div>
+                <div v-for="t in currentTemplates" :key="t.id" class="template-row">
+                  <img :src="templateImageUrl(t.id)" class="template-thumb" />
+                  <span class="member-name">{{ t.name }}</span>
+                  <a-popconfirm title="删除此模板？" @confirm="removeTemplate(t.id)">
+                    <a-button type="text" size="small" class="icon-btn danger-btn"><DeleteOutlined /></a-button>
+                  </a-popconfirm>
+                </div>
+              </div>
+            </a-tab-pane>
+
           </a-tabs>
         </template>
       </div>
@@ -210,7 +237,7 @@ import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, MinusOutlined,
-  LaptopOutlined, TagsOutlined, FileTextOutlined,
+  LaptopOutlined, TagsOutlined, FileTextOutlined, PictureOutlined, UploadOutlined,
   AimOutlined, BorderOutlined, FolderOpenOutlined, SendOutlined,
 } from '@ant-design/icons-vue'
 import { useProjectStore } from '@/stores/projectStore'
@@ -255,6 +282,10 @@ const sendResult = ref<{ ok: boolean; text: string } | null>(null)
 // Scripts tab
 const addScriptId = ref<string | null>(null)
 
+// Templates tab
+const newTemplateName = ref('')
+const uploadingTemplate = ref(false)
+
 // ── Computed ──────────────────────────────────────────────────────────
 
 const selectedProject = computed(() => projectStore.projects.find(p => p.id === selectedId.value))
@@ -265,6 +296,11 @@ const projectScripts = computed(() => selectedId.value ? scriptStore.scripts.fil
 
 const addableClients = computed(() => clientStore.clients.filter(c => !projectClientIds.value.includes(c.id)))
 const addableScripts = computed(() => scriptStore.scripts.filter(s => !s.project_id || s.project_id !== selectedId.value))
+const currentTemplates = computed(() => selectedId.value ? (projectStore.templates[selectedId.value] ?? []) : [])
+
+function templateImageUrl(templateId: string) {
+  return api.templateImageUrl(selectedId.value!, templateId)
+}
 
 function clientCountFor(pid: string) { return clientStore.clients.filter(c => c.project_ids.includes(pid)).length }
 function scriptCountFor(pid: string) { return scriptStore.scripts.filter(s => s.project_id === pid).length }
@@ -285,9 +321,9 @@ async function selectProject(id: string) {
   sendClientIds.value = []
   sendResult.value = null
   // Fetch members
-  const [ids] = await Promise.all([
-    api.getProjects().then(() => {}) as any,
+  await Promise.all([
     projectStore.fetchMarkers(id),
+    projectStore.fetchTemplates(id),
   ])
   const result = await fetch(`/api/projects/${id}/clients`).then(r => r.json())
   projectClientIds.value = result
@@ -389,6 +425,26 @@ async function removeScript(scriptId: string) {
   await scriptStore.fetchScripts()
 }
 
+async function handleTemplateUpload(file: File) {
+  if (!selectedId.value || !newTemplateName.value.trim()) return
+  uploadingTemplate.value = true
+  try {
+    await projectStore.uploadTemplate(selectedId.value, newTemplateName.value.trim(), file)
+    newTemplateName.value = ''
+    message.success('模板已上传')
+  } catch {
+    message.error('上传失败')
+  } finally {
+    uploadingTemplate.value = false
+  }
+}
+
+async function removeTemplate(templateId: string) {
+  if (!selectedId.value) return
+  await projectStore.deleteTemplate(selectedId.value, templateId)
+  message.success('模板已删除')
+}
+
 watch(() => props.open, async (v) => {
   if (v) {
     await Promise.all([
@@ -455,6 +511,12 @@ watch(() => props.open, async (v) => {
 .icon-point .anticon { color: #1890ff; }
 .icon-box   .anticon { color: #faad14; }
 .marker-type-tag { font-size: 10px; color: #444; background: #2a2a2a; padding: 1px 6px; border-radius: 3px; flex-shrink: 0; }
+
+/* Templates */
+.template-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 5px; background: #1f1f1f; border: 1px solid #252525; }
+.template-row:hover .danger-btn { opacity: 1 !important; }
+.template-row .danger-btn { opacity: 0; transition: opacity 0.15s; }
+.template-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 3px; border: 1px solid #303030; flex-shrink: 0; }
 
 /* Send annotation */
 .send-divider { height: 1px; background: #252525; margin: 10px 0; }

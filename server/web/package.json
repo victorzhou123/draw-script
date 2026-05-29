@@ -19,6 +19,7 @@
     "@antv/x6-vue-shape": "^2.1.2",
     "ant-design-vue": "^4.2.0",
     "axios": "^1.6.0",
+    "marked": "^18.0.4",
     "pinia": "^2.1.0",
     "vue": "^3.4.0"
   },

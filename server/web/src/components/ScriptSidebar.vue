@@ -14,29 +14,103 @@
       >
         <div class="script-name">{{ script.name }}</div>
         <div class="script-meta">{{ formatDate(script.updated_at) }}</div>
+
+        <!-- top-right: delete -->
         <a-button
-          type="text"
-          size="small"
-          danger
+          type="text" size="small" danger
           class="delete-btn"
           @click.stop="onDelete(script.id)"
         >✕</a-button>
+
+        <!-- bottom-right: three-dot menu -->
+        <div class="more-wrap" @click.stop>
+          <a-dropdown :trigger="['click']" placement="bottomRight">
+            <a-button type="text" size="small" class="more-btn">⋮</a-button>
+            <template #overlay>
+              <a-menu>
+                <a-menu-item key="info" @click="openInfo(script)">
+                  <InfoCircleOutlined /> 信息
+                </a-menu-item>
+                <a-menu-item key="duplicate" @click="onDuplicate(script.id)">
+                  <CopyOutlined /> 复制成新脚本
+                </a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+        </div>
       </div>
     </a-spin>
+
+    <!-- Info Modal -->
+    <a-modal
+      v-model:open="infoModalOpen"
+      title="脚本信息"
+      :footer="null"
+      width="420px"
+      :body-style="{ padding: '20px 24px' }"
+    >
+      <a-spin :spinning="infoLoading">
+        <div v-if="infoScript" class="info-grid">
+          <!-- Script ID -->
+          <div class="info-label">脚本 ID</div>
+          <div class="info-value id-row">
+            <span class="id-text">{{ infoScript.id }}</span>
+            <a-tooltip :title="idCopied ? '已复制' : '复制 ID'">
+              <a-button type="text" size="small" class="copy-btn" @click="copyId">
+                <CheckOutlined v-if="idCopied" style="color:#52c41a" />
+                <CopyOutlined v-else />
+              </a-button>
+            </a-tooltip>
+          </div>
+
+          <!-- Project group -->
+          <div class="info-label">所在项目组</div>
+          <div class="info-value">
+            <span v-if="infoProject" class="tag-project">{{ infoProject.name }}</span>
+            <span v-else class="no-data">未分配</span>
+          </div>
+
+          <!-- Clients -->
+          <div class="info-label">组内客户端</div>
+          <div class="info-value">
+            <template v-if="infoClients.length">
+              <div v-for="c in infoClients" :key="c.id" class="client-row">
+                <span
+                  class="status-dot"
+                  :class="c.status === 'disconnected' ? 'offline' : 'online'"
+                />
+                <span class="client-name">{{ c.name }}</span>
+                <span class="client-platform">{{ c.platform }}</span>
+              </div>
+            </template>
+            <span v-else class="no-data">—</span>
+          </div>
+        </div>
+      </a-spin>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { useScriptStore } from '@/stores/scriptStore'
+import { ref, computed } from 'vue'
+import { InfoCircleOutlined, CopyOutlined, CheckOutlined } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
+import { useScriptStore } from '@/stores/scriptStore'
+import { useProjectStore } from '@/stores/projectStore'
+import { useClientStore } from '@/stores/clientStore'
+import type { Script } from '@/services/api'
 
 const emit = defineEmits<{
   (e: 'scriptSelected', id: string): void
 }>()
 
-const scriptStore = useScriptStore()
+const scriptStore  = useScriptStore()
+const projectStore = useProjectStore()
+const clientStore  = useClientStore()
 
+// ── list ──────────────────────────────────────────────────────────────────────
+
+import { onMounted } from 'vue'
 onMounted(() => scriptStore.fetchScripts())
 
 async function onNew() {
@@ -63,8 +137,49 @@ async function onDelete(id: string) {
   })
 }
 
+async function onDuplicate(id: string) {
+  await scriptStore.duplicateScript(id)
+  message.success('已复制为新脚本')
+}
+
 function formatDate(d: string) {
   return new Date(d).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+// ── info modal ────────────────────────────────────────────────────────────────
+
+const infoModalOpen = ref(false)
+const infoLoading   = ref(false)
+const infoScript    = ref<Script | null>(null)
+const idCopied      = ref(false)
+
+const infoProject = computed(() => {
+  if (!infoScript.value?.project_id) return null
+  return projectStore.projects.find(p => p.id === infoScript.value!.project_id) ?? null
+})
+
+const infoClients = computed(() => {
+  if (!infoScript.value?.project_id) return []
+  return clientStore.clients.filter(c => c.project_ids.includes(infoScript.value!.project_id!))
+})
+
+async function openInfo(script: Script) {
+  infoScript.value = script
+  idCopied.value = false
+  infoModalOpen.value = true
+  infoLoading.value = true
+  await Promise.all([
+    projectStore.projects.length === 0 ? projectStore.fetchProjects() : Promise.resolve(),
+    clientStore.clients.length === 0   ? clientStore.fetchClients()   : Promise.resolve(),
+  ])
+  infoLoading.value = false
+}
+
+function copyId() {
+  if (!infoScript.value) return
+  navigator.clipboard.writeText(infoScript.value.id)
+  idCopied.value = true
+  setTimeout(() => { idCopied.value = false }, 2000)
 }
 </script>
 
@@ -83,10 +198,12 @@ function formatDate(d: string) {
   padding: 4px 0;
 }
 .sidebar-title { font-weight: 600; font-size: 14px; color: #d0d0d0; }
+
+/* card */
 .script-item {
   position: relative;
-  padding: 10px 12px;
-  margin-bottom: 4px;
+  padding: 10px 12px 10px 12px;
+  margin-bottom: 10px;
   border-radius: 8px;
   border: 1px solid #303030;
   background: #262626;
@@ -95,8 +212,73 @@ function formatDate(d: string) {
 }
 .script-item:hover { border-color: #1890ff; background: #111d2c; }
 .script-item.active { border-color: #1890ff; background: #111d2c; font-weight: 600; }
-.script-name { font-size: 13px; color: #d0d0d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.script-name { font-size: 13px; color: #d0d0d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 20px; }
 .script-meta { font-size: 11px; color: #555; margin-top: 2px; }
-.delete-btn { position: absolute; right: 4px; top: 4px; opacity: 0; transition: opacity 0.15s; }
+
+/* delete btn – top right */
+.delete-btn {
+  position: absolute; right: 4px; top: 4px;
+  width: 22px; padding: 0 !important;
+  opacity: 0; transition: opacity 0.15s;
+  color: #666 !important;
+}
 .script-item:hover .delete-btn { opacity: 1; }
+
+/* more-wrap: positioned container so dropdown doesn't affect alignment */
+.more-wrap {
+  position: absolute; right: 4px; bottom: 3px;
+  width: 22px;
+  opacity: 0; transition: opacity 0.15s;
+}
+.script-item:hover .more-wrap { opacity: 1; }
+
+/* three-dot btn */
+.more-btn {
+  width: 22px; padding: 0 !important;
+  color: #666 !important; font-size: 14px; line-height: 1;
+}
+
+/* info modal */
+.info-grid {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  row-gap: 14px;
+  align-items: start;
+}
+.info-label {
+  font-size: 12px; color: #666;
+  padding-top: 2px;
+}
+.info-value { font-size: 13px; color: #d0d0d0; }
+
+.id-row { display: flex; align-items: center; gap: 6px; }
+.id-text {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px; color: #7ec8e3;
+  background: #1e1e1e; border: 1px solid #2a2a2a;
+  border-radius: 4px; padding: 2px 6px;
+  word-break: break-all; flex: 1;
+}
+.copy-btn { flex-shrink: 0; color: #555 !important; }
+.copy-btn:hover { color: #aaa !important; }
+
+.tag-project {
+  display: inline-block;
+  background: #1f2a4a; border: 1px solid #2d4a8a;
+  color: #85a5ff; border-radius: 4px;
+  padding: 1px 8px; font-size: 12px;
+}
+.no-data { color: #444; font-size: 12px; }
+
+.client-row {
+  display: flex; align-items: center; gap: 7px;
+  margin-bottom: 6px;
+}
+.status-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.status-dot.online  { background: #52c41a; }
+.status-dot.offline { background: #444; }
+.client-name { font-size: 12px; color: #ccc; }
+.client-platform { font-size: 11px; color: #555; margin-left: auto; }
 </style>

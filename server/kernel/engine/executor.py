@@ -25,20 +25,24 @@ class ExecutionEngine:
         client_id: str,
         flow_json: dict[str, Any],
         project_id: str | None = None,
+        initial_variables: dict[str, Any] | None = None,
+        completion_event: asyncio.Event | None = None,
     ) -> None:
         stop_event = asyncio.Event()
         self._stop_events[execution_id] = stop_event
         task = asyncio.create_task(
-            self._execute(execution_id, client_id, flow_json, stop_event, project_id)
+            self._execute(execution_id, client_id, flow_json, stop_event, project_id, initial_variables or {}, completion_event)
         )
         self._tasks[execution_id] = task
         try:
             await task
         except asyncio.CancelledError:
-            pass
+            await self._finish_execution(execution_id, client_id, "stopped",
+                                         completion_event=completion_event)
         except Exception as e:
             logger.exception(f"Execution {execution_id} failed: {e}")
-            await self._finish_execution(execution_id, client_id, "error", str(e))
+            await self._finish_execution(execution_id, client_id, "error", str(e),
+                                         completion_event=completion_event)
         finally:
             self._tasks.pop(execution_id, None)
             self._stop_events.pop(execution_id, None)
@@ -58,11 +62,14 @@ class ExecutionEngine:
         flow_json: dict[str, Any],
         stop_event: asyncio.Event,
         project_id: str | None = None,
+        initial_variables: dict[str, Any] | None = None,
+        completion_event: asyncio.Event | None = None,
     ) -> None:
         graph = FlowGraph.from_x6_json(flow_json)
         current = graph.get_start_node()
         if not current:
-            await self._finish_execution(execution_id, client_id, "error", "No start node found")
+            await self._finish_execution(execution_id, client_id, "error", "No start node found",
+                                         completion_event=completion_event)
             return
 
         await self.ui_manager.broadcast_event("execution_started", {
@@ -80,8 +87,10 @@ class ExecutionEngine:
             ui_manager=self.ui_manager,
             session_factory=self.session_factory,
             project_id=project_id,
+            variables=dict(initial_variables) if initial_variables else {},
             stop_event=stop_event,
             log=log,
+            completion_event=completion_event,
         )
 
         visited_count: dict[str, int] = {}
@@ -90,11 +99,9 @@ class ExecutionEngine:
         while current and not stop_event.is_set():
             visited_count[current.id] = visited_count.get(current.id, 0) + 1
             if visited_count[current.id] > MAX_VISITS:
-                await self._finish_execution(execution_id, client_id, "error", "Infinite loop detected")
+                await self._finish_execution(execution_id, client_id, "error", "Infinite loop detected",
+                                             completion_event=completion_event)
                 return
-
-            if current.node_type == "end":
-                break
 
             await self.ui_manager.broadcast_event("execution_progress", {
                 "execution_id": execution_id,
@@ -119,7 +126,8 @@ class ExecutionEngine:
                 result = await handler.execute()
             except Exception as e:
                 logger.exception(f"Node {current.id} ({current.node_type}) failed: {e}")
-                await self._finish_execution(execution_id, client_id, "error", str(e))
+                await self._finish_execution(execution_id, client_id, "error", str(e),
+                                             completion_event=completion_event)
                 return
 
             await self.ui_manager.broadcast_event("execution_progress", {
@@ -132,8 +140,11 @@ class ExecutionEngine:
             next_nodes = graph.get_next_nodes(current.id, result.branch)
             current = next_nodes[0] if next_nodes else None
 
+        import json as _json
         status = "stopped" if stop_event.is_set() else "completed"
-        await self._finish_execution(execution_id, client_id, status, None, "\n".join(log))
+        result_json = _json.dumps(ctx.completion_result) if ctx.completion_result else None
+        await self._finish_execution(execution_id, client_id, status, None, "\n".join(log),
+                                     result_json=result_json, completion_event=completion_event)
 
     async def _finish_execution(
         self,
@@ -142,6 +153,8 @@ class ExecutionEngine:
         status: str,
         error: str | None = None,
         log: str = "",
+        result_json: str | None = None,
+        completion_event: asyncio.Event | None = None,
     ) -> None:
         async with self.session_factory() as db:
             from database import Execution
@@ -153,7 +166,11 @@ class ExecutionEngine:
                     execution.log = log
                 elif error:
                     execution.log = f"ERROR: {error}"
+                if result_json is not None:
+                    execution.result_json = result_json
                 await db.commit()
+        if completion_event and not completion_event.is_set():
+            completion_event.set()
 
         await self.ui_manager.broadcast_event("execution_finished", {
             "execution_id": execution_id,

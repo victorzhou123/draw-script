@@ -1,5 +1,8 @@
+import asyncio
 import base64
+import uuid
 
+from config import settings
 from engine.base_handler import BaseNodeHandler, NodeResult
 from engine.node_registry import NodeRegistry
 
@@ -9,21 +12,96 @@ class VisionNodeHandler(BaseNodeHandler):
     async def execute(self) -> NodeResult:
         data = self.ctx.node.data
         vision_type = data.get("vision_type", "template_match")
-        params = data.get("params", {})
+        params = dict(data.get("params", {}))
+        result_var = data.get("result_var", "").strip()
+        range_marker = data.get("range_marker", "").strip()
 
-        screenshot_b64 = self.ctx.variables.get("last_screenshot")
-        if not screenshot_b64:
-            return NodeResult(success=False, error="No screenshot in context. Add a Screenshot node before Vision.")
+        if not range_marker:
+            return NodeResult(success=False, error="Vision 节点需要选择检测范围（Box 标记）")
+
+        params["range_marker"] = range_marker
+
+        if vision_type == "template_match":
+            template_id = params.pop("template_id", "")
+            if template_id:
+                import os
+                from database import Template
+                async with self.ctx.session_factory() as session:
+                    tpl = await session.get(Template, template_id)
+                    if tpl:
+                        tpl_path = os.path.join(settings.templates_dir, tpl.filename)
+                        if os.path.isfile(tpl_path):
+                            with open(tpl_path, "rb") as fh:
+                                params["template_b64"] = base64.b64encode(fh.read()).decode()
+
+        request_id = str(uuid.uuid4())
+        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        self.ctx.ws_manager.pending_requests[request_id] = future
+
+        sent = await self.ctx.ws_manager.send_to_client(self.ctx.client_id, {
+            "type": "execute_node",
+            "node_id": self.ctx.node.id,
+            "request_id": request_id,
+            "node_type": vision_type,
+            "project_id": self.ctx.project_id,
+            "params": params,
+        })
+
+        if not sent:
+            return NodeResult(success=False, error=f"Client {self.ctx.client_id} not reachable")
 
         try:
-            screenshot_bytes = base64.b64decode(screenshot_b64)
-        except Exception:
-            return NodeResult(success=False, error="Invalid screenshot data")
+            result = await asyncio.wait_for(future, timeout=settings.node_timeout)
+        except asyncio.TimeoutError:
+            self.ctx.ws_manager.pending_requests.pop(request_id, None)
+            return NodeResult(success=False, error="Vision node timed out")
+
+        if not result.get("success", True):
+            return NodeResult(success=False, error=result.get("error", "Unknown error"))
+
+        output = result.get("output", {})
+
+        if vision_type == "template_match":
+            found = output.get("found", False)
+            location = output.get("location")
+            confidence = output.get("confidence", 0.0)
+
+            if result_var:
+                found_value = data.get("found_value", "")
+                not_found_value = data.get("not_found_value", "")
+                if found_value or not_found_value:
+                    self.ctx.variables[result_var] = found_value if found else not_found_value
+                else:
+                    if found and location:
+                        x, y = int(location.get("x", 0)), int(location.get("y", 0))
+                        self.ctx.variables[result_var] = f"{x},{y}"
+                    else:
+                        self.ctx.variables[result_var] = None
+
+            self.ctx.variables["last_vision_result"] = output
+            return NodeResult(success=True, output=output)
+
+        # OCR / AI vision / color detect: client returns cropped screenshot
+        screenshot_b64 = output.get("screenshot")
+        if not screenshot_b64:
+            return NodeResult(success=False, error="Vision node: client did not return screenshot")
+
+        screenshot_bytes = base64.b64decode(screenshot_b64)
 
         try:
             from cv.vision_engine import VisionEngine
-            result = await VisionEngine().analyze(vision_type, screenshot_bytes, params)
-            self.ctx.variables["last_vision_result"] = result.__dict__
-            return NodeResult(success=True, output=result.__dict__)
+            vision_result = await VisionEngine().analyze(vision_type, screenshot_bytes, params)
+            self.ctx.variables["last_vision_result"] = vision_result.__dict__
+
+            if result_var:
+                if vision_result.found and vision_result.location:
+                    x, y = int(vision_result.location.get("x", 0)), int(vision_result.location.get("y", 0))
+                    self.ctx.variables[result_var] = f"{x},{y}"
+                elif vision_result.text:
+                    self.ctx.variables[result_var] = vision_result.text
+                else:
+                    self.ctx.variables[result_var] = None
+
+            return NodeResult(success=True, output=vision_result.__dict__)
         except Exception as e:
             return NodeResult(success=False, error=str(e))

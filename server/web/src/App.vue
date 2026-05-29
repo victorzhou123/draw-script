@@ -4,11 +4,12 @@
       <!-- Toolbar -->
       <a-layout-header class="app-header">
         <Toolbar
-          @save="onSave"
+          :save-status="saveStatus"
           @undo="graphEditor?.undo()"
           @redo="graphEditor?.redo()"
           @open-projects="projectGroupDrawerOpen = true"
           @open-clients="clientsDrawerOpen = true"
+          @open-help="helpDrawerOpen = true"
         />
       </a-layout-header>
 
@@ -40,6 +41,7 @@
             @node-selected="onNodeSelected"
             @edge-selected="onEdgeSelected"
             @selection-cleared="selectedNode = null"
+            @graph-changed="triggerAutoSave"
           />
         </a-layout-content>
 
@@ -48,6 +50,7 @@
           <div v-if="selectedNode" class="right-sider">
             <PropertyPanel
               :selected-node="selectedNode"
+              :graph-cells="graphCells"
               @update="onNodeDataUpdate"
               @close="selectedNode = null"
             />
@@ -58,6 +61,7 @@
 
     <ProjectGroupDrawer :open="projectGroupDrawerOpen" @close="projectGroupDrawerOpen = false" />
     <ClientsDrawer :open="clientsDrawerOpen" @close="clientsDrawerOpen = false" />
+    <HelpDrawer :open="helpDrawerOpen" @close="helpDrawerOpen = false" />
   </a-config-provider>
 </template>
 
@@ -72,17 +76,42 @@ import ScriptSidebar from './components/ScriptSidebar.vue'
 import Toolbar from './components/Toolbar.vue'
 import ClientsDrawer from './components/ClientsDrawer.vue'
 import ProjectGroupDrawer from './components/ProjectGroupDrawer.vue'
+import HelpDrawer from './components/HelpDrawer.vue'
 import { useScriptStore } from './stores/scriptStore'
+import { useProjectStore } from './stores/projectStore'
 import { uiWS } from './services/websocket'
 
 const darkTheme = { algorithm: theme.darkAlgorithm }
 
 const scriptStore = useScriptStore()
+const projectStore = useProjectStore()
 const graphEditor = ref<InstanceType<typeof GraphEditor>>()
 const selectedNode = ref<{ id: string; data: any } | null>(null)
+const graphCells = ref<any[]>([])
 const clientsDrawerOpen = ref(false)
 const projectGroupDrawerOpen = ref(false)
+const helpDrawerOpen = ref(false)
 const leftTabKey = ref('scripts')
+const saveStatus = ref<'saving' | 'saved' | ''>('')
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+
+function refreshGraphCells() {
+  graphCells.value = graphEditor.value?.getJSON()?.cells ?? []
+}
+
+function triggerAutoSave() {
+  if (!scriptStore.currentScript) return
+  refreshGraphCells()
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(async () => {
+    saveStatus.value = 'saving'
+    const json = graphEditor.value?.getJSON()
+    if (json) await scriptStore.saveScript(json)
+    saveStatus.value = 'saved'
+    setTimeout(() => { if (saveStatus.value === 'saved') saveStatus.value = '' }, 2000)
+  }, 800)
+}
 
 onMounted(() => uiWS.connect())
 
@@ -95,12 +124,9 @@ async function onScriptSelected(id: string) {
     graphEditor.value?.loadJSON({ cells: [] })
   }
   leftTabKey.value = 'nodes'
-}
-
-function onSave() {
-  if (!scriptStore.currentScript) return
-  const json = graphEditor.value?.getJSON()
-  if (json) scriptStore.saveScript(json)
+  if (script.project_id) {
+    projectStore.fetchMarkers(script.project_id)
+  }
 }
 
 function onDragStart(shape: string, defaultData: object, event: MouseEvent) {
@@ -109,14 +135,18 @@ function onDragStart(shape: string, defaultData: object, event: MouseEvent) {
 
 function onNodeSelected(node: { id: string; data: any }) {
   selectedNode.value = node
+  refreshGraphCells()
 }
 
 function onEdgeSelected() {
   selectedNode.value = null
 }
 
-function onNodeDataUpdate(_data: any) {
-  // TODO: push updated data back to graph node
+function onNodeDataUpdate(nodeId: string, data: any) {
+  if (!nodeId) return
+  graphEditor.value?.updateNodeData(nodeId, data)
+  triggerAutoSave()
+  refreshGraphCells()
 }
 </script>
 
@@ -136,7 +166,7 @@ html, body, #app { height: 100%; background: #141414; }
 .graph-area { overflow: hidden; position: relative; background: #1a1a1a; }
 
 .right-sider {
-  width: 260px;
+  width: 340px;
   flex-shrink: 0;
   border-left: 1px solid #222;
   overflow: hidden;

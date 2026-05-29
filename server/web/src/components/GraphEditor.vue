@@ -20,14 +20,25 @@ const emit = defineEmits<{
   (e: 'nodeSelected', node: any): void
   (e: 'edgeSelected', edge: any): void
   (e: 'selectionCleared'): void
+  (e: 'graphChanged'): void
 }>()
 
 const containerEl = ref<HTMLElement>()
 const graph = shallowRef<Graph>()
 const dnd = shallowRef<Dnd>()
 const executionStore = useExecutionStore()
+const isLoadingGraph = ref(false)
+
+function onKeyDown(e: KeyboardEvent) {
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return
+  const el = e.target as HTMLElement
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) return
+  const cells = graph.value?.getSelectedCells() ?? []
+  if (cells.length) graph.value?.removeCells(cells)
+}
 
 onMounted(() => {
+  document.addEventListener('keydown', onKeyDown)
   if (!containerEl.value) return
 
   const g = new Graph({
@@ -41,6 +52,15 @@ onMounted(() => {
       allowBlank: false,
       allowLoop: false,
       snap: { radius: 20 },
+      validateConnection({ sourceCell, sourcePort, targetCell, targetPort }) {
+        if (!sourceCell || !targetCell) return false
+        return !g.getEdges().some(edge =>
+          edge.getSourceCellId() === sourceCell.id &&
+          edge.getSourcePortId() === sourcePort &&
+          edge.getTargetCellId() === targetCell.id &&
+          edge.getTargetPortId() === targetPort
+        )
+      },
       createEdge() {
         return g.createEdge({
           attrs: {
@@ -65,7 +85,7 @@ onMounted(() => {
 
   g.use(new History({ enabled: true }))
   g.use(new Snapline({ enabled: true }))
-  g.use(new Selection({ enabled: true, rubberband: true, showNodeSelectionBox: true }))
+  g.use(new Selection({ enabled: true, rubberband: true, showNodeSelectionBox: true, showEdgeSelectionBox: true }))
 
   // Show/hide ports on node hover
   g.on('node:mouseenter', ({ node }) => {
@@ -79,17 +99,36 @@ onMounted(() => {
     })
   })
 
-  g.on('node:click', ({ node }) => emit('nodeSelected', { id: node.id, data: node.getData() }))
-  g.on('edge:click', ({ edge }) => emit('edgeSelected', { id: edge.id, data: edge.getData() }))
-  g.on('blank:click', () => emit('selectionCleared'))
+  g.on('node:click', ({ node }) => {
+    g.cleanSelection()
+    g.select(node)
+    emit('nodeSelected', { id: node.id, data: node.getData() })
+  })
+  g.on('edge:click', ({ edge }) => {
+    g.cleanSelection()
+    g.select(edge)
+    emit('edgeSelected', { id: edge.id, data: edge.getData() })
+  })
+  g.on('blank:click', () => {
+    g.cleanSelection()
+    emit('selectionCleared')
+  })
   g.on('cell:removed', () => emit('selectionCleared'))
+
+  const onChanged = () => { if (!isLoadingGraph.value) emit('graphChanged') }
+  g.on('cell:added', onChanged)
+  g.on('cell:removed', onChanged)
+  g.on('node:moved', onChanged)
+  g.on('edge:connected', onChanged)
 
   graph.value = g
   dnd.value = new Dnd({ target: g, scaled: false })
+
 })
 
 onBeforeUnmount(() => {
   graph.value?.dispose()
+  document.removeEventListener('keydown', onKeyDown)
 })
 
 watch(() => executionStore.activeNodeId, (nodeId, prevNodeId) => {
@@ -108,8 +147,15 @@ function getJSON() {
 }
 
 function loadJSON(json: object) {
+  isLoadingGraph.value = true
   graph.value?.fromJSON(json)
   graph.value?.centerContent()
+  setTimeout(() => { isLoadingGraph.value = false }, 100)
+}
+
+function updateNodeData(nodeId: string, data: any) {
+  const node = graph.value?.getCellById(nodeId)
+  node?.setData(data, { overwrite: true })
 }
 
 function undo() { graph.value?.undo() }
@@ -124,7 +170,7 @@ function startDragNode(shape: string, data: object, event: MouseEvent) {
   dnd.value.start(node, event)
 }
 
-defineExpose({ getJSON, loadJSON, undo, redo, startDragNode })
+defineExpose({ getJSON, loadJSON, undo, redo, startDragNode, updateNodeData })
 </script>
 
 <style scoped>

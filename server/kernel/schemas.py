@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ── Project ──────────────────────────────────────────────────────────────────
@@ -47,6 +47,19 @@ class MarkerResponse(BaseModel):
 
 class SendMarkersRequest(BaseModel):
     client_id: str
+
+
+# ── Template ─────────────────────────────────────────────────────────────────
+
+class TemplateResponse(BaseModel):
+    id: str
+    project_id: str
+    name: str
+    filename: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 # ── Script ───────────────────────────────────────────────────────────────────
@@ -101,6 +114,7 @@ class ExecutionResponse(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     log: str
+    result_json: str | None = None
 
     class Config:
         from_attributes = True
@@ -110,10 +124,13 @@ class ExecutionResponse(BaseModel):
 
 class WebhookCreate(BaseModel):
     name: str
-    url: str
+    url: str = ""
     events: list[str] = []
     secret: str = ""
     enabled: bool = True
+    # inbound trigger: which script/client to run when /receive/{name} is called
+    script_id: str | None = None
+    client_id: str | None = None
 
 
 class WebhookUpdate(BaseModel):
@@ -122,6 +139,8 @@ class WebhookUpdate(BaseModel):
     events: list[str] | None = None
     secret: str | None = None
     enabled: bool | None = None
+    script_id: str | None = None
+    client_id: str | None = None
 
 
 class WebhookResponse(BaseModel):
@@ -131,6 +150,8 @@ class WebhookResponse(BaseModel):
     events: str
     secret: str
     enabled: bool
+    script_id: str | None = None
+    client_id: str | None = None
 
     class Config:
         from_attributes = True
@@ -138,6 +159,8 @@ class WebhookResponse(BaseModel):
 
 class RunScriptRequest(BaseModel):
     client_id: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    wait: bool = False
 
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────

@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
 
     engine = ExecutionEngine(client_ws_manager, ui_ws_manager, AsyncSessionLocal)
     scripts.set_engine(engine)
+    webhooks.set_engine(engine)
 
     from heartbeat import HeartbeatMonitor
     monitor = HeartbeatMonitor(client_ws_manager, ui_ws_manager)

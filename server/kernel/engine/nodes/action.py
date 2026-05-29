@@ -11,15 +11,19 @@ class ActionNodeHandler(BaseNodeHandler):
     async def execute(self) -> NodeResult:
         data = self.ctx.node.data
         action_type = data.get("action_type", "mouse_click")
-        params = data.get("params", {})
+        params = {k: self._interpolate(v) for k, v in data.get("params", {}).items()}
 
-        # Resolve server-side variables ($last_vision_result etc.) but NOT $markers.*
-        # Marker coords are stored on the client and must be resolved there with
-        # the current window position applied.
-        for coord in ("x", "y"):
-            val = params.get(coord)
-            if isinstance(val, str) and val.startswith("$") and not val.startswith("$markers."):
-                params[coord] = self._resolve_var(val)
+        # Resolve 'coords' param: "$varname" → "x,y" string → split into x/y integers.
+        # This is how vision results (template_match, ai_vision find, etc.) are consumed.
+        coords_val = params.get("coords")
+        if isinstance(coords_val, str) and "," in coords_val:
+            try:
+                cx, cy = coords_val.split(",", 1)
+                params["x"] = int(float(cx.strip()))
+                params["y"] = int(float(cy.strip()))
+            except (ValueError, AttributeError):
+                pass
+        params.pop("coords", None)
 
         request_id = str(uuid.uuid4())
         future: asyncio.Future = asyncio.get_event_loop().create_future()
@@ -58,3 +62,16 @@ class ActionNodeHandler(BaseNodeHandler):
             else:
                 return None
         return val
+
+    def _interpolate(self, value: any) -> any:
+        """Resolve $var references and {{var}} templates in string param values."""
+        if not isinstance(value, str):
+            return value
+        if value.startswith("$"):
+            resolved = self._resolve_var(value)
+            return resolved if resolved is not None else value
+        import re
+        def _replace(m):
+            resolved = self._resolve_var("$" + m.group(1).strip())
+            return str(resolved) if resolved is not None else m.group(0)
+        return re.sub(r"\{\{([^}]+)\}\}", _replace, value)

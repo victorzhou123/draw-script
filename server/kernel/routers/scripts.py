@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -91,14 +92,25 @@ async def run_script(
     await db.commit()
     await db.refresh(execution)
 
-    if _engine_ref:
+    flow = json.loads(script.flow_json) if script.flow_json else {}
+
+    if body.wait and _engine_ref:
+        from config import settings
+        completion_event = asyncio.Event()
+        asyncio.create_task(
+            _engine_ref.run_script(execution.id, script_id, body.client_id,
+                                   flow, script.project_id, body.params, completion_event)
+        )
+        try:
+            await asyncio.wait_for(completion_event.wait(), timeout=settings.run_timeout)
+        except asyncio.TimeoutError:
+            pass
+        await db.refresh(execution)
+    elif _engine_ref:
         background_tasks.add_task(
             _engine_ref.run_script,
-            execution.id,
-            script_id,
-            body.client_id,
-            json.loads(script.flow_json) if script.flow_json else {},
-            script.project_id,
+            execution.id, script_id, body.client_id,
+            flow, script.project_id, body.params,
         )
 
     return execution
