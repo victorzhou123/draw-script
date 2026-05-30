@@ -24,9 +24,6 @@ class HeartbeatMonitor:
         for client_id in self.client_ws.get_connected_ids():
             last = self.client_ws.get_last_heartbeat(client_id)
             if last and (now - last) > threshold:
-                logger.warning(f"Client {client_id} heartbeat timeout ({(now - last).seconds}s)")
-                await self.ui_ws.broadcast_event("client_status", {
-                    "client_id": client_id,
-                    "status": "timeout",
-                    "last_seen": last.isoformat(),
-                })
+                logger.warning(f"Client {client_id} heartbeat timeout ({(now - last).seconds}s), closing connection")
+                # close() triggers the ws.py receive loop which handles DB update + UI broadcast
+                await self.client_ws.close(client_id)

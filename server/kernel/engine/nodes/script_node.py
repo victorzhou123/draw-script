@@ -16,6 +16,13 @@ class ScriptNodeHandler(BaseNodeHandler):
         if not script_id:
             return NodeResult(success=False, error="Script node: no script_id configured")
 
+        if script_id in self.ctx.script_call_stack:
+            cycle = " → ".join(self.ctx.script_call_stack + [script_id])
+            return NodeResult(success=False, error=f"Script node: circular reference detected: {cycle}")
+
+        if len(self.ctx.script_call_stack) >= 10:
+            return NodeResult(success=False, error="Script node: call depth limit (10) exceeded")
+
         async with self.ctx.session_factory() as db:
             from database import Script
             script = await db.get(Script, script_id)
@@ -44,6 +51,7 @@ class ScriptNodeHandler(BaseNodeHandler):
             loop_stack=[],
             log=self.ctx.log,
             completion_event=None,
+            script_call_stack=self.ctx.script_call_stack + [script_id],
         )
 
         async def _log(message: str):

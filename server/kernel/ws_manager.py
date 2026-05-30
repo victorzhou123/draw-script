@@ -28,6 +28,16 @@ class ClientWSManager:
             self._connections.pop(client_id, None)
             self._heartbeats.pop(client_id, None)
 
+    async def close(self, client_id: str) -> None:
+        """Close the underlying WebSocket, triggering the ws.py receive loop to clean up."""
+        async with self._lock:
+            ws = self._connections.get(client_id)
+        if ws:
+            try:
+                await ws.close(code=1001)
+            except Exception:
+                pass
+
     def update_heartbeat(self, client_id: str) -> None:
         self._heartbeats[client_id] = datetime.utcnow()
 

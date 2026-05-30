@@ -609,7 +609,7 @@ def _type_text(text: str) -> None:
 # ── Async helper ──────────────────────────────────────────────────────────────
 
 def _run_blocking(fn, *args, **kwargs):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return loop.run_in_executor(None, lambda: fn(*args, **kwargs))
 
 
