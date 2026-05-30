@@ -37,17 +37,28 @@ class Marker(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     type: Mapped[str] = mapped_column(String, nullable=False)  # 'point' | 'box'
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    # Captured coordinates (relative to bound window, None until annotated)
-    x: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # NOTE: coordinate columns (x/y/w/h/window_*/captured_at) were added then removed;
+    # they may still exist in older DBs but are no longer used — see MarkerCapture.
+
+
+class MarkerCapture(Base):
+    """Per-client coordinates for a marker. Each client annotates independently."""
+    __tablename__ = "marker_captures"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    marker_id: Mapped[str] = mapped_column(String, ForeignKey("markers.id", ondelete="CASCADE"), nullable=False)
+    client_id: Mapped[str] = mapped_column(String, nullable=False)
+    # Relative coordinates (relative to bound window origin)
+    x: Mapped[int] = mapped_column(Integer, nullable=False)
+    y: Mapped[int] = mapped_column(Integer, nullable=False)
     w: Mapped[int | None] = mapped_column(Integer, nullable=True)
     h: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Window binding (client-side window the coords are relative to)
+    # Window binding (used by client to compute absolute coords at runtime)
     window_title: Mapped[str | None] = mapped_column(String, nullable=True)
     window_process: Mapped[str | None] = mapped_column(String, nullable=True)
     window_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
     window_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    captured_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class Script(Base):

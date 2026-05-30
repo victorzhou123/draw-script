@@ -78,30 +78,48 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
         window = msg.get("window")  # {title, process, x, y, w, h} or None
 
         if project_id and markers:
-            from database import Marker
+            from database import Marker, MarkerCapture
             from sqlalchemy import select
             async with AsyncSessionLocal() as db:
                 for m in markers:
                     name = m.get("name")
-                    if not name:
+                    x, y = m.get("x"), m.get("y")
+                    if not name or x is None or y is None:
                         continue
+                    # Look up marker definition
                     result = await db.execute(
                         select(Marker).where(Marker.project_id == project_id, Marker.name == name)
                     )
-                    marker = result.scalar_one_or_none()
-                    if marker:
-                        marker.x = m.get("x")
-                        marker.y = m.get("y")
-                        marker.w = m.get("w")
-                        marker.h = m.get("h")
-                        if window:
-                            marker.window_title = window.get("title")
-                            marker.window_process = window.get("process")
-                            marker.window_x = window.get("x")
-                            marker.window_y = window.get("y")
-                        marker.captured_at = datetime.now(timezone.utc)
+                    marker_row = result.scalar_one_or_none()
+                    if not marker_row:
+                        continue
+                    # Upsert: one capture row per (marker_id, client_id)
+                    cap_result = await db.execute(
+                        select(MarkerCapture).where(
+                            MarkerCapture.marker_id == marker_row.id,
+                            MarkerCapture.client_id == client_id,
+                        )
+                    )
+                    capture = cap_result.scalar_one_or_none()
+                    if capture:
+                        capture.x = x
+                        capture.y = y
+                        capture.w = m.get("w")
+                        capture.h = m.get("h")
+                        capture.captured_at = datetime.now(timezone.utc)
+                    else:
+                        capture = MarkerCapture(
+                            marker_id=marker_row.id, client_id=client_id,
+                            x=x, y=y, w=m.get("w"), h=m.get("h"),
+                        )
+                        db.add(capture)
+                    if window:
+                        capture.window_title = window.get("title")
+                        capture.window_process = window.get("process")
+                        capture.window_x = window.get("x")
+                        capture.window_y = window.get("y")
                 await db.commit()
-            logger.info(f"Saved {len(markers)} marker coordinates for project {project_id}")
+            logger.info(f"Saved {len(markers)} captures for client {client_id} / project {project_id}")
 
         count = len(markers)
         await ui_ws_manager.broadcast_event("markers_captured", {

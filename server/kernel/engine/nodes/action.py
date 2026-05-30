@@ -32,7 +32,9 @@ class ActionNodeHandler(BaseNodeHandler):
         marker_data: dict = {}
         if self.ctx.project_id:
             from engine.marker_loader import load_project_markers
-            marker_data = await load_project_markers(self.ctx.project_id, self.ctx.session_factory)
+            marker_data = await load_project_markers(
+                self.ctx.project_id, self.ctx.client_id, self.ctx.session_factory
+            )
 
         sent = await self.ctx.ws_manager.send_to_client(self.ctx.client_id, {
             "type": "execute_node",
