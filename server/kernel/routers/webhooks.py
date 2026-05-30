@@ -1,23 +1,17 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import Execution, Script, Webhook, get_session
+from dependencies import get_engine
 from schemas import WebhookCreate, WebhookResponse, WebhookUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
-
-_engine_ref = None
-
-
-def set_engine(engine):
-    global _engine_ref
-    _engine_ref = engine
 
 
 @router.get("", response_model=list[WebhookResponse])
@@ -114,15 +108,16 @@ async def receive_webhook(
         script_id=wh.script_id,
         client_id=wh.client_id,
         status="running",
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc),
     )
     db.add(execution)
     await db.commit()
     await db.refresh(execution)
 
-    if _engine_ref:
+    engine = get_engine(request)
+    if engine:
         background_tasks.add_task(
-            _engine_ref.run_script,
+            engine.run_script,
             execution.id,
             wh.script_id,
             wh.client_id,

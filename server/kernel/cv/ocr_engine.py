@@ -75,7 +75,7 @@ async def init_ocr_async() -> None:
     if _ocr_instance is not None or _ocr_loading:
         return
     _ocr_loading = True
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(_executor, _do_init)
 
 
@@ -85,7 +85,7 @@ async def reinit_ocr_async() -> None:
         return
     _ocr_instance = None
     _ocr_loading = True
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(_executor, _do_init)
 
 
@@ -196,7 +196,7 @@ def _do_ocr(screenshot_bytes: bytes, find_text: str | None) -> VisionResult:
 class OCREngine:
     async def recognize(self, screenshot: bytes, params: dict) -> VisionResult:
         find_text = params.get("find_text")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             return await loop.run_in_executor(_executor, _do_ocr, screenshot, find_text)
         except ImportError:

@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +19,7 @@ async def _upsert_client(client_id: str, name: str, platform: str) -> None:
             client.name = name
             client.platform = platform
             client.status = "idle"
-            client.last_seen = datetime.utcnow()
+            client.last_seen = datetime.now(timezone.utc)
         else:
             client = Client(id=client_id, name=name, platform=platform, status="idle")
             db.add(client)
@@ -31,7 +31,7 @@ async def _update_client_status(client_id: str, status: str) -> None:
         client = await db.get(Client, client_id)
         if client:
             client.status = status
-            client.last_seen = datetime.utcnow()
+            client.last_seen = datetime.now(timezone.utc)
             await db.commit()
 
 

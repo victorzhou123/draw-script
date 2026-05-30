@@ -48,7 +48,6 @@ class ScriptNodeHandler(BaseNodeHandler):
             project_id=self.ctx.project_id,
             variables=dict(self.ctx.variables),
             stop_event=self.ctx.stop_event,
-            loop_stack=[],
             log=self.ctx.log,
             completion_event=None,
             script_call_stack=self.ctx.script_call_stack + [script_id],

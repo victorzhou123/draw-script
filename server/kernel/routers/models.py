@@ -109,15 +109,23 @@ async def local_model_status():
 
 @router.post("/local/init")
 async def init_local_model():
-    from cv.ocr_engine import init_ocr_async
-    asyncio.create_task(init_ocr_async())
+    from cv.ocr_engine import init_ocr_async, get_ocr_status
+    from ws_manager import ui_ws_manager
+    async def _run():
+        await init_ocr_async()
+        await ui_ws_manager.broadcast_event("ocr_status_changed", {"paddleocr": get_ocr_status()})
+    asyncio.create_task(_run())
     return {"status": "initializing"}
 
 
 @router.post("/local/reinit")
 async def reinit_local_model():
-    from cv.ocr_engine import reinit_ocr_async
-    asyncio.create_task(reinit_ocr_async())
+    from cv.ocr_engine import reinit_ocr_async, get_ocr_status
+    from ws_manager import ui_ws_manager
+    async def _run():
+        await reinit_ocr_async()
+        await ui_ws_manager.broadcast_event("ocr_status_changed", {"paddleocr": get_ocr_status()})
+    asyncio.create_task(_run())
     return {"status": "reinitializing"}
 
 

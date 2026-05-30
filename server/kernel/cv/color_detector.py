@@ -48,7 +48,7 @@ class ColorDetector:
         color = params.get("color", "#FF0000")
         tolerance = int(params.get("tolerance", 20))
         mode = params.get("mode", "largest_contour")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             return await loop.run_in_executor(_executor, _do_detect, screenshot, color, tolerance, mode)
         except Exception as e:

@@ -2,14 +2,15 @@ import ast
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import Execution, Script, get_session
+from dependencies import get_engine
 from schemas import ExecutionResponse, RunScriptRequest, ScriptCreate, ScriptResponse, ScriptUpdate
 
 logger = logging.getLogger(__name__)
@@ -27,13 +28,6 @@ async def syntax_check(body: SyntaxCheckRequest):
         return {"ok": True}
     except SyntaxError as e:
         return {"ok": False, "line": e.lineno, "col": e.offset, "msg": e.msg}
-
-_engine_ref = None
-
-
-def set_engine(engine):
-    global _engine_ref
-    _engine_ref = engine
 
 
 @router.get("", response_model=list[ScriptResponse])
@@ -66,7 +60,7 @@ async def update_script(script_id: str, body: ScriptUpdate, db: AsyncSession = D
         raise HTTPException(404, "Script not found")
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(script, field, value)
-    script.updated_at = datetime.utcnow()
+    script.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(script)
     return script
@@ -87,6 +81,7 @@ async def run_script(
     script_id: str,
     body: RunScriptRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
     db: AsyncSession = Depends(get_session),
 ):
     script = await db.get(Script, script_id)
@@ -101,30 +96,31 @@ async def run_script(
         script_id=script_id,
         client_id=body.client_id,
         status="running",
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc),
     )
     db.add(execution)
     await db.commit()
     await db.refresh(execution)
 
     flow = json.loads(script.flow_json) if script.flow_json else {}
+    engine = get_engine(request)
 
-    if body.wait and _engine_ref:
+    if body.wait and engine:
         from config import settings
         completion_event = asyncio.Event()
         asyncio.create_task(
-            _engine_ref.run_script(execution.id, script_id, body.client_id,
-                                   flow, script.project_id, body.params, completion_event,
-                                   script_name=script.name)
+            engine.run_script(execution.id, script_id, body.client_id,
+                              flow, script.project_id, body.params, completion_event,
+                              script_name=script.name)
         )
         try:
             await asyncio.wait_for(completion_event.wait(), timeout=settings.run_timeout)
         except asyncio.TimeoutError:
             pass
         await db.refresh(execution)
-    elif _engine_ref:
+    elif engine:
         background_tasks.add_task(
-            _engine_ref.run_script,
+            engine.run_script,
             execution.id, script_id, body.client_id,
             flow, script.project_id, body.params, None, script.name,
         )
@@ -133,9 +129,10 @@ async def run_script(
 
 
 @router.post("/{script_id}/stop")
-async def stop_script(script_id: str, execution_id: str, db: AsyncSession = Depends(get_session)):
-    if _engine_ref:
-        await _engine_ref.stop_execution(execution_id)
+async def stop_script(script_id: str, execution_id: str, request: Request, db: AsyncSession = Depends(get_session)):
+    engine = get_engine(request)
+    if engine:
+        await engine.stop_execution(execution_id)
     return {"ok": True}
 
 

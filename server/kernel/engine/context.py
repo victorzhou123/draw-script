@@ -20,7 +20,6 @@ class ExecutionContext:
     project_id: str | None = None
     variables: dict[str, Any] = field(default_factory=dict)
     stop_event: asyncio.Event = field(default_factory=asyncio.Event)
-    loop_stack: list[dict] = field(default_factory=list)
     script_call_stack: list[str] = field(default_factory=list)
     log: list[str] = field(default_factory=list)
     completion_event: asyncio.Event | None = None

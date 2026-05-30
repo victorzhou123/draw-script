@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from config import settings
 
@@ -19,7 +19,7 @@ class HeartbeatMonitor:
 
     async def _check(self) -> None:
         threshold = timedelta(seconds=settings.heartbeat_timeout)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for client_id in self.client_ws.get_connected_ids():
             last = self.client_ws.get_last_heartbeat(client_id)

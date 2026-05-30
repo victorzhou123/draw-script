@@ -44,5 +44,5 @@ class TemplateMatchCV:
         if not template_b64:
             return VisionResult(found=False, raw={"error": "No template provided"})
         threshold = float(params.get("threshold", 0.8))
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(_executor, _do_match, screenshot, template_b64, threshold)

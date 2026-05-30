@@ -1,0 +1,243 @@
+<template>
+  <div>
+    <a-form-item label="操作类型">
+      <a-select v-model:value="d.action_type" @change="update()">
+        <a-select-option value="mouse_click">鼠标点击</a-select-option>
+        <a-select-option value="mouse_double_click">鼠标双击</a-select-option>
+        <a-select-option value="mouse_move">鼠标移动</a-select-option>
+        <a-select-option value="mouse_drag">鼠标拖拽</a-select-option>
+        <a-select-option value="keyboard_type">键盘输入</a-select-option>
+        <a-select-option value="keyboard_hotkey">按键 / 快捷键</a-select-option>
+        <a-select-option value="mouse_scroll">滚轮</a-select-option>
+      </a-select>
+    </a-form-item>
+
+    <template v-if="['mouse_click','mouse_double_click','mouse_move'].includes(d.action_type)">
+      <a-form-item label="坐标来源">
+        <a-radio-group v-model:value="coordSource" size="small" button-style="solid" @change="onCoordSourceChange">
+          <a-radio-button value="fixed">固定坐标</a-radio-button>
+          <a-radio-button value="marker">标记</a-radio-button>
+          <a-radio-button value="context">Context</a-radio-button>
+        </a-radio-group>
+      </a-form-item>
+
+      <template v-if="coordSource === 'fixed'">
+        <a-form-item label="X">
+          <a-input-number v-model:value="d.params.x" :style="{ width: '100%' }" placeholder="0" @change="update()" />
+        </a-form-item>
+        <a-form-item label="Y">
+          <a-input-number v-model:value="d.params.y" :style="{ width: '100%' }" placeholder="0" @change="update()" />
+        </a-form-item>
+      </template>
+
+      <template v-else-if="coordSource === 'marker'">
+        <a-form-item label="选择标记">
+          <a-select v-model:value="currentMarkerName" :style="{ flex: 1 }" placeholder="选择标记点" allow-clear @change="onMarkerSelect">
+            <a-select-option v-for="m in ctx.availableMarkers.value" :key="m.name" :value="m.name">
+              <span class="marker-menu-type" :class="`type-${m.type}`">{{ m.type === 'point' ? '点' : '框' }}</span>
+              {{ m.name }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:-6px">
+          当前项目暂无标记，请先在项目中添加标记
+        </div>
+      </template>
+
+      <template v-else-if="coordSource === 'context'">
+        <a-form-item label="Context 变量">
+          <a-select v-model:value="contextVarSelected" :style="{ width: '100%' }" placeholder="选择变量" allow-clear @change="onContextVarSelect">
+            <a-select-option v-for="f in ctx.contextFields.value" :key="f.name" :value="f.name">
+              <span class="ctx-dot" :class="f.certain ? 'certain' : 'conditional'" />
+              {{ f.name }}
+              <span v-if="!f.certain" class="ctx-warn">⚠ 条件分支</span>
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <div v-if="!ctx.contextFields.value.length" class="hint-text" style="margin-top:-6px">当前节点上游暂无 context 变量</div>
+      </template>
+
+      <a-form-item v-if="['mouse_click','mouse_double_click'].includes(d.action_type)" label="按键">
+        <a-select v-model:value="d.params.button" @change="update()">
+          <a-select-option value="left">左键</a-select-option>
+          <a-select-option value="right">右键</a-select-option>
+          <a-select-option value="middle">中键</a-select-option>
+        </a-select>
+      </a-form-item>
+    </template>
+
+    <template v-if="d.action_type === 'keyboard_type'">
+      <a-form-item label="文字来源">
+        <a-radio-group v-model:value="textSource" size="small" button-style="solid" @change="onTextSourceChange">
+          <a-radio-button value="manual">手动输入</a-radio-button>
+          <a-radio-button value="context">Context</a-radio-button>
+        </a-radio-group>
+      </a-form-item>
+      <template v-if="textSource === 'manual'">
+        <a-form-item label="文字内容">
+          <a-textarea v-model:value="d.params.text" :rows="3" @change="update()" />
+        </a-form-item>
+      </template>
+      <template v-else>
+        <a-form-item label="Context 变量">
+          <a-select v-model:value="textContextVar" :style="{ width: '100%' }" placeholder="选择变量" allow-clear @change="onTextContextVarSelect">
+            <a-select-option v-for="f in ctx.contextFields.value" :key="f.name" :value="f.name">
+              <span class="ctx-dot" :class="f.certain ? 'certain' : 'conditional'" />
+              {{ f.name }}
+              <span v-if="!f.certain" class="ctx-warn">⚠ 条件分支</span>
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <div v-if="!ctx.contextFields.value.length" class="hint-text" style="margin-top:-6px">当前节点上游暂无 context 变量</div>
+      </template>
+    </template>
+
+    <template v-if="d.action_type === 'keyboard_hotkey'">
+      <a-form-item label="按键 / 快捷键">
+        <div class="key-capture" :class="{ recording: isRecordingKey }" tabindex="0"
+          @focus="isRecordingKey = true" @blur="isRecordingKey = false" @keydown.prevent="onCaptureKeyDown">
+          <span v-if="isRecordingKey" class="key-hint">请按下按键…</span>
+          <span v-else-if="d.params.keys" class="key-value">{{ d.params.keys }}</span>
+          <span v-else class="key-placeholder">点击后按下按键</span>
+          <CloseCircleOutlined v-if="d.params.keys && !isRecordingKey" class="key-clear" @mousedown.prevent="clearKey" />
+        </div>
+      </a-form-item>
+    </template>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, watch, inject } from 'vue'
+import { CloseCircleOutlined } from '@ant-design/icons-vue'
+import { FORM_CTX } from './useFormContext'
+
+const ctx = inject(FORM_CTX)!
+const d = ctx.localData
+
+const coordSource = ref<'fixed' | 'marker' | 'context'>('fixed')
+const contextVarSelected = ref<string | undefined>(undefined)
+const currentMarkerName = ref<string | null>(null)
+const textSource = ref<'manual' | 'context'>('manual')
+const textContextVar = ref<string | undefined>(undefined)
+const isRecordingKey = ref(false)
+
+const KEY_MAP: Record<string, string> = {
+  ' ': 'space', Enter: 'enter', Backspace: 'backspace', Delete: 'delete',
+  Escape: 'esc', Tab: 'tab',
+  ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+  Home: 'home', End: 'end', PageUp: 'pageup', PageDown: 'pagedown',
+  Insert: 'insert', Control: 'ctrl', Alt: 'alt', Shift: 'shift', Meta: 'win',
+}
+
+watch(d, (data) => {
+  if (!data || data.type !== 'action') return
+  currentMarkerName.value = null
+  const params = data.params || {}
+  const coordsStr = String(params.coords || '')
+  const xStr = String(params.x || '')
+  const tplCoordsM = coordsStr.match(/^\{\{([^}]+)\}\}$/)
+  const tplMarkerM = xStr.match(/^\{\{markers\.([^.}]+)/)
+  if (coordsStr.startsWith('$') || tplCoordsM) {
+    coordSource.value = 'context'
+    contextVarSelected.value = tplCoordsM ? tplCoordsM[1].trim() : coordsStr.slice(1)
+  } else if (xStr.startsWith('$markers.') || tplMarkerM) {
+    coordSource.value = 'marker'
+    const m = tplMarkerM ?? xStr.match(/^\$markers\.([^.]+)/)
+    currentMarkerName.value = m ? m[1] : null
+    contextVarSelected.value = undefined
+  } else {
+    coordSource.value = 'fixed'
+    contextVarSelected.value = undefined
+  }
+  const textVal = String(params.text || '')
+  const tplTextM = textVal.match(/^\{\{([^}]+)\}\}$/)
+  if (textVal.startsWith('$') || tplTextM) {
+    textSource.value = 'context'
+    textContextVar.value = tplTextM ? tplTextM[1].trim() : textVal.slice(1)
+  } else {
+    textSource.value = 'manual'
+    textContextVar.value = undefined
+  }
+  isRecordingKey.value = false
+}, { immediate: true })
+
+function update() { ctx.emitUpdate() }
+
+function onCoordSourceChange() {
+  if (coordSource.value === 'fixed') {
+    d.value.params.coords = ''; d.value.params.x = ''; d.value.params.y = ''
+    currentMarkerName.value = null; contextVarSelected.value = undefined
+  } else if (coordSource.value === 'marker') {
+    d.value.params.coords = ''; d.value.params.x = ''; d.value.params.y = ''
+    contextVarSelected.value = undefined
+  } else {
+    d.value.params.x = ''; d.value.params.y = ''; d.value.params.coords = ''
+    currentMarkerName.value = null
+  }
+  update()
+}
+
+function onMarkerSelect(name: string | undefined) {
+  if (!name) { currentMarkerName.value = null; d.value.params.x = ''; d.value.params.y = ''; update(); return }
+  const marker = ctx.availableMarkers.value.find((m: any) => m.name === name)
+  if (!marker) return
+  currentMarkerName.value = marker.name
+  if (marker.type === 'point') {
+    d.value.params.x = `{{markers.${marker.name}.x}}`
+    d.value.params.y = `{{markers.${marker.name}.y}}`
+  } else {
+    d.value.params.x = `{{markers.${marker.name}.cx}}`
+    d.value.params.y = `{{markers.${marker.name}.cy}}`
+  }
+  update()
+}
+
+function onContextVarSelect(varName: string | undefined) {
+  contextVarSelected.value = varName
+  d.value.params.coords = varName ? `{{${varName}}}` : ''
+  update()
+}
+
+function onTextSourceChange() {
+  textContextVar.value = undefined; d.value.params.text = ''; update()
+}
+
+function onTextContextVarSelect(varName: string | undefined) {
+  textContextVar.value = varName
+  d.value.params.text = varName ? `{{${varName}}}` : ''
+  update()
+}
+
+function onCaptureKeyDown(e: KeyboardEvent) {
+  const mods: string[] = []
+  if (e.ctrlKey) mods.push('ctrl')
+  if (e.altKey) mods.push('alt')
+  if (e.shiftKey) mods.push('shift')
+  if (e.metaKey) mods.push('win')
+  const mainKey = KEY_MAP[e.key] ?? (e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase())
+  if (['ctrl', 'alt', 'shift', 'win'].includes(mainKey)) return
+  d.value.params.keys = [...mods, mainKey].join('+')
+  update()
+  isRecordingKey.value = false
+}
+
+function clearKey() { d.value.params.keys = ''; update() }
+</script>
+
+<style scoped>
+.hint-text { font-size: 11px; color: #444; margin-bottom: 8px; line-height: 1.5; }
+.ctx-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: middle; flex-shrink: 0; }
+.ctx-dot.certain { background: #52c41a; }
+.ctx-dot.conditional { background: #faad14; }
+.ctx-warn { font-size: 10px; color: #faad14; margin-left: 6px; vertical-align: middle; }
+.marker-menu-type { display: inline-block; font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-right: 6px; font-weight: 600; }
+.type-point { background: #111d2c; color: #1890ff; }
+.type-box { background: #2b2111; color: #faad14; }
+.key-capture { display: flex; align-items: center; min-height: 28px; padding: 3px 8px; background: #141414; border: 1px solid #434343; border-radius: 4px; cursor: pointer; outline: none; position: relative; transition: border-color 0.2s; }
+.key-capture:focus, .key-capture.recording { border-color: #1890ff; box-shadow: 0 0 0 2px rgba(24,144,255,0.2); }
+.key-hint { font-size: 11px; color: #1890ff; flex: 1; }
+.key-value { font-size: 12px; color: #d9d9d9; flex: 1; font-family: monospace; letter-spacing: 0.5px; }
+.key-placeholder { font-size: 11px; color: #444; flex: 1; }
+.key-clear { color: #555; font-size: 12px; cursor: pointer; flex-shrink: 0; }
+.key-clear:hover { color: #ff4d4f; }
+</style>

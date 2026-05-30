@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import WebSocket
@@ -21,7 +21,7 @@ class ClientWSManager:
     async def connect(self, client_id: str, ws: WebSocket) -> None:
         async with self._lock:
             self._connections[client_id] = ws
-            self._heartbeats[client_id] = datetime.utcnow()
+            self._heartbeats[client_id] = datetime.now(timezone.utc)
 
     async def disconnect(self, client_id: str) -> None:
         async with self._lock:
@@ -39,7 +39,7 @@ class ClientWSManager:
                 pass
 
     def update_heartbeat(self, client_id: str) -> None:
-        self._heartbeats[client_id] = datetime.utcnow()
+        self._heartbeats[client_id] = datetime.now(timezone.utc)
 
     def get_last_heartbeat(self, client_id: str) -> datetime | None:
         return self._heartbeats.get(client_id)

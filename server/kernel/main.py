@@ -20,18 +20,20 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
-    from cv.ocr_engine import should_autostart, init_ocr_async
-    if should_autostart():
-        logger.info("Auto-initializing PaddleOCR (previously initialized by user)")
-        asyncio.create_task(init_ocr_async())
-
     from engine.executor import ExecutionEngine
     from ws_manager import client_ws_manager, ui_ws_manager
+
+    from cv.ocr_engine import should_autostart, init_ocr_async, get_ocr_status
+    if should_autostart():
+        logger.info("Auto-initializing PaddleOCR (previously initialized by user)")
+        async def _init_ocr_and_notify():
+            await init_ocr_async()
+            await ui_ws_manager.broadcast_event("ocr_status_changed", {"paddleocr": get_ocr_status()})
+        asyncio.create_task(_init_ocr_and_notify())
     from database import AsyncSessionLocal
 
     engine = ExecutionEngine(client_ws_manager, ui_ws_manager, AsyncSessionLocal)
-    scripts.set_engine(engine)
-    webhooks.set_engine(engine)
+    app.state.engine = engine
 
     from heartbeat import HeartbeatMonitor
     monitor = HeartbeatMonitor(client_ws_manager, ui_ws_manager)

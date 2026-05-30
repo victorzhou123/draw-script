@@ -10,7 +10,7 @@ from engine.node_registry import NodeRegistry
 class ScreenshotNodeHandler(BaseNodeHandler):
     async def execute(self) -> NodeResult:
         request_id = str(uuid.uuid4())
-        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
         self.ctx.ws_manager.pending_requests[request_id] = future
 
         sent = await self.ctx.ws_manager.send_to_client(self.ctx.client_id, {

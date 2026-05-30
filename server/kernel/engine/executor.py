@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from engine.context import ExecutionContext
@@ -140,7 +140,7 @@ class ExecutionEngine:
             execution = await db.get(Execution, execution_id)
             if execution:
                 execution.status = status
-                execution.finished_at = datetime.utcnow()
+                execution.finished_at = datetime.now(timezone.utc)
                 if log:
                     execution.log = log
                 elif error:

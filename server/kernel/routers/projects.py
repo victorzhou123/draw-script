@@ -1,7 +1,7 @@
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -44,7 +44,7 @@ async def update_project(project_id: str, body: ProjectUpdate, db: AsyncSession 
         raise HTTPException(404, "Project not found")
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(project, field, value)
-    project.updated_at = datetime.utcnow()
+    project.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(project)
     return project
