@@ -74,8 +74,36 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
 
     elif msg_type == "markers_captured":
         project_id = msg.get("project_id")
-        count = len(msg.get("markers", []))
-        logger.info(f"Client {client_id} captured {count} markers for project {project_id}")
+        markers = msg.get("markers", [])
+        window = msg.get("window")  # {title, process, x, y, w, h} or None
+
+        if project_id and markers:
+            from database import Marker
+            from sqlalchemy import select
+            async with AsyncSessionLocal() as db:
+                for m in markers:
+                    name = m.get("name")
+                    if not name:
+                        continue
+                    result = await db.execute(
+                        select(Marker).where(Marker.project_id == project_id, Marker.name == name)
+                    )
+                    marker = result.scalar_one_or_none()
+                    if marker:
+                        marker.x = m.get("x")
+                        marker.y = m.get("y")
+                        marker.w = m.get("w")
+                        marker.h = m.get("h")
+                        if window:
+                            marker.window_title = window.get("title")
+                            marker.window_process = window.get("process")
+                            marker.window_x = window.get("x")
+                            marker.window_y = window.get("y")
+                        marker.captured_at = datetime.now(timezone.utc)
+                await db.commit()
+            logger.info(f"Saved {len(markers)} marker coordinates for project {project_id}")
+
+        count = len(markers)
         await ui_ws_manager.broadcast_event("markers_captured", {
             "client_id": client_id,
             "project_id": project_id,

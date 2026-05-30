@@ -39,6 +39,15 @@ class MarkerResponse(BaseModel):
     project_id: str
     name: str
     type: str
+    x: int | None = None
+    y: int | None = None
+    w: int | None = None
+    h: int | None = None
+    window_title: str | None = None
+    window_process: str | None = None
+    window_x: int | None = None
+    window_y: int | None = None
+    captured_at: datetime | None = None
     created_at: datetime
 
     class Config:

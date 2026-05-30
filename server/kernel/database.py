@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import AsyncGenerator
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -37,6 +37,17 @@ class Marker(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     type: Mapped[str] = mapped_column(String, nullable=False)  # 'point' | 'box'
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Captured coordinates (relative to bound window, None until annotated)
+    x: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    w: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    h: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Window binding (client-side window the coords are relative to)
+    window_title: Mapped[str | None] = mapped_column(String, nullable=True)
+    window_process: Mapped[str | None] = mapped_column(String, nullable=True)
+    window_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    window_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    captured_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Script(Base):
@@ -142,7 +153,16 @@ async def init_db() -> None:
             await conn.execute(text("ALTER TABLE executions ADD COLUMN result_json TEXT"))
         except Exception:
             pass
-        # templates table is created by Base.metadata.create_all above (no ALTER needed)
+        # Marker coordinate columns
+        for col, coltype in [
+            ("x", "INTEGER"), ("y", "INTEGER"), ("w", "INTEGER"), ("h", "INTEGER"),
+            ("window_title", "TEXT"), ("window_process", "TEXT"),
+            ("window_x", "INTEGER"), ("window_y", "INTEGER"), ("captured_at", "TEXT"),
+        ]:
+            try:
+                await conn.execute(text(f"ALTER TABLE markers ADD COLUMN {col} {coltype}"))
+            except Exception:
+                pass
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

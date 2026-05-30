@@ -117,7 +117,31 @@ def _select_window() -> dict | None:
 
 # ── Marker lookup ─────────────────────────────────────────────────────────────
 
+def _resolve_window_offset(relative: dict) -> dict:
+    """Apply window offset to relative marker coordinates, return absolute coords."""
+    win_title = relative.get("window_title")
+    win_process = relative.get("window_process", "")
+    if win_title:
+        win = _find_window(win_title, win_process)
+        if win:
+            win_x, win_y = win["x"], win["y"]
+            try:
+                _activate_window(win["hwnd"])
+            except Exception:
+                pass
+        else:
+            logger.warning(f"Window '{win_title}' not found; using stored position")
+            win_x = relative.get("window_x", 0)
+            win_y = relative.get("window_y", 0)
+        abs_m = dict(relative)
+        abs_m["x"] = relative["x"] + win_x
+        abs_m["y"] = relative["y"] + win_y
+        return _add_center(abs_m)
+    return _add_center(dict(relative))
+
+
 def get_marker(project_id: str, name: str) -> dict | None:
+    """Look up a marker from local markers.json (fallback for legacy data)."""
     data = _load_markers()
     project_data = data.get(project_id, {})
     marker = project_data.get(name)
@@ -126,20 +150,23 @@ def get_marker(project_id: str, name: str) -> dict | None:
     window = project_data.get("_window")
     if not window:
         return _add_center(marker)
-    win = _find_window(window["title"], window["process"])
-    if win:
-        win_x, win_y = win["x"], win["y"]
-        try:
-            _activate_window(win["hwnd"])
-        except Exception:
-            pass
-    else:
-        logger.warning(f"Window '{window['title']}' not found; using stored position")
-        win_x, win_y = window.get("x", 0), window.get("y", 0)
-    abs_marker = dict(marker)
-    abs_marker["x"] = marker["x"] + win_x
-    abs_marker["y"] = marker["y"] + win_y
-    return _add_center(abs_marker)
+    # Build a combined dict matching the server format for _resolve_window_offset
+    combined = dict(marker)
+    combined.update({
+        "window_title": window["title"],
+        "window_process": window["process"],
+        "window_x": window.get("x", 0),
+        "window_y": window.get("y", 0),
+    })
+    return _resolve_window_offset(combined)
+
+
+def _get_marker_from_server(name: str, server_markers: dict) -> dict | None:
+    """Resolve a marker from server-provided data (DB coordinates)."""
+    m = server_markers.get(name)
+    if not m or m.get("x") is None:
+        return None
+    return _resolve_window_offset(m)
 
 
 def _add_center(marker: dict) -> dict:
@@ -150,18 +177,37 @@ def _add_center(marker: dict) -> dict:
     return m
 
 
-def _resolve_marker_params(params: dict, project_id: str) -> dict:
+import re as _re
+
+def _resolve_marker_params(params: dict, project_id: str, server_markers: dict | None = None) -> dict:
+    """Resolve $markers.* and {{markers.*}} references.
+
+    Prefers server_markers (DB coordinates) over local markers.json.
+    """
     resolved = {}
     for k, v in params.items():
-        if isinstance(v, str) and v.startswith("$markers."):
+        if not isinstance(v, str):
+            resolved[k] = v
+            continue
+        # {{markers.name.field}} format (used by PropertyPanel coord picker)
+        tpl = _re.match(r'^\{\{markers\.([^.}]+)\.([^}]+)\}\}$', v)
+        if tpl:
+            marker_name, field = tpl.group(1), tpl.group(2)
+            m = (_get_marker_from_server(marker_name, server_markers) if server_markers
+                 else get_marker(project_id, marker_name))
+            resolved[k] = m.get(field) if m else None
+            continue
+        # $markers.name.field format (legacy)
+        if v.startswith("$markers."):
             parts = v[len("$markers."):].split(".", 1)
             if len(parts) == 2:
-                m = get_marker(project_id, parts[0])
+                m = (_get_marker_from_server(parts[0], server_markers) if server_markers
+                     else get_marker(project_id, parts[0]))
                 resolved[k] = m.get(parts[1]) if m else None
             else:
                 resolved[k] = None
-        else:
-            resolved[k] = v
+            continue
+        resolved[k] = v
     return resolved
 
 
@@ -648,7 +694,15 @@ class CommandHandler:
             return
         logger.info(f"Starting annotation for '{project_name}' ({len(markers)} markers)")
         results = await _run_blocking(_run_annotation, project_id, project_name, markers)
-        await self._send({"type": "markers_captured", "project_id": project_id, "markers": results})
+        # Include window binding so server can persist it for cross-device sync
+        saved = _load_markers()
+        window_info = saved.get(project_id, {}).get("_window")
+        await self._send({
+            "type": "markers_captured",
+            "project_id": project_id,
+            "markers": results,
+            "window": window_info,
+        })
 
     async def handle_capture_screenshot(self, msg: dict) -> None:
         request_id = msg.get("request_id")
@@ -664,15 +718,18 @@ class CommandHandler:
             await self._send({"type": "error", "request_id": request_id, "message": str(e)})
 
     async def handle_execute_node(self, msg: dict) -> None:
-        node_type  = msg.get("node_type")
-        params     = dict(msg.get("params", {}))
-        project_id = msg.get("project_id", "")
-        request_id = msg.get("request_id") or msg.get("node_id")
-        if project_id:
-            params = _resolve_marker_params(params, project_id)
+        node_type     = msg.get("node_type")
+        params        = dict(msg.get("params", {}))
+        project_id    = msg.get("project_id", "")
+        request_id    = msg.get("request_id") or msg.get("node_id")
+        server_markers = msg.get("_markers")  # DB coordinates from server (authoritative)
+        if project_id or server_markers:
+            params = _resolve_marker_params(params, project_id, server_markers)
         try:
             if node_type in ("template_match", "ocr", "ai_vision", "color_detect"):
-                success, output, error = await self._execute_vision(node_type, params, project_id)
+                success, output, error = await self._execute_vision(
+                    node_type, params, project_id, server_markers
+                )
             else:
                 success, output, error = await self._execute_action(node_type, params)
         except Exception as e:
@@ -738,16 +795,24 @@ class CommandHandler:
 
         return False, {}, f"Unknown action_type: {action_type}"
 
-    async def _execute_vision(self, vision_type: str, params: dict, project_id: str) -> tuple[bool, dict, str | None]:
+    async def _execute_vision(
+        self, vision_type: str, params: dict, project_id: str,
+        server_markers: dict | None = None,
+    ) -> tuple[bool, dict, str | None]:
         import pyautogui
 
         range_marker_name = params.get("range_marker", "").strip()
         if not range_marker_name:
             return False, {}, "Vision node: no range_marker specified"
 
-        marker = get_marker(project_id, range_marker_name) if project_id else None
+        # Prefer server-provided coordinates (single source of truth)
+        if server_markers:
+            marker = _get_marker_from_server(range_marker_name, server_markers)
+        else:
+            marker = get_marker(project_id, range_marker_name) if project_id else None
         if not marker:
-            return False, {}, f"Vision node: marker '{range_marker_name}' not found for project '{project_id}'"
+            hint = "请先完成标记标注" if server_markers is not None else f"project '{project_id}'"
+            return False, {}, f"Vision node: marker '{range_marker_name}' not found ({hint})"
 
         mx = int(marker.get("x", 0))
         my = int(marker.get("y", 0))

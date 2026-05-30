@@ -29,6 +29,11 @@ class ActionNodeHandler(BaseNodeHandler):
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         self.ctx.ws_manager.pending_requests[request_id] = future
 
+        marker_data: dict = {}
+        if self.ctx.project_id:
+            from engine.marker_loader import load_project_markers
+            marker_data = await load_project_markers(self.ctx.project_id, self.ctx.session_factory)
+
         sent = await self.ctx.ws_manager.send_to_client(self.ctx.client_id, {
             "type": "execute_node",
             "node_id": self.ctx.node.id,
@@ -36,6 +41,7 @@ class ActionNodeHandler(BaseNodeHandler):
             "node_type": action_type,
             "project_id": self.ctx.project_id,
             "params": params,
+            "_markers": marker_data,
         })
 
         if not sent:
