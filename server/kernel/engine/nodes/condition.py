@@ -27,7 +27,7 @@ class ConditionNodeHandler(BaseNodeHandler):
         if condition_type == "variable_compare":
             var_path = params.get("variable", "")
             operator = params.get("operator", "==")
-            expected = params.get("value")
+            expected = self._resolve_value(params.get("value"))
             actual = self._get_var(var_path)
             return self._compare(actual, operator, expected)
 
@@ -37,6 +37,11 @@ class ConditionNodeHandler(BaseNodeHandler):
             return self._compare(status, params.get("operator", "=="), int(params.get("value", 200)))
 
         return False
+
+    def _resolve_value(self, value):
+        if isinstance(value, str) and value.startswith("{{") and value.endswith("}}"):
+            return self._get_var(value[2:-2].strip())
+        return value
 
     def _get_var(self, path: str):
         parts = path.split(".")

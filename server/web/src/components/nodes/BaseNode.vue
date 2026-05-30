@@ -1,7 +1,9 @@
 <template>
   <div class="draw-node" :class="[`node-type-${nodeType}`, { 'node-active': isActive }]">
-    <component :is="iconComp" class="node-icon" />
-    <div class="node-label">{{ displayLabel }}</div>
+    <div class="node-inner">
+      <component :is="iconComp" class="node-icon" />
+      <div class="node-label">{{ displayLabel }}</div>
+    </div>
   </div>
 </template>
 
@@ -61,11 +63,17 @@ const isActive = computed(() => {
   transition: all 0.18s;
   user-select: none;
 }
-.draw-node:hover { box-shadow: 0 0 0 2px rgba(255,255,255,0.1); }
-.draw-node.node-active {
+.draw-node:not(.node-type-condition):hover { box-shadow: 0 0 0 2px rgba(255,255,255,0.1); }
+.draw-node.node-active:not(.node-type-condition) {
   border-color: #52c41a;
   box-shadow: 0 0 14px rgba(82,196,26,0.55);
   animation: pulse 1.2s infinite;
+}
+.node-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 .node-icon {
   font-size: 18px;
@@ -102,9 +110,32 @@ const isActive = computed(() => {
 .node-type-vision { border-color: #722ed1; background: #1a0a2e; }
 .node-type-vision .node-icon, .node-type-vision .node-label { color: #9254de; }
 
-.node-type-condition { border-color: #faad14; background: #2b2111; transform: rotate(45deg); }
+.node-type-condition {
+  background: transparent;
+  border: none;
+  position: relative;
+}
+.node-type-condition::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #2b2111;
+  border: 1.5px solid #faad14;
+  border-radius: 8px;
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+.node-type-condition:hover::before {
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.1);
+}
+.node-type-condition.node-active::before {
+  border-color: #52c41a;
+  box-shadow: 0 0 14px rgba(82,196,26,0.55);
+  animation: pulse 1.2s infinite;
+}
+.node-type-condition .node-inner { position: relative; z-index: 1; }
 .node-type-condition .node-icon,
-.node-type-condition .node-label { color: #faad14; transform: rotate(-45deg); }
+.node-type-condition .node-label { color: #faad14; }
 
 .node-type-delay { border-color: #fa8c16; background: #2b1d11; }
 .node-type-delay .node-icon, .node-type-delay .node-label { color: #fa8c16; }

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -8,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from database import init_db
-from routers import clients, projects, scripts, webhooks, ws
+from routers import clients, models, projects, scripts, webhooks, ws
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,6 +19,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
+
+    from cv.ocr_engine import should_autostart, init_ocr_async
+    if should_autostart():
+        logger.info("Auto-initializing PaddleOCR (previously initialized by user)")
+        asyncio.create_task(init_ocr_async())
 
     from engine.executor import ExecutionEngine
     from ws_manager import client_ws_manager, ui_ws_manager
@@ -29,7 +35,6 @@ async def lifespan(app: FastAPI):
 
     from heartbeat import HeartbeatMonitor
     monitor = HeartbeatMonitor(client_ws_manager, ui_ws_manager)
-    import asyncio
     heartbeat_task = asyncio.create_task(monitor.run())
 
     logger.info(f"Draw-Script server started on {settings.host}:{settings.port}")
@@ -56,6 +61,7 @@ app.include_router(scripts.router, prefix="/api")
 app.include_router(clients.router, prefix="/api")
 app.include_router(webhooks.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
+app.include_router(models.router, prefix="/api")
 app.include_router(ws.router)
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")

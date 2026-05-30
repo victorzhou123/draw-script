@@ -1,4 +1,6 @@
 import base64
+import json
+import re
 
 import httpx
 
@@ -7,9 +9,18 @@ from cv.vision_engine import VisionResult
 
 
 class AIVisionEngine:
-    async def analyze(self, screenshot: bytes, params: dict) -> VisionResult:
-        if not settings.ai_api_key:
-            return VisionResult(found=False, raw={"error": "AI API key not configured (DS_AI_API_KEY)"})
+    async def analyze(self, screenshot: bytes, params: dict, model_config: dict | None = None) -> VisionResult:
+        if model_config:
+            api_key = model_config.get("api_key") or settings.ai_api_key
+            base_url = model_config.get("base_url") or settings.ai_base_url
+            model_name = model_config.get("model_name") or settings.ai_model
+        else:
+            api_key = settings.ai_api_key
+            base_url = settings.ai_base_url
+            model_name = settings.ai_model
+
+        if not api_key:
+            return VisionResult(found=False, raw={"error": "AI API key not configured"})
 
         prompt = params.get("prompt", "Describe what you see in this screenshot.")
         mode = params.get("mode", "describe")
@@ -36,17 +47,15 @@ class AIVisionEngine:
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
-                    f"{settings.ai_base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {settings.ai_api_key}"},
-                    json={"model": settings.ai_model, "messages": messages},
+                    f"{base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={"model": model_name, "messages": messages},
                     timeout=60,
                 )
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
 
             if mode == "find":
-                import json
-                import re
                 json_match = re.search(r'\{.*\}', content, re.DOTALL)
                 if json_match:
                     result = json.loads(json_match.group())

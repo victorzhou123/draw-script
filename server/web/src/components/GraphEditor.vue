@@ -30,6 +30,10 @@ const executionStore = useExecutionStore()
 const isLoadingGraph = ref(false)
 
 function onKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Space' || e.code === 'Space') {
+    graph.value?.disableRubberband()
+    return
+  }
   if (e.key !== 'Delete' && e.key !== 'Backspace') return
   const el = e.target as HTMLElement
   if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) return
@@ -37,8 +41,15 @@ function onKeyDown(e: KeyboardEvent) {
   if (cells.length) graph.value?.removeCells(cells)
 }
 
+function onKeyUp(e: KeyboardEvent) {
+  if (e.key === 'Space' || e.code === 'Space') {
+    graph.value?.enableRubberband()
+  }
+}
+
 onMounted(() => {
   document.addEventListener('keydown', onKeyDown)
+  document.addEventListener('keyup', onKeyUp)
   if (!containerEl.value) return
 
   const g = new Graph({
@@ -87,17 +98,36 @@ onMounted(() => {
   g.use(new Snapline({ enabled: true }))
   g.use(new Selection({ enabled: true, rubberband: true, showNodeSelectionBox: true, showEdgeSelectionBox: true }))
 
-  // Show/hide ports on node hover
-  g.on('node:mouseenter', ({ node }) => {
-    node.getPorts().forEach(port => {
-      node.portProp(port.id!, 'attrs/circle/visibility', 'visible')
+  // Track which node currently has visible ports.
+  // node:mouseleave is unreliable after a click because X6's selection box
+  // overlay intercepts mouse events, so we also hide via blank:mousemove
+  // and edge:mouseenter, and clear other nodes' ports on node:mouseenter.
+  let portNode: any = null
+
+  function showPorts(node: any) {
+    if (portNode && portNode.id !== node.id) {
+      portNode.getPorts().forEach((p: any) => {
+        portNode.portProp(p.id!, 'attrs/circle/visibility', 'hidden')
+      })
+    }
+    node.getPorts().forEach((p: any) => {
+      node.portProp(p.id!, 'attrs/circle/visibility', 'visible')
     })
-  })
-  g.on('node:mouseleave', ({ node }) => {
-    node.getPorts().forEach(port => {
-      node.portProp(port.id!, 'attrs/circle/visibility', 'hidden')
+    portNode = node
+  }
+
+  function hidePorts() {
+    if (!portNode) return
+    portNode.getPorts().forEach((p: any) => {
+      portNode.portProp(p.id!, 'attrs/circle/visibility', 'hidden')
     })
-  })
+    portNode = null
+  }
+
+  g.on('node:mouseenter', ({ node }) => showPorts(node))
+  g.on('node:mouseleave', ({ node }) => { if (portNode?.id === node.id) hidePorts() })
+  g.on('blank:mousemove', hidePorts)
+  g.on('edge:mouseenter', hidePorts)
 
   g.on('node:click', ({ node }) => {
     g.cleanSelection()
@@ -119,7 +149,22 @@ onMounted(() => {
   g.on('cell:added', onChanged)
   g.on('cell:removed', onChanged)
   g.on('node:moved', onChanged)
-  g.on('edge:connected', onChanged)
+  g.on('edge:connected', ({ edge }) => {
+    const sourceNode = edge.getSourceNode()
+    const sourcePort = edge.getSourcePortId()
+    edge.setLabels([])
+    if (sourceNode?.shape === 'node-condition' && (sourcePort === 'true' || sourcePort === 'false')) {
+      const isTrue = sourcePort === 'true'
+      edge.appendLabel({
+        attrs: {
+          text: { text: isTrue ? 'Yes' : 'No', fill: isTrue ? '#52c41a' : '#ff4d4f', fontSize: 11, fontWeight: 'bold' },
+          rect: { fill: 'rgba(26,26,26,0.85)', stroke: 'none', rx: 3, ry: 3 },
+        },
+        position: { distance: 0.4 },
+      })
+    }
+    onChanged()
+  })
 
   graph.value = g
   dnd.value = new Dnd({ target: g, scaled: false })
@@ -129,6 +174,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   graph.value?.dispose()
   document.removeEventListener('keydown', onKeyDown)
+  document.removeEventListener('keyup', onKeyUp)
 })
 
 watch(() => executionStore.activeNodeId, (nodeId, prevNodeId) => {
@@ -143,13 +189,26 @@ watch(() => executionStore.activeNodeId, (nodeId, prevNodeId) => {
 })
 
 function getJSON() {
-  return graph.value?.toJSON() ?? { cells: [] }
+  const json = graph.value?.toJSON() ?? { cells: [] }
+  // Strip ephemeral port visibility so it's never persisted.
+  for (const cell of (json.cells ?? []) as any[]) {
+    for (const port of cell.ports?.items ?? []) {
+      if (port.attrs?.circle) delete port.attrs.circle.visibility
+    }
+  }
+  return json
 }
 
 function loadJSON(json: object) {
   isLoadingGraph.value = true
   graph.value?.fromJSON(json)
   graph.value?.centerContent()
+  // Port visibility is serialized in JSON; reset all to hidden after load.
+  graph.value?.getNodes().forEach(node => {
+    node.getPorts().forEach(port => {
+      node.portProp(port.id!, 'attrs/circle/visibility', 'hidden')
+    })
+  })
   setTimeout(() => { isLoadingGraph.value = false }, 100)
 }
 

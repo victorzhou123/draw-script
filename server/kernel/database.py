@@ -107,6 +107,21 @@ class Webhook(Base):
     client_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class AIModelConfig(Base):
+    __tablename__ = "ai_model_configs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    type: Mapped[str] = mapped_column(String, nullable=False)       # "local" | "third_party"
+    provider: Mapped[str] = mapped_column(String, nullable=False)   # "paddleocr" | "qwen" | "glm"
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    api_key: Mapped[str] = mapped_column(String, default="")
+    base_url: Mapped[str] = mapped_column(String, default="")
+    model_name: Mapped[str] = mapped_column(String, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

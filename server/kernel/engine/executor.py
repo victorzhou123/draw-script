@@ -4,8 +4,8 @@ from datetime import datetime
 from typing import Any
 
 from engine.context import ExecutionContext
-from engine.flow_graph import FlowGraph
-from engine.node_registry import NodeRegistry
+from engine.flow_graph import FlowGraph, FlowNode
+from engine.runner import run_branch
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +27,12 @@ class ExecutionEngine:
         project_id: str | None = None,
         initial_variables: dict[str, Any] | None = None,
         completion_event: asyncio.Event | None = None,
+        script_name: str = "",
     ) -> None:
         stop_event = asyncio.Event()
         self._stop_events[execution_id] = stop_event
         task = asyncio.create_task(
-            self._execute(execution_id, client_id, flow_json, stop_event, project_id, initial_variables or {}, completion_event)
+            self._execute(execution_id, client_id, flow_json, stop_event, project_id, initial_variables or {}, completion_event, script_name)
         )
         self._tasks[execution_id] = task
         try:
@@ -64,6 +65,7 @@ class ExecutionEngine:
         project_id: str | None = None,
         initial_variables: dict[str, Any] | None = None,
         completion_event: asyncio.Event | None = None,
+        script_name: str = "",
     ) -> None:
         graph = FlowGraph.from_x6_json(flow_json)
         current = graph.get_start_node()
@@ -78,6 +80,14 @@ class ExecutionEngine:
         })
 
         log: list[str] = []
+        separator = "-" * 40
+        sep_entry = f"{separator}\n开始执行：{script_name or execution_id}"
+        log.append(sep_entry)
+        await self.ui_manager.broadcast_event("execution_log", {
+            "execution_id": execution_id,
+            "client_id": client_id,
+            "message": sep_entry,
+        })
         ctx = ExecutionContext(
             execution_id=execution_id,
             client_id=client_id,
@@ -94,57 +104,26 @@ class ExecutionEngine:
         )
 
         visited_count: dict[str, int] = {}
-        MAX_VISITS = 1000
-
-        while current and not stop_event.is_set():
-            visited_count[current.id] = visited_count.get(current.id, 0) + 1
-            if visited_count[current.id] > MAX_VISITS:
-                await self._finish_execution(execution_id, client_id, "error", "Infinite loop detected",
-                                             completion_event=completion_event)
-                return
-
-            await self.ui_manager.broadcast_event("execution_progress", {
-                "execution_id": execution_id,
-                "client_id": client_id,
-                "node_id": current.id,
-                "node_type": current.node_type,
-                "status": "running",
-            })
-
-            ctx.node = current
-            log_entry = f"[{current.node_type}] node {current.id}"
-            log.append(log_entry)
-            await self.ui_manager.broadcast_event("execution_log", {
-                "execution_id": execution_id,
-                "client_id": client_id,
-                "message": log_entry,
-            })
-
-            try:
-                handler_cls = NodeRegistry.get_handler(current.node_type)
-                handler = handler_cls(ctx)
-                result = await handler.execute()
-            except Exception as e:
-                logger.exception(f"Node {current.id} ({current.node_type}) failed: {e}")
-                await self._finish_execution(execution_id, client_id, "error", str(e),
-                                             completion_event=completion_event)
-                return
-
-            await self.ui_manager.broadcast_event("execution_progress", {
-                "execution_id": execution_id,
-                "client_id": client_id,
-                "node_id": current.id,
-                "status": "done" if result.success else "error",
-            })
-
-            next_nodes = graph.get_next_nodes(current.id, result.branch)
-            current = next_nodes[0] if next_nodes else None
+        error = await self._run_branch(ctx, current, visited_count, script_name)
 
         import json as _json
-        status = "stopped" if stop_event.is_set() else "completed"
-        result_json = _json.dumps(ctx.completion_result) if ctx.completion_result else None
-        await self._finish_execution(execution_id, client_id, status, None, "\n".join(log),
-                                     result_json=result_json, completion_event=completion_event)
+        if error:
+            await self._finish_execution(execution_id, client_id, "error", error, "\n".join(log),
+                                         completion_event=completion_event)
+        else:
+            status = "stopped" if stop_event.is_set() else "completed"
+            result_json = _json.dumps(ctx.completion_result) if ctx.completion_result else None
+            await self._finish_execution(execution_id, client_id, status, None, "\n".join(log),
+                                         result_json=result_json, completion_event=completion_event)
+
+    async def _run_branch(
+        self,
+        ctx: ExecutionContext,
+        start_node: FlowNode,
+        visited_count: dict[str, int],
+        script_name: str,
+    ) -> str | None:
+        return await run_branch(ctx, start_node, visited_count, script_name)
 
     async def _finish_execution(
         self,

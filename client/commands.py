@@ -695,6 +695,12 @@ class CommandHandler:
                                 clicks=int(params.get("clicks",1)))
             return True, {"x": x, "y": y}, None
 
+        if action_type == "mouse_double_click":
+            x, y = int(params.get("x", 0)), int(params.get("y", 0))
+            await _run_blocking(pyautogui.doubleClick, x, y,
+                                button=params.get("button","left"))
+            return True, {"x": x, "y": y}, None
+
         if action_type == "mouse_move":
             x, y = int(params.get("x", 0)), int(params.get("y", 0))
             await _run_blocking(pyautogui.moveTo, x, y, duration=float(params.get("duration",0.2)))

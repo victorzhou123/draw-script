@@ -47,6 +47,11 @@
           <span v-if="connectedCount > 0" class="client-badge">{{ connectedCount }}</span>
         </a-button>
       </a-tooltip>
+      <a-tooltip title="AI 模型管理">
+        <a-button size="small" class="tool-btn ai-btn" @click="emit('openModels')">
+          <RobotOutlined /> AI 模型
+        </a-button>
+      </a-tooltip>
       <div class="toolbar-divider" />
       <a-tooltip title="使用帮助">
         <a-button size="small" class="tool-btn help-btn" @click="emit('openHelp')">
@@ -61,7 +66,7 @@
 import { computed } from 'vue'
 import {
   UndoOutlined, RedoOutlined, LoadingOutlined, CheckOutlined,
-  FileTextOutlined, LaptopOutlined, FolderOutlined, QuestionCircleOutlined,
+  FileTextOutlined, LaptopOutlined, FolderOutlined, QuestionCircleOutlined, RobotOutlined,
 } from '@ant-design/icons-vue'
 import { useScriptStore } from '@/stores/scriptStore'
 import { useClientStore } from '@/stores/clientStore'
@@ -75,6 +80,7 @@ const emit = defineEmits<{
   (e: 'redo'): void
   (e: 'openProjects'): void
   (e: 'openClients'): void
+  (e: 'openModels'): void
   (e: 'openHelp'): void
 }>()
 
@@ -128,4 +134,6 @@ const connectedCount = computed(() => clientStore.connectedIds.size)
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 .help-btn { color: #597ef7 !important; }
 .help-btn:hover { color: #85a5ff !important; background: #1f2a4a !important; }
+.ai-btn { color: #9254de !important; }
+.ai-btn:hover { color: #b37feb !important; background: #1a0a2e !important; }
 </style>

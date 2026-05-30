@@ -22,6 +22,7 @@
           <a-form-item label="操作类型">
             <a-select v-model:value="localData.action_type" @change="emitUpdate()">
               <a-select-option value="mouse_click">鼠标点击</a-select-option>
+              <a-select-option value="mouse_double_click">鼠标双击</a-select-option>
               <a-select-option value="mouse_move">鼠标移动</a-select-option>
               <a-select-option value="mouse_drag">鼠标拖拽</a-select-option>
               <a-select-option value="keyboard_type">键盘输入</a-select-option>
@@ -29,7 +30,7 @@
               <a-select-option value="mouse_scroll">滚轮</a-select-option>
             </a-select>
           </a-form-item>
-          <template v-if="['mouse_click','mouse_move'].includes(localData.action_type)">
+          <template v-if="['mouse_click','mouse_double_click','mouse_move'].includes(localData.action_type)">
             <!-- Coord source selector -->
             <a-form-item label="坐标来源">
               <a-radio-group
@@ -110,7 +111,7 @@
                 当前节点上游暂无 context 变量
               </div>
             </template>
-            <a-form-item v-if="localData.action_type === 'mouse_click'" label="按键">
+            <a-form-item v-if="['mouse_click','mouse_double_click'].includes(localData.action_type)" label="按键">
               <a-select v-model:value="localData.params.button" @change="emitUpdate()">
                 <a-select-option value="left">左键</a-select-option>
                 <a-select-option value="right">右键</a-select-option>
@@ -213,7 +214,18 @@
 
           <!-- Template match -->
           <template v-if="localData.vision_type === 'template_match'">
-            <a-form-item label="模板">
+            <a-form-item label="模板来源">
+              <a-radio-group
+                v-model:value="templateSource"
+                size="small"
+                button-style="solid"
+                @change="onTemplateSourceChange"
+              >
+                <a-radio-button value="fixed">固定模板</a-radio-button>
+                <a-radio-button value="context">Context 字段</a-radio-button>
+              </a-radio-group>
+            </a-form-item>
+            <a-form-item v-if="templateSource === 'fixed'" label="模板">
               <a-select
                 v-model:value="localData.params.template_id"
                 :style="{ width: '100%' }"
@@ -229,29 +241,84 @@
                 当前项目暂无模板，请先在项目组中上传
               </div>
             </a-form-item>
+            <a-form-item v-else label="Context 字段">
+              <a-select
+                v-model:value="localData.params.template_context_var"
+                :style="{ width: '100%' }"
+                placeholder="选择包含 base64 图片数据的字段"
+                allow-clear
+                @change="emitUpdate()"
+              >
+                <a-select-option v-for="f in contextFields" :key="f.name" :value="f.name">
+                  <span class="ctx-dot" :class="f.certain ? 'certain' : 'conditional'" />
+                  {{ f.name }}
+                  <span v-if="!f.certain" class="ctx-warn">⚠ 条件分支</span>
+                </a-select-option>
+              </a-select>
+              <div v-if="!contextFields.length" class="hint-text" style="margin-top:4px">
+                当前节点上游暂无 context 变量
+              </div>
+            </a-form-item>
             <a-form-item label="相似度阈值">
               <a-slider v-model:value="localData.params.threshold" :min="0.5" :max="1.0" :step="0.05" @change="emitUpdate()" />
             </a-form-item>
             <a-form-item label="结果存入">
-              <a-input v-model:value="localData.result_var" placeholder="context 字段名" @change="emitUpdate()" />
+              <a-auto-complete
+                v-model:value="localData.result_var"
+                :options="contextFields.map(f => ({ value: f.name }))"
+                placeholder="context 字段名"
+                allow-clear
+                @change="emitUpdate()"
+              >
+                <template #option="{ value: val }">
+                  <span class="ctx-dot" :class="contextFields.find(f => f.name === val)?.certain ? 'certain' : 'conditional'" />
+                  {{ val }}
+                </template>
+              </a-auto-complete>
+              <div v-if="!contextFields.length" class="hint-text" style="margin-top:4px">
+                当前节点上游暂无 context 变量
+              </div>
             </a-form-item>
             <a-form-item label="匹配成功时写入">
               <a-input v-model:value="localData.found_value" placeholder="留空则写入坐标 x,y" @change="emitUpdate()" />
             </a-form-item>
             <a-form-item label="未匹配时写入">
-              <a-input v-model:value="localData.not_found_value" placeholder="留空则写入 null" @change="emitUpdate()" />
+              <a-input v-model:value="localData.not_found_value" placeholder="留空则写入 None" @change="emitUpdate()" />
             </a-form-item>
           </template>
 
           <!-- OCR -->
           <template v-if="localData.vision_type === 'ocr'">
             <a-form-item label="识别结果存入">
-              <a-input v-model:value="localData.result_var" placeholder="context 字段名（存储全部识别文字）" @change="emitUpdate()" />
+              <a-auto-complete
+                v-model:value="localData.result_var"
+                :options="contextFields.map(f => ({ value: f.name }))"
+                placeholder="context 字段名（存储全部识别文字）"
+                allow-clear
+                @change="emitUpdate()"
+              />
             </a-form-item>
           </template>
 
           <!-- AI Vision -->
           <template v-if="localData.vision_type === 'ai_vision'">
+            <a-form-item label="AI 模型">
+              <a-select
+                v-model:value="localData.params.model_id"
+                :style="{ width: '100%' }"
+                placeholder="选择 AI 模型（留空使用全局配置）"
+                allow-clear
+                @change="emitUpdate()"
+              >
+                <a-select-option v-for="m in aiModels" :key="m.id" :value="m.id">
+                  {{ m.name }}
+                  <span class="model-provider-tag">{{ m.provider === 'qwen' ? 'Qwen' : 'GLM' }}</span>
+                </a-select-option>
+              </a-select>
+              <div v-if="!aiModels.length" class="hint-text" style="margin-top:4px">
+                暂无可用 AI 模型，请先在「AI 模型」管理中添加
+              </div>
+            </a-form-item>
             <a-form-item label="提示词">
               <a-textarea v-model:value="localData.params.prompt" :rows="3" @change="emitUpdate()" />
             </a-form-item>
@@ -267,7 +334,13 @@
               </a-form-item>
             </template>
             <a-form-item label="结果存入">
-              <a-input v-model:value="localData.result_var" placeholder="context 字段名" @change="emitUpdate()" />
+              <a-auto-complete
+                v-model:value="localData.result_var"
+                :options="contextFields.map(f => ({ value: f.name }))"
+                placeholder="context 字段名"
+                allow-clear
+                @change="emitUpdate()"
+              />
             </a-form-item>
           </template>
 
@@ -280,7 +353,13 @@
               <a-input-number v-model:value="localData.params.tolerance" :min="0" :max="128" @change="emitUpdate()" />
             </a-form-item>
             <a-form-item label="结果存入">
-              <a-input v-model:value="localData.result_var" placeholder="context 字段名" @change="emitUpdate()" />
+              <a-auto-complete
+                v-model:value="localData.result_var"
+                :options="contextFields.map(f => ({ value: f.name }))"
+                placeholder="context 字段名"
+                allow-clear
+                @change="emitUpdate()"
+              />
             </a-form-item>
           </template>
         </template>
@@ -302,19 +381,41 @@
           </template>
           <template v-if="localData.condition_type === 'variable_compare'">
             <a-form-item label="变量路径">
-              <a-input v-model:value="localData.params.variable" placeholder="last_http_response.status_code" @change="emitUpdate()" />
+              <a-auto-complete
+                v-model:value="localData.params.variable"
+                :options="contextFields.map(f => ({ value: f.name }))"
+                placeholder="last_http_response.status_code"
+                allow-clear
+                @change="emitUpdate()"
+              >
+                <template #option="{ value: val }">
+                  <span class="ctx-dot" :class="contextFields.find(f => f.name === val)?.certain ? 'certain' : 'conditional'" />
+                  {{ val }}
+                </template>
+              </a-auto-complete>
+              <div v-if="!contextFields.length" class="hint-text" style="margin-top:4px">
+                当前节点上游暂无 context 变量
+              </div>
             </a-form-item>
             <a-form-item label="运算符">
               <a-select v-model:value="localData.params.operator" @change="emitUpdate()">
                 <a-select-option value="==">等于 (==)</a-select-option>
                 <a-select-option value="!=">不等于 (!=)</a-select-option>
                 <a-select-option value=">">大于 (&gt;)</a-select-option>
+                <a-select-option value=">=">大于等于 (&gt;=)</a-select-option>
                 <a-select-option value="<">小于 (&lt;)</a-select-option>
+                <a-select-option value="<=">小于等于 (&lt;=)</a-select-option>
                 <a-select-option value="contains">包含</a-select-option>
               </a-select>
             </a-form-item>
             <a-form-item label="期望值">
-              <a-input v-model:value="localData.params.value" @change="emitUpdate()" />
+              <a-auto-complete
+                v-model:value="localData.params.value"
+                :options="contextFields.map(f => ({ value: '{{' + f.name + '}}', label: f.name }))"
+                placeholder="字面量或 {{context变量}}"
+                allow-clear
+                @change="emitUpdate()"
+              />
             </a-form-item>
           </template>
         </template>
@@ -347,10 +448,42 @@
             </a-select>
           </a-form-item>
           <a-form-item label="URL">
-            <a-input v-model:value="localData.params.url" placeholder="https://..." @change="emitUpdate()" />
+            <a-input v-model:value="localData.params.url" placeholder="https://api.example.com/users/..." @change="emitUpdate()" />
+            <div class="tpl-hint">
+              使用 <code v-pre>{{变量名}}</code> 引用 context 字段
+              <span v-if="contextFields.length" class="tpl-vars">
+                —
+                <span
+                  v-for="f in contextFields"
+                  :key="f.name"
+                  class="tpl-var-chip"
+                  @click="insertVar('url', f.name)"
+                >{{ f.name }}</span>
+              </span>
+            </div>
+          </a-form-item>
+          <a-form-item label="请求头">
+            <div v-for="(h, idx) in httpHeaders" :key="idx" class="field-row">
+              <a-input v-model:value="h.key" placeholder="Header名" class="field-name" @change="syncHeaders()" />
+              <a-input v-model:value="h.value" placeholder="值" style="flex:2" @change="syncHeaders()" />
+              <a-button type="text" size="small" danger @click="removeHeader(idx)">✕</a-button>
+            </div>
+            <a-button size="small" class="add-field-btn" @click="addHeader">+ 添加请求头</a-button>
           </a-form-item>
           <a-form-item label="请求体 (JSON)">
-            <a-textarea v-model:value="localData.params.bodyText" :rows="4" placeholder='{"key": "value"}' @change="emitUpdate()" />
+            <a-textarea v-model:value="localData.params.bodyText" :rows="5" placeholder='{"key": "value"}' @change="emitUpdate()" />
+            <div class="tpl-hint">
+              使用 <code v-pre>{{变量名}}</code> 引用 context 字段
+              <span v-if="contextFields.length" class="tpl-vars">
+                —
+                <span
+                  v-for="f in contextFields"
+                  :key="f.name"
+                  class="tpl-var-chip"
+                  @click="insertVar('bodyText', f.name)"
+                >{{ f.name }}</span>
+              </span>
+            </div>
           </a-form-item>
         </template>
 
@@ -437,15 +570,19 @@
         <template v-if="nodeType === 'compute'">
           <div class="section-title">Python 代码</div>
           <div class="hint-text">通过 <code>context</code> 字典读写 context 变量。</div>
-          <a-form-item>
+          <a-form-item :style="{ marginBottom: syntaxError ? '4px' : undefined }">
             <a-textarea
               v-model:value="localData.code"
               :rows="10"
-              :style="{ fontFamily: 'Consolas, Monaco, monospace', fontSize: '12px' }"
+              :style="{ fontFamily: 'Consolas, Monaco, monospace', fontSize: '12px', borderColor: syntaxError ? '#ff4d4f' : undefined }"
               placeholder="# 例如：&#10;result = context['x'] * 2&#10;context['result'] = result"
               @change="onCodeChange"
             />
           </a-form-item>
+          <div v-if="syntaxError" class="syntax-error-bar">
+            <span class="syntax-error-icon">✕</span>
+            第 {{ syntaxError.line }} 行<span v-if="syntaxError.col">，第 {{ syntaxError.col }} 列</span>：{{ syntaxError.msg }}
+          </div>
           <div class="section-title">输出字段
             <a-button size="small" type="link" class="auto-detect-btn" @click="autoDetect">自动检测</a-button>
           </div>
@@ -494,7 +631,9 @@ import { ref, watch, computed } from 'vue'
 import { ApartmentOutlined, CloseOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
 import { useProjectStore } from '@/stores/projectStore'
 import { useScriptStore } from '@/stores/scriptStore'
+import { useModelStore } from '@/stores/modelStore'
 import { analyzeContextAtNode, analyzeContextEvolution } from '@/utils/contextAnalysis'
+import { api } from '@/services/api'
 
 const props = defineProps<{
   selectedNode: { id: string; data: any } | null
@@ -513,6 +652,12 @@ const contextVarSelected = ref<string | undefined>(undefined)
 const textSource = ref<'manual' | 'context'>('manual')
 const textContextVar = ref<string | undefined>(undefined)
 const editingNodeId = ref<string>('')
+const httpHeaders = ref<{ key: string; value: string }[]>([])
+const templateSource = ref<'fixed' | 'context'>('fixed')
+
+interface SyntaxError { line: number; col: number | null; msg: string }
+const syntaxError = ref<SyntaxError | null>(null)
+let _syntaxTimer: ReturnType<typeof setTimeout> | null = null
 
 const KEY_MAP: Record<string, string> = {
   ' ': 'space', Enter: 'enter', Backspace: 'backspace', Delete: 'delete',
@@ -542,6 +687,16 @@ function clearKey() {
 
 const projectStore = useProjectStore()
 const scriptStore = useScriptStore()
+const modelStore = useModelStore()
+
+const aiModels = computed(() => modelStore.enabledAIModels)
+
+// Ensure models are loaded when vision type is ai_vision
+watch(
+  () => localData.value.vision_type,
+  (vt) => { if (vt === 'ai_vision') modelStore.fetchModels() },
+  { immediate: true }
+)
 
 // Context fields available at the current node (dataflow analysis)
 const contextFields = computed(() => {
@@ -611,6 +766,15 @@ function onCoordSourceChange() {
   emitUpdate()
 }
 
+function onTemplateSourceChange() {
+  if (templateSource.value === 'fixed') {
+    localData.value.params.template_context_var = ''
+  } else {
+    localData.value.params.template_id = ''
+  }
+  emitUpdate()
+}
+
 function onTextSourceChange() {
   textContextVar.value = undefined
   localData.value.params.text = ''
@@ -619,7 +783,7 @@ function onTextSourceChange() {
 
 function onTextContextVarSelect(varName: string | undefined) {
   textContextVar.value = varName
-  localData.value.params.text = varName ? `$${varName}` : ''
+  localData.value.params.text = varName ? `{{${varName}}}` : ''
   emitUpdate()
 }
 
@@ -635,18 +799,18 @@ function onMarkerSelect(name: string | undefined) {
   if (!marker) return
   currentMarkerName.value = marker.name
   if (marker.type === 'point') {
-    localData.value.params.x = `$markers.${marker.name}.x`
-    localData.value.params.y = `$markers.${marker.name}.y`
+    localData.value.params.x = `{{markers.${marker.name}.x}}`
+    localData.value.params.y = `{{markers.${marker.name}.y}}`
   } else {
-    localData.value.params.x = `$markers.${marker.name}.cx`
-    localData.value.params.y = `$markers.${marker.name}.cy`
+    localData.value.params.x = `{{markers.${marker.name}.cx}}`
+    localData.value.params.y = `{{markers.${marker.name}.cy}}`
   }
   emitUpdate()
 }
 
 function onContextVarSelect(varName: string | undefined) {
   contextVarSelected.value = varName
-  localData.value.params.coords = varName ? `$${varName}` : ''
+  localData.value.params.coords = varName ? `{{${varName}}}` : ''
   emitUpdate()
 }
 
@@ -673,8 +837,8 @@ watch(() => props.selectedNode, (node) => {
     params: node.data.params || {},
     // vision
     range_marker: node.data.range_marker || '',
-    found_value: node.data.found_value || '',
-    not_found_value: node.data.not_found_value || '',
+    found_value: node.data.found_value ?? '',
+    not_found_value: node.data.not_found_value ?? 'None',
     // start
     fields: node.data.fields || [],
     // end
@@ -704,17 +868,31 @@ watch(() => props.selectedNode, (node) => {
     localData.value = d
   }
   isRecordingKey.value = false
+  syntaxError.value = null
+  if (_syntaxTimer) { clearTimeout(_syntaxTimer); _syntaxTimer = null }
+
+  // Sync HTTP headers array from params.headers dict
+  if (d.type === 'http') {
+    const h = d.params.headers ?? {}
+    httpHeaders.value = Object.entries(h).map(([key, value]) => ({ key, value: String(value) }))
+  } else {
+    httpHeaders.value = []
+  }
 
   // Derive coordSource from the new node's params right here, after localData is set,
   // so we always use the correct incoming data (not stale localData from the previous node).
   currentMarkerName.value = null
   const params = d.params || {}
-  if (params.coords && String(params.coords).startsWith('$')) {
+  const coordsStr = String(params.coords || '')
+  const xStr = String(params.x || '')
+  const tplCoordsM = coordsStr.match(/^\{\{([^}]+)\}\}$/)
+  const tplMarkerM = xStr.match(/^\{\{markers\.([^.}]+)/)
+  if (coordsStr.startsWith('$') || tplCoordsM) {
     coordSource.value = 'context'
-    contextVarSelected.value = String(params.coords).slice(1)
-  } else if (String(params.x || '').startsWith('$markers.')) {
+    contextVarSelected.value = tplCoordsM ? tplCoordsM[1].trim() : coordsStr.slice(1)
+  } else if (xStr.startsWith('$markers.') || tplMarkerM) {
     coordSource.value = 'marker'
-    const m = String(params.x).match(/^\$markers\.([^.]+)/)
+    const m = tplMarkerM ?? xStr.match(/^\$markers\.([^.]+)/)
     currentMarkerName.value = m ? m[1] : null
     contextVarSelected.value = undefined
   } else {
@@ -722,11 +900,16 @@ watch(() => props.selectedNode, (node) => {
     contextVarSelected.value = undefined
   }
 
+  // Derive templateSource
+  const tplContextVar = String(params.template_context_var || '')
+  templateSource.value = tplContextVar ? 'context' : 'fixed'
+
   // Derive textSource
   const textVal = String(params.text || '')
-  if (textVal.startsWith('$')) {
+  const tplTextM = textVal.match(/^\{\{([^}]+)\}\}$/)
+  if (textVal.startsWith('$') || tplTextM) {
     textSource.value = 'context'
-    textContextVar.value = textVal.slice(1)
+    textContextVar.value = tplTextM ? tplTextM[1].trim() : textVal.slice(1)
   } else {
     textSource.value = 'manual'
     textContextVar.value = undefined
@@ -792,8 +975,46 @@ function autoDetect() {
   emitUpdate()
 }
 
+function scheduleSyntaxCheck(code: string) {
+  if (_syntaxTimer) clearTimeout(_syntaxTimer)
+  if (!code.trim()) { syntaxError.value = null; return }
+  _syntaxTimer = setTimeout(async () => {
+    try {
+      const result = await api.syntaxCheck(code)
+      syntaxError.value = result.ok ? null : { line: result.line!, col: result.col ?? null, msg: result.msg! }
+    } catch {
+      syntaxError.value = null
+    }
+  }, 600)
+}
+
+// HTTP header helpers
+function addHeader() {
+  httpHeaders.value.push({ key: '', value: '' })
+  syncHeaders()
+}
+function removeHeader(idx: number) {
+  httpHeaders.value.splice(idx, 1)
+  syncHeaders()
+}
+function syncHeaders() {
+  const h: Record<string, string> = {}
+  for (const { key, value } of httpHeaders.value) {
+    if (key.trim()) h[key.trim()] = value
+  }
+  localData.value.params.headers = h
+  emitUpdate()
+}
+
 function emitUpdate() {
-  emit('update', editingNodeId.value, localData.value)
+  emit('update', editingNodeId.value, JSON.parse(JSON.stringify(localData.value)))
+}
+
+// Insert a {{varName}} placeholder at the end of a params text field
+function insertVar(field: 'url' | 'bodyText', varName: string) {
+  const current: string = localData.value.params[field] ?? ''
+  localData.value.params[field] = current + `{{${varName}}}`
+  emitUpdate()
 }
 
 function onCodeChange() {
@@ -805,6 +1026,7 @@ function onCodeChange() {
   if (toAdd.length > 0) {
     localData.value.output_fields = [...existing, ...toAdd]
   }
+  scheduleSyntaxCheck(code)
   emitUpdate()
 }
 </script>
@@ -976,6 +1198,35 @@ function onCodeChange() {
 .add-field-btn:hover { color: #888 !important; border-color: #555 !important; }
 .auto-detect-btn { font-size: 11px !important; padding: 0 4px !important; height: auto !important; }
 
+.tpl-hint {
+  font-size: 11px;
+  color: #444;
+  margin-top: 4px;
+  line-height: 1.6;
+}
+.tpl-hint code {
+  background: #1e1e1e;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: #7ec8e3;
+  font-size: 11px;
+}
+.tpl-vars { color: #444; }
+.tpl-var-chip {
+  display: inline-block;
+  background: #111d2c;
+  color: #4096ff;
+  border: 1px solid #1d3c6b;
+  border-radius: 3px;
+  font-size: 10px;
+  padding: 0 5px;
+  margin: 0 2px;
+  cursor: pointer;
+  font-family: 'Consolas', monospace;
+  transition: background 0.15s;
+}
+.tpl-var-chip:hover { background: #1d3c6b; }
+
 .marker-menu-type {
   display: inline-block;
   font-size: 10px;
@@ -986,4 +1237,34 @@ function onCodeChange() {
 }
 .type-point { background: #111d2c; color: #1890ff; }
 .type-box   { background: #2b2111; color: #faad14; }
+
+.model-provider-tag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 3px;
+  margin-left: 6px;
+  background: #1a0a2e;
+  color: #9254de;
+  font-weight: 600;
+}
+
+.syntax-error-bar {
+  font-size: 11px;
+  color: #ff4d4f;
+  background: #2a1215;
+  border: 1px solid #58181c;
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: Consolas, Monaco, monospace;
+  line-height: 1.4;
+}
+.syntax-error-icon {
+  font-size: 10px;
+  flex-shrink: 0;
+}
 </style>

@@ -67,6 +67,26 @@ export interface Template {
   created_at: string
 }
 
+export interface AIModel {
+  id: string
+  type: 'local' | 'third_party'
+  provider: 'paddleocr' | 'qwen' | 'glm'
+  name: string
+  api_key: string
+  base_url: string
+  model_name: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface OCRStatus {
+  installed: boolean
+  loaded: boolean
+  loading: boolean
+  error: string | null
+}
+
 export const api = {
   // Scripts
   getScripts: () => http.get<Script[]>('/scripts').then(r => r.data),
@@ -129,4 +149,30 @@ export const api = {
     http.delete(`/projects/${projectId}/templates/${templateId}`).then(r => r.data),
   templateImageUrl: (projectId: string, templateId: string) =>
     `/api/projects/${projectId}/templates/${templateId}/image`,
+
+  // Syntax check
+  syntaxCheck: (code: string) =>
+    http.post<{ ok: boolean; line?: number; col?: number; msg?: string }>('/scripts/syntax-check', { code }).then(r => r.data),
+
+  // AI Models
+  getModels: () => http.get<AIModel[]>('/models').then(r => r.data),
+  createModel: (data: Omit<AIModel, 'id' | 'created_at' | 'updated_at'>) =>
+    http.post<AIModel>('/models', data).then(r => r.data),
+  updateModel: (id: string, data: Partial<Omit<AIModel, 'id' | 'type' | 'provider' | 'created_at' | 'updated_at'>>) =>
+    http.put<AIModel>(`/models/${id}`, data).then(r => r.data),
+  deleteModel: (id: string) => http.delete(`/models/${id}`).then(r => r.data),
+  getLocalModelStatus: () =>
+    http.get<{ paddleocr: OCRStatus }>('/models/local/status').then(r => r.data),
+  initLocalModel: () => http.post('/models/local/init').then(r => r.data),
+  reinitLocalModel: () => http.post('/models/local/reinit').then(r => r.data),
+  testModelCredentials: (data: { api_key: string; base_url: string; model_name: string }) =>
+    http.post<ModelTestResult>('/models/test', data).then(r => r.data),
+  testSavedModel: (id: string) =>
+    http.post<ModelTestResult>(`/models/${id}/test`).then(r => r.data),
+}
+
+export interface ModelTestResult {
+  success: boolean
+  message: string
+  latency_ms: number | null
 }

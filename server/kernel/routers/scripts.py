@@ -1,9 +1,11 @@
+import ast
 import asyncio
 import json
 import logging
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +14,19 @@ from schemas import ExecutionResponse, RunScriptRequest, ScriptCreate, ScriptRes
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/scripts", tags=["scripts"])
+
+
+class SyntaxCheckRequest(BaseModel):
+    code: str
+
+
+@router.post("/syntax-check")
+async def syntax_check(body: SyntaxCheckRequest):
+    try:
+        ast.parse(body.code)
+        return {"ok": True}
+    except SyntaxError as e:
+        return {"ok": False, "line": e.lineno, "col": e.offset, "msg": e.msg}
 
 _engine_ref = None
 
@@ -99,7 +114,8 @@ async def run_script(
         completion_event = asyncio.Event()
         asyncio.create_task(
             _engine_ref.run_script(execution.id, script_id, body.client_id,
-                                   flow, script.project_id, body.params, completion_event)
+                                   flow, script.project_id, body.params, completion_event,
+                                   script_name=script.name)
         )
         try:
             await asyncio.wait_for(completion_event.wait(), timeout=settings.run_timeout)
@@ -110,7 +126,7 @@ async def run_script(
         background_tasks.add_task(
             _engine_ref.run_script,
             execution.id, script_id, body.client_id,
-            flow, script.project_id, body.params,
+            flow, script.project_id, body.params, None, script.name,
         )
 
     return execution

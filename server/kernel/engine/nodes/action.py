@@ -52,26 +52,39 @@ class ActionNodeHandler(BaseNodeHandler):
             self.ctx.ws_manager.pending_requests.pop(request_id, None)
             return NodeResult(success=False, error="Action node timed out")
 
+    _MISSING = object()
+
     def _resolve_var(self, ref: str) -> any:
         key = ref.lstrip("$")
         parts = key.split(".")
         val = self.ctx.variables
         for part in parts:
             if isinstance(val, dict):
-                val = val.get(part)
+                if part not in val:
+                    return self._MISSING
+                val = val[part]
             else:
-                return None
+                return self._MISSING
         return val
 
     def _interpolate(self, value: any) -> any:
-        """Resolve $var references and {{var}} templates in string param values."""
+        """Resolve {{var}} and legacy $var references in string param values."""
         if not isinstance(value, str):
             return value
+        # Whole-value {{var}} or legacy $var: return the raw Python value so
+        # callers get the correct type (e.g. int coords, not the string "123").
+        import re
+        tpl_whole = re.match(r'^\{\{([^}]+)\}\}$', value)
+        if tpl_whole:
+            resolved = self._resolve_var(tpl_whole.group(1).strip())
+            return value if resolved is self._MISSING else resolved
         if value.startswith("$"):
             resolved = self._resolve_var(value)
-            return resolved if resolved is not None else value
-        import re
+            return value if resolved is self._MISSING else resolved
+        # Partial template: substitute each {{var}} with its string representation.
         def _replace(m):
-            resolved = self._resolve_var("$" + m.group(1).strip())
-            return str(resolved) if resolved is not None else m.group(0)
+            resolved = self._resolve_var(m.group(1).strip())
+            if resolved is self._MISSING:
+                return m.group(0)
+            return str(resolved) if resolved is not None else ""
         return re.sub(r"\{\{([^}]+)\}\}", _replace, value)

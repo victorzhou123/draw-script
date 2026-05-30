@@ -12,7 +12,13 @@ class VisionResult:
 
 
 class VisionEngine:
-    async def analyze(self, vision_type: str, screenshot: bytes, params: dict) -> VisionResult:
+    async def analyze(
+        self,
+        vision_type: str,
+        screenshot: bytes,
+        params: dict,
+        model_config: dict | None = None,
+    ) -> VisionResult:
         match vision_type:
             case "template_match":
                 from cv.template_matcher import TemplateMatchCV
@@ -22,7 +28,7 @@ class VisionEngine:
                 return await OCREngine().recognize(screenshot, params)
             case "ai_vision":
                 from cv.ai_vision import AIVisionEngine
-                return await AIVisionEngine().analyze(screenshot, params)
+                return await AIVisionEngine().analyze(screenshot, params, model_config)
             case "color_detect":
                 from cv.color_detector import ColorDetector
                 return await ColorDetector().detect(screenshot, params)

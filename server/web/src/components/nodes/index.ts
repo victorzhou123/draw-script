@@ -110,7 +110,7 @@ const NODE_DEFS = [
   { shape: 'node-action',     icon: 'ThunderboltOutlined', label: 'Action',     w: 120, h: 60  },
   { shape: 'node-screenshot', icon: 'CameraOutlined',      label: 'Screenshot', w: 120, h: 60  },
   { shape: 'node-vision',     icon: 'EyeOutlined',         label: 'Vision',     w: 120, h: 60  },
-  { shape: 'node-condition',  icon: 'BranchesOutlined',    label: 'Condition',  w: 100, h: 100 },
+  { shape: 'node-condition',  icon: 'BranchesOutlined',    label: 'Condition',  w: 67,  h: 67  },
   { shape: 'node-delay',      icon: 'ClockCircleOutlined', label: 'Delay',      w: 120, h: 60  },
   { shape: 'node-loop',       icon: 'SyncOutlined',        label: 'Loop',       w: 120, h: 60  },
   { shape: 'node-http',       icon: 'GlobalOutlined',      label: 'HTTP',       w: 120, h: 60  },

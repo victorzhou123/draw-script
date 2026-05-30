@@ -9,6 +9,7 @@
           @redo="graphEditor?.redo()"
           @open-projects="projectGroupDrawerOpen = true"
           @open-clients="clientsDrawerOpen = true"
+          @open-models="aiModelsDrawerOpen = true"
           @open-help="helpDrawerOpen = true"
         />
       </a-layout-header>
@@ -61,6 +62,7 @@
 
     <ProjectGroupDrawer :open="projectGroupDrawerOpen" @close="projectGroupDrawerOpen = false" />
     <ClientsDrawer :open="clientsDrawerOpen" @close="clientsDrawerOpen = false" />
+    <AIModelsDrawer :open="aiModelsDrawerOpen" @close="aiModelsDrawerOpen = false" />
     <HelpDrawer :open="helpDrawerOpen" @close="helpDrawerOpen = false" />
   </a-config-provider>
 </template>
@@ -76,6 +78,7 @@ import ScriptSidebar from './components/ScriptSidebar.vue'
 import Toolbar from './components/Toolbar.vue'
 import ClientsDrawer from './components/ClientsDrawer.vue'
 import ProjectGroupDrawer from './components/ProjectGroupDrawer.vue'
+import AIModelsDrawer from './components/AIModelsDrawer.vue'
 import HelpDrawer from './components/HelpDrawer.vue'
 import { useScriptStore } from './stores/scriptStore'
 import { useProjectStore } from './stores/projectStore'
@@ -90,6 +93,7 @@ const selectedNode = ref<{ id: string; data: any } | null>(null)
 const graphCells = ref<any[]>([])
 const clientsDrawerOpen = ref(false)
 const projectGroupDrawerOpen = ref(false)
+const aiModelsDrawerOpen = ref(false)
 const helpDrawerOpen = ref(false)
 const leftTabKey = ref('scripts')
 const saveStatus = ref<'saving' | 'saved' | ''>('')
@@ -148,6 +152,7 @@ function onNodeDataUpdate(nodeId: string, data: any) {
   triggerAutoSave()
   refreshGraphCells()
 }
+
 </script>
 
 <style>
