@@ -171,7 +171,7 @@ def _get_marker_from_server(name: str, server_markers: dict) -> dict | None:
 
 def _add_center(marker: dict) -> dict:
     m = dict(marker)
-    if "w" in m and "h" in m:
+    if m.get("w") is not None and m.get("h") is not None:
         m["cx"] = m["x"] + m["w"] // 2
         m["cy"] = m["y"] + m["h"] // 2
     return m
