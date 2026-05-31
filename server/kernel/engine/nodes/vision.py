@@ -29,10 +29,8 @@ class VisionNodeHandler(BaseNodeHandler):
         result_var = data.get("result_var", "").strip()
         range_marker = data.get("range_marker", "").strip()
 
-        if not range_marker:
-            return NodeResult(success=False, error="Vision 节点需要选择检测范围（Box 标记）")
-
-        params["range_marker"] = range_marker
+        if range_marker:
+            params["range_marker"] = range_marker
 
         if vision_type == "template_match":
             template_context_var = params.pop("template_context_var", "")

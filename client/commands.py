@@ -913,25 +913,44 @@ class CommandHandler:
         import pyautogui
 
         range_marker_name = params.get("range_marker", "").strip()
-        if not range_marker_name:
-            return False, {}, "Vision node: no range_marker specified"
+        if range_marker_name:
+            # Prefer server-provided coordinates (single source of truth)
+            if server_markers:
+                marker = _get_marker_from_server(range_marker_name, server_markers)
+            else:
+                marker = get_marker(project_id, range_marker_name) if project_id else None
+            if not marker:
+                hint = "请先完成标记标注" if server_markers is not None else f"project '{project_id}'"
+                return False, {}, f"Vision node: marker '{range_marker_name}' not found ({hint})"
 
-        # Prefer server-provided coordinates (single source of truth)
-        if server_markers:
-            marker = _get_marker_from_server(range_marker_name, server_markers)
+            mx = _int(marker.get("x"), 0)
+            my = _int(marker.get("y"), 0)
+            mw = _int(marker.get("w"), 0)
+            mh = _int(marker.get("h"), 0)
+
+            if mw <= 0 or mh <= 0:
+                return False, {}, f"Vision node: marker '{range_marker_name}' 不是方框标记（缺少 w/h）"
         else:
-            marker = get_marker(project_id, range_marker_name) if project_id else None
-        if not marker:
-            hint = "请先完成标记标注" if server_markers is not None else f"project '{project_id}'"
-            return False, {}, f"Vision node: marker '{range_marker_name}' not found ({hint})"
-
-        mx = _int(marker.get("x"), 0)
-        my = _int(marker.get("y"), 0)
-        mw = _int(marker.get("w"), 0)
-        mh = _int(marker.get("h"), 0)
-
-        if mw <= 0 or mh <= 0:
-            return False, {}, f"Vision node: marker '{range_marker_name}' 不是方框标记（缺少 w/h）"
+            # No range marker specified — fall back to the project's bound window
+            win_title = win_process = ""
+            if server_markers:
+                for m_data in server_markers.values():
+                    if m_data.get("window_title"):
+                        win_title = m_data["window_title"]
+                        win_process = m_data.get("window_process", "")
+                        break
+            if not win_title and project_id:
+                local_data = _load_markers()
+                bound = local_data.get(project_id, {}).get("_window")
+                if bound:
+                    win_title = bound.get("title", "")
+                    win_process = bound.get("process", "")
+            if not win_title:
+                return False, {}, "Vision node: 未选择检测范围且项目未绑定窗口"
+            win = _find_window(win_title, win_process)
+            if not win:
+                return False, {}, f"Vision node: 未找到绑定窗口 '{win_title}'，请确认窗口已打开"
+            mx, my, mw, mh = win["x"], win["y"], win["w"], win["h"]
 
         screenshot = await _run_blocking(pyautogui.screenshot, region=(mx, my, mw, mh))
 
