@@ -35,15 +35,35 @@ export const ICON_MAP: Record<string, Component> = {
 }
 
 // Port appearance: hidden by default, revealed by graph hover events
-const PORT_ATTRS = {
-  circle: {
-    r: 5,
-    magnet: true,
-    stroke: '#1890ff',
-    strokeWidth: 1.5,
-    fill: '#141414',
-    visibility: 'hidden',
-  },
+const PORT_CIRCLE_ATTRS = {
+  r: 5,
+  magnet: true,
+  stroke: '#1890ff',
+  strokeWidth: 1.5,
+  fill: '#141414',
+  visibility: 'hidden',
+}
+
+const PORT_ATTRS = { circle: PORT_CIRCLE_ATTRS }
+
+// Build a labeled port group: circle + text label positioned outside the node
+function labeledGroup(position: string, labelStyle: Record<string, unknown>) {
+  return {
+    position,
+    markup: [
+      { tagName: 'circle', selector: 'circle' },
+      { tagName: 'text',   selector: 'labelText' },
+    ],
+    attrs: {
+      circle: PORT_CIRCLE_ATTRS,
+      labelText: {
+        fontSize: 9,
+        fill: '#888',
+        visibility: 'hidden',
+        ...labelStyle,
+      },
+    },
+  }
 }
 
 // Common in+out ports (top/bottom)
@@ -73,28 +93,28 @@ const PORTS_END = {
 // Condition: input top, true=right, false=left
 const PORTS_CONDITION = {
   groups: {
-    in:    { position: 'top',    attrs: PORT_ATTRS },
-    true:  { position: 'right',  attrs: PORT_ATTRS },
-    false: { position: 'left',   attrs: PORT_ATTRS },
+    in:    labeledGroup('top',   { dy: -10, textAnchor: 'middle' }),
+    true:  labeledGroup('right', { dx: 10,  textAnchor: 'start',  dy: 4 }),
+    false: labeledGroup('left',  { dx: -10, textAnchor: 'end',    dy: 4 }),
   },
   items: [
-    { group: 'in',    id: 'in'    },
-    { group: 'true',  id: 'true'  },
-    { group: 'false', id: 'false' },
+    { group: 'in',    id: 'in',    attrs: { labelText: { text: 'in' } } },
+    { group: 'true',  id: 'true',  attrs: { labelText: { text: 'true' } } },
+    { group: 'false', id: 'false', attrs: { labelText: { text: 'false' } } },
   ],
 }
 
-// Loop: input top, loop body=right, exit=bottom
+// Loop: in=bottom, out=top, exit=right
 const PORTS_LOOP = {
   groups: {
-    in:   { position: 'top',    attrs: PORT_ATTRS },
-    loop: { position: 'right',  attrs: PORT_ATTRS },
-    exit: { position: 'bottom', attrs: PORT_ATTRS },
+    in:   labeledGroup('bottom', { dy: 14,  textAnchor: 'middle' }),
+    loop: labeledGroup('top',    { dy: -10, textAnchor: 'middle' }),
+    exit: labeledGroup('right',  { dx: 10,  textAnchor: 'start',  dy: 4 }),
   },
   items: [
-    { group: 'in',   id: 'in'   },
-    { group: 'loop', id: 'loop' },
-    { group: 'exit', id: 'exit' },
+    { group: 'in',   id: 'in',   attrs: { labelText: { text: 'in' } } },
+    { group: 'loop', id: 'loop', attrs: { labelText: { text: 'out' } } },
+    { group: 'exit', id: 'exit', attrs: { labelText: { text: 'exit' } } },
   ],
 }
 

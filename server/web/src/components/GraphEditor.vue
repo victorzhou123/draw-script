@@ -29,6 +29,9 @@ const dnd = shallowRef<Dnd>()
 const executionStore = useExecutionStore()
 const isLoadingGraph = ref(false)
 
+const hasPortLabel = (node: any, portId: string) =>
+  node.getPort(portId)?.attrs?.labelText?.text !== undefined
+
 function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Space' || e.code === 'Space') {
     graph.value?.disableRubberband()
@@ -108,10 +111,14 @@ onMounted(() => {
     if (portNode && portNode.id !== node.id) {
       portNode.getPorts().forEach((p: any) => {
         portNode.portProp(p.id!, 'attrs/circle/visibility', 'hidden')
+        if (hasPortLabel(portNode, p.id!))
+          portNode.portProp(p.id!, 'attrs/labelText/visibility', 'hidden')
       })
     }
     node.getPorts().forEach((p: any) => {
       node.portProp(p.id!, 'attrs/circle/visibility', 'visible')
+      if (hasPortLabel(node, p.id!))
+        node.portProp(p.id!, 'attrs/labelText/visibility', 'visible')
     })
     portNode = node
   }
@@ -120,6 +127,8 @@ onMounted(() => {
     if (!portNode) return
     portNode.getPorts().forEach((p: any) => {
       portNode.portProp(p.id!, 'attrs/circle/visibility', 'hidden')
+      if (hasPortLabel(portNode, p.id!))
+        portNode.portProp(p.id!, 'attrs/labelText/visibility', 'hidden')
     })
     portNode = null
   }
@@ -188,25 +197,38 @@ watch(() => executionStore.activeNodeId, (nodeId, prevNodeId) => {
   }
 })
 
-function getJSON() {
-  const json = graph.value?.toJSON() ?? { cells: [] }
-  // Strip ephemeral port visibility so it's never persisted.
-  for (const cell of (json.cells ?? []) as any[]) {
+function sanitizePorts(cells: any[]) {
+  for (const cell of cells) {
+    // Strip port groups so registered shape positions are always used
+    if (cell.ports?.groups) delete cell.ports.groups
     for (const port of cell.ports?.items ?? []) {
-      if (port.attrs?.circle) delete port.attrs.circle.visibility
+      if (port.attrs?.circle)    delete port.attrs.circle.visibility
+      if (port.attrs?.labelText) delete port.attrs.labelText.visibility
     }
   }
+}
+
+function getJSON() {
+  const json = graph.value?.toJSON() ?? { cells: [] }
+  sanitizePorts((json as any).cells ?? [])
   return json
 }
 
 function loadJSON(json: object) {
+  // Deep-clone to avoid mutating the caller's object, then strip stored port
+  // groups so X6 falls back to the registered shape's position/markup.
+  const cleaned = JSON.parse(JSON.stringify(json))
+  sanitizePorts(cleaned.cells ?? [])
+
   isLoadingGraph.value = true
-  graph.value?.fromJSON(json)
+  graph.value?.fromJSON(cleaned)
   graph.value?.centerContent()
-  // Port visibility is serialized in JSON; reset all to hidden after load.
+  // Reset port visibility after load.
   graph.value?.getNodes().forEach(node => {
     node.getPorts().forEach(port => {
       node.portProp(port.id!, 'attrs/circle/visibility', 'hidden')
+      if (hasPortLabel(node, port.id!))
+        node.portProp(port.id!, 'attrs/labelText/visibility', 'hidden')
     })
   })
   setTimeout(() => { isLoadingGraph.value = false }, 100)

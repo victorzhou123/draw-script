@@ -73,4 +73,4 @@ class LoopNodeHandler(BaseNodeHandler):
                 next_nodes = self.ctx.graph.get_next_nodes(current.id, result.branch)
                 current = next_nodes[0] if next_nodes else None
 
-        return NodeResult(success=True)
+        return NodeResult(success=True, branch="exit")
