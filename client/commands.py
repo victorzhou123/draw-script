@@ -929,7 +929,7 @@ class CommandHandler:
         screenshot = await _run_blocking(pyautogui.screenshot, region=(mx, my, mw, mh))
 
         if vision_type == "template_match":
-            template_b64 = params.get("template", "")
+            template_b64 = params.get("template_b64", "")
             if not template_b64:
                 return False, {}, "Template match: no template configured"
 
