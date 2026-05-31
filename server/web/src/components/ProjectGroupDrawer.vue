@@ -164,6 +164,13 @@
                     allow-clear
                     :options="projectClientIds.map(cid => ({ label: clientName(cid), value: cid }))"
                   />
+                  <a-button
+                    size="small" class="icon-btn"
+                    :disabled="!capturePreviewClientId"
+                    :loading="refreshingCaptures"
+                    @click="refreshCaptureStatus"
+                    title="刷新标注状态"
+                  ><ReloadOutlined /></a-button>
                 </div>
                 <div v-if="projectClientIds.length === 0" class="empty-hint">暂无客户端</div>
                 <div v-for="cid in projectClientIds" :key="cid" class="send-client-row">
@@ -275,7 +282,7 @@ import { message } from 'ant-design-vue'
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, MinusOutlined,
   LaptopOutlined, TagsOutlined, FileTextOutlined, PictureOutlined, UploadOutlined,
-  AimOutlined, BorderOutlined, FolderOpenOutlined, SendOutlined,
+  AimOutlined, BorderOutlined, FolderOpenOutlined, SendOutlined, ReloadOutlined,
 } from '@ant-design/icons-vue'
 import { useProjectStore } from '@/stores/projectStore'
 import { useClientStore } from '@/stores/clientStore'
@@ -319,6 +326,7 @@ const sendResult = ref<{ ok: boolean; text: string } | null>(null)
 const capturePreviewClientId = ref<string | null>(null)
 const markerCaptureMap = ref<Record<string, boolean>>({})  // name → captured
 const selectedMarkerNames = ref<Set<string>>(new Set())
+const refreshingCaptures = ref(false)
 
 // Scripts tab
 const addScriptId = ref<string | null>(null)
@@ -367,6 +375,16 @@ async function fetchCaptureStatus(projectId: string, clientId: string) {
   selectedMarkerNames.value = new Set(
     captures.filter(c => !c.captured).map(c => c.name)
   )
+}
+
+async function refreshCaptureStatus() {
+  if (!capturePreviewClientId.value || !selectedId.value) return
+  refreshingCaptures.value = true
+  try {
+    await fetchCaptureStatus(selectedId.value, capturePreviewClientId.value)
+  } finally {
+    refreshingCaptures.value = false
+  }
 }
 
 async function selectProject(id: string) {
