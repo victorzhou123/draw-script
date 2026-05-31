@@ -66,6 +66,19 @@ export interface MarkerCapture {
   captured: boolean
 }
 
+export interface MarkerCaptureData {
+  id: string
+  name: string
+  type: 'point' | 'box'
+  captured: boolean
+  x: number | null
+  y: number | null
+  w: number | null
+  h: number | null
+  window_x: number | null
+  window_y: number | null
+}
+
 export interface Template {
   id: string
   project_id: string
@@ -142,6 +155,10 @@ export const api = {
     http.delete(`/projects/${projectId}/markers/${markerId}`).then(r => r.data),
   getMarkerCaptures: (projectId: string, clientId: string) =>
     http.get<MarkerCapture[]>(`/projects/${projectId}/markers/captures`, { params: { client_id: clientId } }).then(r => r.data),
+  getMarkerCaptureData: (projectId: string, clientId: string) =>
+    http.get<MarkerCaptureData[]>(`/projects/${projectId}/markers/captures/data`, { params: { client_id: clientId } }).then(r => r.data),
+  captureClientScreenshot: (clientId: string) =>
+    http.post<{ data: string }>(`/clients/${clientId}/screenshot`).then(r => r.data.data),
   sendMarkers: (projectId: string, clientId: string, markerNames?: string[]) =>
     http.post(`/projects/${projectId}/markers/send`, {
       client_id: clientId,

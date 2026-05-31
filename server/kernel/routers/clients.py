@@ -1,7 +1,11 @@
+import asyncio
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from database import Client, ProjectClient, get_session
 from schemas import ClientResponse
 from ws_manager import client_ws_manager
@@ -44,3 +48,30 @@ async def get_client(client_id: str, db: AsyncSession = Depends(get_session)):
     connected_ids = set(client_ws_manager.get_connected_ids())
     rows = await _build_client_response([client], connected_ids, db)
     return rows[0]
+
+
+@router.post("/{client_id}/screenshot")
+async def capture_client_screenshot(client_id: str):
+    """Request a screenshot from a connected client and return it as base64."""
+    if not client_ws_manager.is_connected(client_id):
+        raise HTTPException(400, f"Client {client_id} is not connected")
+
+    request_id = str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future = loop.create_future()
+    client_ws_manager.pending_requests[request_id] = future
+
+    sent = await client_ws_manager.send_to_client(client_id, {
+        "type": "capture_screenshot",
+        "request_id": request_id,
+    })
+    if not sent:
+        client_ws_manager.pending_requests.pop(request_id, None)
+        raise HTTPException(500, "Failed to send screenshot request to client")
+
+    try:
+        b64_data = await asyncio.wait_for(future, timeout=settings.node_timeout)
+        return {"data": b64_data}
+    except asyncio.TimeoutError:
+        client_ws_manager.pending_requests.pop(request_id, None)
+        raise HTTPException(408, "Screenshot request timed out")

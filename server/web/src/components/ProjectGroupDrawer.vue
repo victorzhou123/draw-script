@@ -137,6 +137,16 @@
                       class="capture-badge"
                       :class="markerCaptureMap[m.name] ? 'badge-ok' : 'badge-missing'"
                     >{{ markerCaptureMap[m.name] ? '已标注' : '未标注' }}</span>
+                    <!-- Preview button -->
+                    <a-tooltip :title="capturePreviewClientId ? '预览标注' : '请先选择预览客户端'">
+                      <a-button
+                        type="text" size="small" class="icon-btn preview-marker-btn"
+                        :disabled="!capturePreviewClientId"
+                        @click.stop="openMarkerPreview(m.name)"
+                      >
+                        <EyeOutlined />
+                      </a-button>
+                    </a-tooltip>
                     <!-- Usage info popover -->
                     <a-popover trigger="click" placement="rightTop" overlay-class-name="marker-usage-popover">
                       <template #title>
@@ -298,6 +308,57 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- 标注预览 Modal -->
+    <a-modal
+      v-model:open="previewOpen"
+      :title="`标注预览 — ${previewFocusMarker}`"
+      :width="900"
+      :footer="null"
+      :body-style="{ padding: '12px', background: '#141414' }"
+    >
+      <div v-if="previewLoading" style="text-align:center;padding:40px">
+        <a-spin tip="获取截图中..." />
+      </div>
+      <template v-else-if="previewScreenshot">
+        <div class="annotation-preview-wrapper">
+          <img
+            ref="previewImgRef"
+            :src="'data:image/png;base64,' + previewScreenshot"
+            class="annotation-preview-img"
+            @load="onPreviewImgLoad"
+          />
+          <!-- Captured point markers -->
+          <template v-for="m in previewMarkerData" :key="m.name">
+            <div
+              v-if="m.captured && m.type === 'point' && m.x !== null"
+              class="overlay-point"
+              :class="{ focused: m.name === previewFocusMarker }"
+              :style="pointOverlayStyle(m)"
+            >
+              <span class="overlay-label">{{ m.name }}</span>
+            </div>
+            <div
+              v-else-if="m.captured && m.type === 'box' && m.x !== null && m.w && m.h"
+              class="overlay-box"
+              :class="{ focused: m.name === previewFocusMarker }"
+              :style="boxOverlayStyle(m)"
+            >
+              <span class="overlay-label">{{ m.name }}</span>
+            </div>
+          </template>
+        </div>
+        <!-- Uncaptured markers legend -->
+        <div v-if="previewMarkerData.some(m => !m.captured)" class="uncaptured-legend">
+          <span class="uncaptured-legend-title">未标注：</span>
+          <span
+            v-for="m in previewMarkerData.filter(m => !m.captured)"
+            :key="m.name"
+            class="uncaptured-badge"
+          >{{ m.name }}</span>
+        </div>
+      </template>
+    </a-modal>
   </a-drawer>
 </template>
 
@@ -308,13 +369,13 @@ import {
   PlusOutlined, EditOutlined, DeleteOutlined, MinusOutlined,
   LaptopOutlined, TagsOutlined, FileTextOutlined, PictureOutlined, UploadOutlined,
   AimOutlined, BorderOutlined, FolderOpenOutlined, SendOutlined, ReloadOutlined,
-  InfoCircleOutlined,
+  InfoCircleOutlined, EyeOutlined,
 } from '@ant-design/icons-vue'
 import { useProjectStore } from '@/stores/projectStore'
 import { useClientStore } from '@/stores/clientStore'
 import { useScriptStore } from '@/stores/scriptStore'
 import { api } from '@/services/api'
-import type { Project, MarkerCapture } from '@/services/api'
+import type { Project, MarkerCapture, MarkerCaptureData } from '@/services/api'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -353,6 +414,16 @@ const capturePreviewClientId = ref<string | null>(null)
 const markerCaptureMap = ref<Record<string, boolean>>({})  // name → captured
 const selectedMarkerNames = ref<Set<string>>(new Set())
 const refreshingCaptures = ref(false)
+
+// Marker preview
+const previewOpen = ref(false)
+const previewLoading = ref(false)
+const previewFocusMarker = ref('')
+const previewScreenshot = ref<string | null>(null)
+const previewMarkerData = ref<MarkerCaptureData[]>([])
+const previewImgNaturalWidth = ref(1)
+const previewImgNaturalHeight = ref(1)
+const previewImgRef = ref<HTMLImageElement | null>(null)
 
 // Scripts tab
 const addScriptId = ref<string | null>(null)
@@ -554,6 +625,61 @@ function selectUncaptured() {
   )
 }
 
+async function openMarkerPreview(markerName: string) {
+  if (!capturePreviewClientId.value || !selectedId.value) {
+    message.warning('请先选择预览客户端')
+    return
+  }
+  previewFocusMarker.value = markerName
+  previewScreenshot.value = null
+  previewMarkerData.value = []
+  previewImgNaturalWidth.value = 1
+  previewImgNaturalHeight.value = 1
+  previewOpen.value = true
+  previewLoading.value = true
+  try {
+    const [screenshot, markerData] = await Promise.all([
+      api.captureClientScreenshot(capturePreviewClientId.value),
+      api.getMarkerCaptureData(selectedId.value, capturePreviewClientId.value),
+    ])
+    previewScreenshot.value = screenshot
+    previewMarkerData.value = markerData
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail ?? '获取预览失败')
+    previewOpen.value = false
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+function onPreviewImgLoad() {
+  if (previewImgRef.value) {
+    previewImgNaturalWidth.value = previewImgRef.value.naturalWidth || 1
+    previewImgNaturalHeight.value = previewImgRef.value.naturalHeight || 1
+  }
+}
+
+function markerAbsX(m: MarkerCaptureData) {
+  return (m.x ?? 0) + (m.window_x ?? 0)
+}
+function markerAbsY(m: MarkerCaptureData) {
+  return (m.y ?? 0) + (m.window_y ?? 0)
+}
+function pointOverlayStyle(m: MarkerCaptureData) {
+  return {
+    left: `${markerAbsX(m) / previewImgNaturalWidth.value * 100}%`,
+    top: `${markerAbsY(m) / previewImgNaturalHeight.value * 100}%`,
+  }
+}
+function boxOverlayStyle(m: MarkerCaptureData) {
+  return {
+    left: `${markerAbsX(m) / previewImgNaturalWidth.value * 100}%`,
+    top: `${markerAbsY(m) / previewImgNaturalHeight.value * 100}%`,
+    width: `${(m.w ?? 0) / previewImgNaturalWidth.value * 100}%`,
+    height: `${(m.h ?? 0) / previewImgNaturalHeight.value * 100}%`,
+  }
+}
+
 async function sendMarkersToClients() {
   if (!selectedId.value || sendClientIds.value.length === 0) return
   sending.value = true
@@ -712,6 +838,79 @@ watch(currentMarkers, (markers) => {
 .send-result { margin-top: 8px; font-size: 12px; padding: 5px 10px; border-radius: 4px; }
 .send-result.ok  { color: #52c41a; background: #162312; border: 1px solid #52c41a33; }
 .send-result.err { color: #ff4d4f; background: #2a1215; border: 1px solid #ff4d4f33; }
+
+/* Marker preview button */
+.preview-marker-btn { color: #444 !important; padding: 0 3px !important; height: 20px !important; flex-shrink: 0; }
+.preview-marker-btn:hover:not(:disabled) { color: #1890ff !important; }
+
+/* Annotation preview modal */
+.annotation-preview-wrapper { position: relative; display: block; width: 100%; line-height: 0; }
+.annotation-preview-img { width: 100%; display: block; }
+
+.overlay-point {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #1890ff;
+  background: rgba(24, 144, 255, 0.25);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.overlay-point.focused {
+  border-color: #faad14;
+  background: rgba(250, 173, 20, 0.35);
+  width: 16px;
+  height: 16px;
+  z-index: 10;
+}
+.overlay-box {
+  position: absolute;
+  border: 2px solid #52c41a;
+  background: rgba(82, 196, 26, 0.08);
+  pointer-events: none;
+}
+.overlay-box.focused {
+  border-color: #faad14;
+  background: rgba(250, 173, 20, 0.12);
+  z-index: 10;
+}
+.overlay-label {
+  position: absolute;
+  top: -16px;
+  left: 0;
+  font-size: 10px;
+  color: #fff;
+  background: rgba(24, 144, 255, 0.85);
+  padding: 0 4px;
+  border-radius: 2px;
+  white-space: nowrap;
+  line-height: 14px;
+}
+.overlay-point.focused .overlay-label,
+.overlay-box.focused .overlay-label { background: rgba(250, 173, 20, 0.95); color: #000; }
+.overlay-box .overlay-label { top: -18px; }
+
+.uncaptured-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 6px 8px;
+  background: #1f1215;
+  border: 1px solid #ff4d4f33;
+  border-radius: 4px;
+}
+.uncaptured-legend-title { font-size: 11px; color: #ff4d4f; flex-shrink: 0; }
+.uncaptured-badge {
+  font-size: 10px;
+  color: #ff4d4f;
+  background: #2a1215;
+  border: 1px solid #ff4d4f44;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
 </style>
 
 <style>

@@ -186,6 +186,41 @@ async def get_marker_captures(
     return items
 
 
+# ── Marker capture coordinates (for preview) ──────────────────────────────────
+
+@router.get("/{project_id}/markers/captures/data")
+async def get_marker_capture_data(
+    project_id: str,
+    client_id: str,
+    db: AsyncSession = Depends(get_session),
+):
+    """Return per-marker coordinates for one client (for annotation preview)."""
+    result = await db.execute(
+        select(Marker, MarkerCapture)
+        .outerjoin(
+            MarkerCapture,
+            (MarkerCapture.marker_id == Marker.id) & (MarkerCapture.client_id == client_id),
+        )
+        .where(Marker.project_id == project_id)
+        .order_by(Marker.created_at)
+    )
+    items = []
+    for marker, capture in result.all():
+        items.append({
+            "id": marker.id,
+            "name": marker.name,
+            "type": marker.type,
+            "captured": capture is not None and capture.x is not None,
+            "x": capture.x if capture else None,
+            "y": capture.y if capture else None,
+            "w": capture.w if capture else None,
+            "h": capture.h if capture else None,
+            "window_x": capture.window_x if capture else None,
+            "window_y": capture.window_y if capture else None,
+        })
+    return items
+
+
 # ── Templates ─────────────────────────────────────────────────────────────────
 
 @router.get("/{project_id}/templates", response_model=list[TemplateResponse])
