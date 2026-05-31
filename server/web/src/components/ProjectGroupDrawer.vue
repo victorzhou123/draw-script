@@ -137,6 +137,31 @@
                       class="capture-badge"
                       :class="markerCaptureMap[m.name] ? 'badge-ok' : 'badge-missing'"
                     >{{ markerCaptureMap[m.name] ? '已标注' : '未标注' }}</span>
+                    <!-- Usage info popover -->
+                    <a-popover trigger="click" placement="rightTop" overlay-class-name="marker-usage-popover">
+                      <template #title>
+                        <span style="font-size:12px;color:#aaa">引用此标注的节点</span>
+                      </template>
+                      <template #content>
+                        <div style="min-width:180px;max-width:280px">
+                          <div v-if="getMarkerUsages(m.name).length === 0" style="color:#555;font-size:12px;padding:2px 0">
+                            未被任何脚本引用
+                          </div>
+                          <div
+                            v-for="(u, i) in getMarkerUsages(m.name)" :key="i"
+                            style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px"
+                          >
+                            <span style="color:#888;flex-shrink:0;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="u.scriptName">{{ u.scriptName }}</span>
+                            <span style="color:#444">›</span>
+                            <span style="color:#ccc;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="u.nodeLabel">{{ u.nodeLabel }}</span>
+                            <span style="font-size:10px;color:#555;background:#222;padding:1px 5px;border-radius:3px;flex-shrink:0">{{ u.nodeType }}</span>
+                          </div>
+                        </div>
+                      </template>
+                      <a-button type="text" size="small" class="icon-btn usage-info-btn">
+                        <InfoCircleOutlined />
+                      </a-button>
+                    </a-popover>
                     <a-popconfirm title="删除此标记？" @confirm="removeMarker(m.id)">
                       <a-button type="text" size="small" class="icon-btn danger-btn"><DeleteOutlined /></a-button>
                     </a-popconfirm>
@@ -283,6 +308,7 @@ import {
   PlusOutlined, EditOutlined, DeleteOutlined, MinusOutlined,
   LaptopOutlined, TagsOutlined, FileTextOutlined, PictureOutlined, UploadOutlined,
   AimOutlined, BorderOutlined, FolderOpenOutlined, SendOutlined, ReloadOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons-vue'
 import { useProjectStore } from '@/stores/projectStore'
 import { useClientStore } from '@/stores/clientStore'
@@ -476,6 +502,39 @@ function toggleSendClient(cid: string) {
   else sendClientIds.value.push(cid)
 }
 
+const NODE_TYPE_LABEL: Record<string, string> = {
+  action: '操作', vision: '视觉', condition: '条件', screenshot: '截图',
+  http: 'HTTP', compute: '计算', delay: '延时', loop: '循环',
+  wait: '等待', script: '子脚本', webhook: 'Webhook',
+}
+
+interface MarkerUsage { scriptName: string; nodeLabel: string; nodeType: string }
+
+function getMarkerUsages(markerName: string): MarkerUsage[] {
+  const usages: MarkerUsage[] = []
+  const scripts = scriptStore.scripts.filter(s => s.project_id === selectedId.value)
+  for (const script of scripts) {
+    try {
+      const flow = JSON.parse(script.flow_json || '{}')
+      for (const node of (flow.nodes ?? [])) {
+        const data = node.data ?? {}
+        const dataStr = JSON.stringify(data)
+        const referencedByTemplate = dataStr.includes(`markers.${markerName}.`)
+        const referencedByRangeMarker = data.range_marker === markerName
+        if (referencedByTemplate || referencedByRangeMarker) {
+          const rawType = (node.shape as string || '').replace('node-', '')
+          usages.push({
+            scriptName: script.name,
+            nodeLabel: data.label || rawType || node.id,
+            nodeType: NODE_TYPE_LABEL[rawType] || rawType,
+          })
+        }
+      }
+    } catch { /* skip malformed flow_json */ }
+  }
+  return usages
+}
+
 function toggleMarker(name: string) {
   const s = selectedMarkerNames.value
   if (s.has(name)) s.delete(name)
@@ -640,6 +699,8 @@ watch(currentMarkers, (markers) => {
 .capture-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; flex-shrink: 0; }
 .badge-ok { color: #52c41a; background: #162312; border: 1px solid #52c41a44; }
 .badge-missing { color: #888; background: #222; border: 1px solid #333; }
+.usage-info-btn { color: #444 !important; padding: 0 3px !important; height: 20px !important; flex-shrink: 0; }
+.usage-info-btn:hover { color: #888 !important; }
 
 /* Send annotation */
 .send-divider { height: 1px; background: #252525; margin: 10px 0; }
@@ -651,4 +712,11 @@ watch(currentMarkers, (markers) => {
 .send-result { margin-top: 8px; font-size: 12px; padding: 5px 10px; border-radius: 4px; }
 .send-result.ok  { color: #52c41a; background: #162312; border: 1px solid #52c41a33; }
 .send-result.err { color: #ff4d4f; background: #2a1215; border: 1px solid #ff4d4f33; }
+</style>
+
+<style>
+.marker-usage-popover .ant-popover-inner { background: #1e1e1e; border: 1px solid #2a2a2a; }
+.marker-usage-popover .ant-popover-title { border-bottom: 1px solid #2a2a2a; padding: 6px 12px; }
+.marker-usage-popover .ant-popover-inner-content { padding: 8px 12px; }
+.marker-usage-popover .ant-popover-arrow::before { background: #1e1e1e; }
 </style>
