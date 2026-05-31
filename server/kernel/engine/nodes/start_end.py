@@ -31,9 +31,6 @@ class EndNodeHandler(BaseNodeHandler):
         else:
             self.ctx.completion_result = dict(self.ctx.variables)
 
-        if self.ctx.completion_event and not self.ctx.completion_event.is_set():
-            self.ctx.completion_event.set()
-
         return NodeResult()
 
 

@@ -114,7 +114,6 @@ class ExecutionResponse(BaseModel):
     status: str
     started_at: datetime | None
     finished_at: datetime | None
-    log: str
     result_json: str | None = None
 
     class Config:

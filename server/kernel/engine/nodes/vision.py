@@ -1,6 +1,8 @@
 import asyncio
 import base64
+import json
 import logging
+import re
 import uuid
 
 from config import settings
@@ -142,7 +144,11 @@ class VisionNodeHandler(BaseNodeHandler):
                     x, y = int(vision_result.location.get("x", 0)), int(vision_result.location.get("y", 0))
                     self.ctx.variables[result_var] = f"{x},{y}"
                 elif vision_result.text:
-                    self.ctx.variables[result_var] = vision_result.text
+                    post_process: list = data.get("post_process") or []
+                    value = vision_result.text
+                    if "parse_markdown_json" in post_process:
+                        value = _parse_markdown_json(value)
+                    self.ctx.variables[result_var] = value
                 else:
                     self.ctx.variables[result_var] = None
 
@@ -150,3 +156,12 @@ class VisionNodeHandler(BaseNodeHandler):
         except Exception as e:
             await self._log(f"[Vision] 异常: {e}")
             return NodeResult(success=False, error=str(e))
+
+
+def _parse_markdown_json(text: str):
+    """Strip markdown code fences and parse as JSON. Returns parsed object on success, raw string on failure."""
+    cleaned = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text.strip())
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        return text

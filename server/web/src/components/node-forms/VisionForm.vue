@@ -91,6 +91,18 @@
       <a-form-item label="结果存入">
         <a-auto-complete v-model:value="d.result_var" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))" placeholder="context 字段名" allow-clear @change="update()" />
       </a-form-item>
+      <a-form-item label="数据后处理">
+        <a-select
+          v-model:value="d.post_process"
+          mode="multiple"
+          :style="{ width: '100%' }"
+          placeholder="可选，选择后处理步骤"
+          allow-clear
+          @change="update()"
+        >
+          <a-select-option value="parse_markdown_json">解析 Markdown JSON</a-select-option>
+        </a-select>
+      </a-form-item>
     </template>
 
     <!-- Color detect -->
