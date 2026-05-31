@@ -763,6 +763,13 @@ def _run_blocking(fn, *args, **kwargs):
     return loop.run_in_executor(None, lambda: fn(*args, **kwargs))
 
 
+def _int(v, default=0):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
 # ── Command handler ───────────────────────────────────────────────────────────
 
 class CommandHandler:
@@ -850,29 +857,29 @@ class CommandHandler:
         pyautogui.FAILSAFE = False
 
         if action_type == "mouse_click":
-            x, y = int(params.get("x", 0)), int(params.get("y", 0))
+            x, y = _int(params.get("x"), 0), _int(params.get("y"), 0)
             await _run_blocking(pyautogui.click, x, y,
                                 button=params.get("button","left"),
-                                clicks=int(params.get("clicks",1)))
+                                clicks=_int(params.get("clicks"), 1))
             return True, {"x": x, "y": y}, None
 
         if action_type == "mouse_double_click":
-            x, y = int(params.get("x", 0)), int(params.get("y", 0))
+            x, y = _int(params.get("x"), 0), _int(params.get("y"), 0)
             await _run_blocking(pyautogui.doubleClick, x, y,
                                 button=params.get("button","left"))
             return True, {"x": x, "y": y}, None
 
         if action_type == "mouse_move":
-            x, y = int(params.get("x", 0)), int(params.get("y", 0))
-            await _run_blocking(pyautogui.moveTo, x, y, duration=float(params.get("duration",0.2)))
+            x, y = _int(params.get("x"), 0), _int(params.get("y"), 0)
+            await _run_blocking(pyautogui.moveTo, x, y, duration=float(params.get("duration") or 0.2))
             return True, {"x": x, "y": y}, None
 
         if action_type == "mouse_drag":
-            x1,y1 = int(params.get("x1",0)), int(params.get("y1",0))
-            x2,y2 = int(params.get("x2",0)), int(params.get("y2",0))
+            x1, y1 = _int(params.get("x1"), 0), _int(params.get("y1"), 0)
+            x2, y2 = _int(params.get("x2"), 0), _int(params.get("y2"), 0)
             await _run_blocking(pyautogui.moveTo, x1, y1)
             await _run_blocking(pyautogui.dragTo, x2, y2,
-                                duration=float(params.get("duration",0.3)))
+                                duration=float(params.get("duration") or 0.3))
             return True, {}, None
 
         if action_type == "keyboard_type":
@@ -889,12 +896,12 @@ class CommandHandler:
 
         if action_type == "keyboard_press":
             key = params.get("key", "")
-            await _run_blocking(pyautogui.press, key, presses=int(params.get("presses",1)))
+            await _run_blocking(pyautogui.press, key, presses=_int(params.get("presses"), 1))
             return True, {"key": key}, None
 
         if action_type == "mouse_scroll":
-            x, y = int(params.get("x", 0)), int(params.get("y", 0))
-            await _run_blocking(pyautogui.scroll, int(params.get("clicks",3)), x, y)
+            x, y = _int(params.get("x"), 0), _int(params.get("y"), 0)
+            await _run_blocking(pyautogui.scroll, _int(params.get("clicks"), 3), x, y)
             return True, {}, None
 
         return False, {}, f"Unknown action_type: {action_type}"
@@ -918,10 +925,10 @@ class CommandHandler:
             hint = "请先完成标记标注" if server_markers is not None else f"project '{project_id}'"
             return False, {}, f"Vision node: marker '{range_marker_name}' not found ({hint})"
 
-        mx = int(marker.get("x", 0))
-        my = int(marker.get("y", 0))
-        mw = int(marker.get("w", 0))
-        mh = int(marker.get("h", 0))
+        mx = _int(marker.get("x"), 0)
+        my = _int(marker.get("y"), 0)
+        mw = _int(marker.get("w"), 0)
+        mh = _int(marker.get("h"), 0)
 
         if mw <= 0 or mh <= 0:
             return False, {}, f"Vision node: marker '{range_marker_name}' 不是方框标记（缺少 w/h）"
