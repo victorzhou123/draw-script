@@ -252,7 +252,8 @@ def _show_point_overlay(
     cv.pack(fill="both", expand=True)
 
     bg_photo = ImageTk.PhotoImage(dark_img)
-    cv.create_image(0, 0, anchor="nw", image=bg_photo)
+    bg_item = cv.create_image(0, 0, anchor="nw", image=bg_photo)
+    photo_ref = [bg_photo]  # keep reference alive; replaced on resume
 
     # ── Header bar ──
     cv.create_rectangle(0, 0, sw, 48, fill="#111", outline="")
@@ -311,9 +312,16 @@ def _show_point_overlay(
         ).pack(pady=(10, 4))
         def _resume():
             resume_win.destroy()
-            root.deiconify()
-            root.lift()
-            root.focus_force()
+            def _refresh():
+                new_screen = pyautogui.screenshot()
+                new_dark = ImageEnhance.Brightness(new_screen).enhance(0.4)
+                new_photo = ImageTk.PhotoImage(new_dark)
+                photo_ref[0] = new_photo
+                cv.itemconfig(bg_item, image=new_photo)
+                root.deiconify()
+                root.lift()
+                root.focus_force()
+            root.after(80, _refresh)
         tk.Button(
             resume_win, text="继续标注 ▶", command=_resume,
             bg="#1d6b3e", fg="white", font=("Microsoft YaHei UI", 10, "bold"),
@@ -433,7 +441,8 @@ def _show_box_overlay(
     cv.pack(fill="both", expand=True)
 
     bg_photo = ImageTk.PhotoImage(dark_img)
-    cv.create_image(0, 0, anchor="nw", image=bg_photo)
+    bg_item = cv.create_image(0, 0, anchor="nw", image=bg_photo)
+    photo_ref = [bg_photo]  # keep reference alive; replaced on resume
 
     # ── Header ──
     cv.create_rectangle(0, 0, sw, 48, fill="#111", outline="")
@@ -495,9 +504,16 @@ def _show_box_overlay(
         ).pack(pady=(10, 4))
         def _resume():
             resume_win.destroy()
-            root.deiconify()
-            root.lift()
-            root.focus_force()
+            def _refresh():
+                new_screen = pyautogui.screenshot()
+                new_dark = ImageEnhance.Brightness(new_screen).enhance(0.4)
+                new_photo = ImageTk.PhotoImage(new_dark)
+                photo_ref[0] = new_photo
+                cv.itemconfig(bg_item, image=new_photo)
+                root.deiconify()
+                root.lift()
+                root.focus_force()
+            root.after(80, _refresh)
         tk.Button(
             resume_win, text="继续标注 ▶", command=_resume,
             bg="#1d6b3e", fg="white", font=("Microsoft YaHei UI", 10, "bold"),
