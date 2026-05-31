@@ -148,6 +148,7 @@ class VisionNodeHandler(BaseNodeHandler):
                     value = vision_result.text
                     if "parse_markdown_json" in post_process:
                         value = _parse_markdown_json(value)
+                        await self._log(f"[Vision] post_process parse_markdown_json → {type(value).__name__}")
                     self.ctx.variables[result_var] = value
                 else:
                     self.ctx.variables[result_var] = None
