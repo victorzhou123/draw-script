@@ -10,13 +10,14 @@
     </a-form-item>
 
     <a-form-item label="检测范围">
-      <a-select v-model:value="d.range_marker" :style="{ width: '100%' }" placeholder="留空默认范围为选择的窗口" allow-clear @change="update()">
+      <a-select v-model:value="d.range_marker" :style="{ width: '100%' }" placeholder="选择方框标记作为识别区域" allow-clear @change="update()">
         <a-select-option v-for="m in ctx.availableMarkers.value" :key="m.name" :value="m.name">
           <span class="marker-menu-type" :class="`type-${m.type}`">{{ m.type === 'point' ? '点' : '方框' }}</span>
           {{ m.name }}
         </a-select-option>
       </a-select>
-      <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:4px">
+      <div class="hint-text" style="margin-top:4px">留空默认范围为选择的窗口</div>
+      <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:2px">
         当前项目暂无标记，请先在项目中添加方框类型标记
       </div>
     </a-form-item>
