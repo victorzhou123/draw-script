@@ -16,7 +16,10 @@
           {{ m.name }}
         </a-select-option>
       </a-select>
-      <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:4px">
+      <div class="hint-text" style="margin-top:4px">
+        留空默认范围为选择的窗口
+      </div>
+      <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:2px">
         当前项目暂无标记，请先在项目中添加方框类型标记
       </div>
     </a-form-item>
