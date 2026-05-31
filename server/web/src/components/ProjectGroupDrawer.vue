@@ -516,7 +516,7 @@ function getMarkerUsages(markerName: string): MarkerUsage[] {
   for (const script of scripts) {
     try {
       const flow = JSON.parse(script.flow_json || '{}')
-      for (const node of (flow.nodes ?? [])) {
+      for (const node of (flow.cells ?? []).filter((c: any) => c.shape?.startsWith('node-'))) {
         const data = node.data ?? {}
         const dataStr = JSON.stringify(data)
         const referencedByTemplate = dataStr.includes(`markers.${markerName}.`)
