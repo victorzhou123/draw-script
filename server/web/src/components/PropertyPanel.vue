@@ -163,6 +163,7 @@ watch(() => props.selectedNode, (node) => {
     code: node.data.code || '',
     output_fields: node.data.output_fields || [],
     script_id: node.data.script_id || '',
+    post_process: node.data.post_process || [],
   }))
   // Normalize legacy keyboard_press → keyboard_hotkey
   if (d.action_type === 'keyboard_press') {
