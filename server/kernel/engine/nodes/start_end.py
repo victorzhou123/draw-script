@@ -51,4 +51,26 @@ def _coerce(value, type_hint: str):
         return str(value).lower() in ("true", "1", "yes")
     if type_hint == "str":
         return str(value) if value is not None else ""
+    if type_hint == "list":
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            import json
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, list) else []
+            except (ValueError, TypeError):
+                return []
+        return []
+    if type_hint == "dict":
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            import json
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, dict) else {}
+            except (ValueError, TypeError):
+                return {}
+        return {}
     return value

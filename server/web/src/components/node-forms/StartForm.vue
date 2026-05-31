@@ -10,6 +10,8 @@
         <a-select-option value="int">int</a-select-option>
         <a-select-option value="float">float</a-select-option>
         <a-select-option value="bool">bool</a-select-option>
+        <a-select-option value="list">list</a-select-option>
+        <a-select-option value="dict">dict</a-select-option>
       </a-select>
       <a-input v-model:value="field.default" placeholder="默认值" class="field-default" @change="update()" />
       <a-button type="text" size="small" danger @click="removeField(idx)">✕</a-button>
