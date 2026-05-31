@@ -143,6 +143,9 @@ const isActive = computed(() => {
 .node-type-loop  { border-color: #2f54eb; background: #131629; }
 .node-type-loop  .node-icon, .node-type-loop  .node-label { color: #597ef7; }
 
+.node-type-wait  { border-color: #2db7f5; background: #0a1e2e; }
+.node-type-wait  .node-icon, .node-type-wait  .node-label { color: #2db7f5; }
+
 .node-type-http  { border-color: #13c2c2; background: #112123; }
 .node-type-http  .node-icon, .node-type-http  .node-label { color: #13c2c2; }
 

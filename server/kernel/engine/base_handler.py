@@ -9,6 +9,7 @@ class NodeResult:
     output: dict[str, Any] = field(default_factory=dict)
     branch: str | None = None
     error: str | None = None
+    stop_branch: bool = False
 
 
 class BaseNodeHandler(ABC):

@@ -15,6 +15,7 @@ import {
   LinkOutlined,
   CodeOutlined,
   ApartmentOutlined,
+  NodeCollapseOutlined,
 } from '@ant-design/icons-vue'
 
 export const ICON_MAP: Record<string, Component> = {
@@ -30,6 +31,7 @@ export const ICON_MAP: Record<string, Component> = {
   LinkOutlined,
   CodeOutlined,
   ApartmentOutlined,
+  NodeCollapseOutlined,
 }
 
 // Port appearance: hidden by default, revealed by graph hover events
@@ -113,6 +115,7 @@ const NODE_DEFS = [
   { shape: 'node-condition',  icon: 'BranchesOutlined',    label: 'Condition',  w: 67,  h: 67  },
   { shape: 'node-delay',      icon: 'ClockCircleOutlined', label: 'Delay',      w: 120, h: 60  },
   { shape: 'node-loop',       icon: 'SyncOutlined',        label: 'Loop',       w: 120, h: 60  },
+  { shape: 'node-wait',       icon: 'NodeCollapseOutlined',label: 'Wait',       w: 120, h: 60  },
   { shape: 'node-http',       icon: 'GlobalOutlined',      label: 'HTTP',       w: 120, h: 60  },
   { shape: 'node-webhook',    icon: 'LinkOutlined',        label: 'Webhook',    w: 120, h: 60  },
   { shape: 'node-compute',    icon: 'CodeOutlined',        label: 'Compute',    w: 120, h: 60  },

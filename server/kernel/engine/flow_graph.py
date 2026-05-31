@@ -83,6 +83,9 @@ class FlowGraph:
                 return node
         return next(iter(self.nodes.values()), None)
 
+    def get_in_edges(self, node_id: str) -> list[FlowEdge]:
+        return [e for e in self.edges if e.target_id == node_id]
+
     def get_next_nodes(self, node_id: str, branch: str | None = None) -> list[FlowNode]:
         out = self._out_edges.get(node_id, [])
         matched = []

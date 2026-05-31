@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from database import Marker, Project, ProjectClient, Script, Template, get_session
+from database import Marker, MarkerCapture, Project, ProjectClient, Script, Template, get_session
 from schemas import (
     MarkerCreate, MarkerResponse,
     ProjectCreate, ProjectResponse, ProjectUpdate,
@@ -122,17 +122,68 @@ async def send_markers_to_client(
     )
     markers = result.scalars().all()
 
+    if body.marker_names is not None:
+        name_set = set(body.marker_names)
+        markers = [m for m in markers if m.name in name_set]
+
+    # Fetch existing captures for this client so the client can pre-fill them
+    cap_result = await db.execute(
+        select(MarkerCapture).where(
+            MarkerCapture.marker_id.in_([m.id for m in markers]),
+            MarkerCapture.client_id == body.client_id,
+        )
+    )
+    captures: dict[str, MarkerCapture] = {c.marker_id: c for c in cap_result.scalars().all()}
+
+    marker_list = []
+    for m in markers:
+        item: dict = {"name": m.name, "type": m.type}
+        cap = captures.get(m.id)
+        if cap and cap.x is not None:
+            item["existing"] = {"x": cap.x, "y": cap.y, "w": cap.w, "h": cap.h}
+        marker_list.append(item)
+
     sent = await client_ws_manager.send_to_client(body.client_id, {
         "type": "set_markers",
         "project_id": project_id,
         "project_name": project.name,
-        "markers": [{"name": m.name, "type": m.type} for m in markers],
+        "markers": marker_list,
     })
     if not sent:
         raise HTTPException(500, "Failed to send to client")
 
     logger.info(f"Sent {len(markers)} markers to client {body.client_id} for project {project_id}")
     return {"ok": True, "count": len(markers)}
+
+
+# ── Marker capture status ──────────────────────────────────────────────────────
+
+@router.get("/{project_id}/markers/captures")
+async def get_marker_captures(
+    project_id: str,
+    client_id: str,
+    db: AsyncSession = Depends(get_session),
+):
+    """Return per-marker capture status for one client (for frontend status display)."""
+    from sqlalchemy.orm import aliased
+    result = await db.execute(
+        select(Marker, MarkerCapture)
+        .outerjoin(
+            MarkerCapture,
+            (MarkerCapture.marker_id == Marker.id) & (MarkerCapture.client_id == client_id),
+        )
+        .where(Marker.project_id == project_id)
+        .order_by(Marker.created_at)
+    )
+    items = []
+    for marker, capture in result.all():
+        items.append({
+            "id": marker.id,
+            "name": marker.name,
+            "type": marker.type,
+            "captured": capture is not None and capture.x is not None,
+        })
+    return items
 
 
 # ── Templates ─────────────────────────────────────────────────────────────────

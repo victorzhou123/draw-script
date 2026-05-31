@@ -105,17 +105,42 @@
                     <PlusOutlined />
                   </a-button>
                 </div>
+                <!-- Marker list with checkboxes and capture status -->
                 <div v-if="currentMarkers.length === 0" class="empty-hint">暂无标记，从上方添加</div>
-                <div v-for="m in currentMarkers" :key="m.id" class="member-row">
-                  <span class="marker-type-icon" :class="`icon-${m.type}`">
-                    <AimOutlined v-if="m.type === 'point'" />
-                    <BorderOutlined v-else />
-                  </span>
-                  <span class="member-name">{{ m.name }}</span>
-                  <span class="marker-type-tag">{{ m.type === 'point' ? '点' : '框' }}</span>
-                  <a-popconfirm title="删除此标记？" @confirm="removeMarker(m.id)">
-                    <a-button type="text" size="small" class="icon-btn danger-btn"><DeleteOutlined /></a-button>
-                  </a-popconfirm>
+                <div v-else>
+                  <div class="marker-list-header">
+                    <a-checkbox
+                      :indeterminate="markerSelectIndeterminate"
+                      :checked="markerSelectAllChecked"
+                      @change="(e: any) => toggleAllMarkers(e.target.checked)"
+                    >全选</a-checkbox>
+                    <a-button
+                      v-if="capturePreviewClientId"
+                      type="text" size="small" class="select-missing-btn"
+                      @click="selectUncaptured"
+                    >选未标注</a-button>
+                  </div>
+                  <div v-for="m in currentMarkers" :key="m.id" class="member-row">
+                    <a-checkbox
+                      :checked="selectedMarkerNames.has(m.name)"
+                      @change="() => toggleMarker(m.name)"
+                      style="margin-right:4px"
+                    />
+                    <span class="marker-type-icon" :class="`icon-${m.type}`">
+                      <AimOutlined v-if="m.type === 'point'" />
+                      <BorderOutlined v-else />
+                    </span>
+                    <span class="member-name">{{ m.name }}</span>
+                    <span class="marker-type-tag">{{ m.type === 'point' ? '点' : '框' }}</span>
+                    <span
+                      v-if="capturePreviewClientId"
+                      class="capture-badge"
+                      :class="markerCaptureMap[m.name] ? 'badge-ok' : 'badge-missing'"
+                    >{{ markerCaptureMap[m.name] ? '已标注' : '未标注' }}</span>
+                    <a-popconfirm title="删除此标记？" @confirm="removeMarker(m.id)">
+                      <a-button type="text" size="small" class="icon-btn danger-btn"><DeleteOutlined /></a-button>
+                    </a-popconfirm>
+                  </div>
                 </div>
 
                 <!-- 发送标注 -->
@@ -127,6 +152,18 @@
                     :checked="sendAllChecked"
                     @change="toggleSelectAll"
                   >全选</a-checkbox>
+                </div>
+                <!-- Preview capture status for a specific client -->
+                <div class="preview-client-row">
+                  <span class="preview-label">预览状态</span>
+                  <a-select
+                    v-model:value="capturePreviewClientId"
+                    size="small"
+                    placeholder="选择客户端查看标注状态"
+                    style="flex:1"
+                    allow-clear
+                    :options="projectClientIds.map(cid => ({ label: clientName(cid), value: cid }))"
+                  />
                 </div>
                 <div v-if="projectClientIds.length === 0" class="empty-hint">暂无客户端</div>
                 <div v-for="cid in projectClientIds" :key="cid" class="send-client-row">
@@ -142,10 +179,10 @@
                 <a-button
                   type="primary" size="small" block style="margin-top:8px"
                   :loading="sending"
-                  :disabled="sendClientIds.length === 0 || currentMarkers.length === 0"
+                  :disabled="sendClientIds.length === 0 || selectedMarkerNames.size === 0"
                   @click="sendMarkersToClients"
                 >
-                  <SendOutlined /> 发送 {{ currentMarkers.length }} 个标记到 {{ sendClientIds.length }} 个客户端
+                  <SendOutlined /> 发送选中 {{ selectedMarkerNames.size }} 个标记到 {{ sendClientIds.length }} 个客户端
                 </a-button>
                 <div v-if="sendResult" class="send-result" :class="sendResult.ok ? 'ok' : 'err'">{{ sendResult.text }}</div>
               </div>
@@ -244,7 +281,7 @@ import { useProjectStore } from '@/stores/projectStore'
 import { useClientStore } from '@/stores/clientStore'
 import { useScriptStore } from '@/stores/scriptStore'
 import { api } from '@/services/api'
-import type { Project } from '@/services/api'
+import type { Project, MarkerCapture } from '@/services/api'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -278,6 +315,10 @@ const newMarkerType = ref<'point' | 'box'>('point')
 const sendClientIds = ref<string[]>([])
 const sending = ref(false)
 const sendResult = ref<{ ok: boolean; text: string } | null>(null)
+// Marker capture status preview
+const capturePreviewClientId = ref<string | null>(null)
+const markerCaptureMap = ref<Record<string, boolean>>({})  // name → captured
+const selectedMarkerNames = ref<Set<string>>(new Set())
 
 // Scripts tab
 const addScriptId = ref<string | null>(null)
@@ -292,6 +333,12 @@ const selectedProject = computed(() => projectStore.projects.find(p => p.id === 
 const currentMarkers = computed(() => selectedId.value ? (projectStore.markers[selectedId.value] ?? []) : [])
 const sendAllChecked = computed(() => projectClientIds.value.length > 0 && sendClientIds.value.length === projectClientIds.value.length)
 const sendIndeterminate = computed(() => sendClientIds.value.length > 0 && sendClientIds.value.length < projectClientIds.value.length)
+const markerSelectAllChecked = computed(() =>
+  currentMarkers.value.length > 0 && currentMarkers.value.every(m => selectedMarkerNames.value.has(m.name))
+)
+const markerSelectIndeterminate = computed(() =>
+  selectedMarkerNames.value.size > 0 && !markerSelectAllChecked.value
+)
 const projectScripts = computed(() => selectedId.value ? scriptStore.scripts.filter(s => s.project_id === selectedId.value) : [])
 
 const addableClients = computed(() => clientStore.clients.filter(c => !projectClientIds.value.includes(c.id)))
@@ -313,6 +360,15 @@ function statusLabel(s: string) { return { idle: '空闲', running: '运行中',
 
 // ── Actions ───────────────────────────────────────────────────────────
 
+async function fetchCaptureStatus(projectId: string, clientId: string) {
+  const captures = await api.getMarkerCaptures(projectId, clientId)
+  markerCaptureMap.value = Object.fromEntries(captures.map(c => [c.name, c.captured]))
+  // Default: select uncaptured markers
+  selectedMarkerNames.value = new Set(
+    captures.filter(c => !c.captured).map(c => c.name)
+  )
+}
+
 async function selectProject(id: string) {
   selectedId.value = id
   detailTab.value = 'clients'
@@ -320,6 +376,9 @@ async function selectProject(id: string) {
   addScriptId.value = null
   sendClientIds.value = []
   sendResult.value = null
+  capturePreviewClientId.value = null
+  markerCaptureMap.value = {}
+  selectedMarkerNames.value = new Set(currentMarkers.value.map(m => m.name))
   // Fetch members
   await Promise.all([
     projectStore.fetchMarkers(id),
@@ -399,13 +458,36 @@ function toggleSendClient(cid: string) {
   else sendClientIds.value.push(cid)
 }
 
+function toggleMarker(name: string) {
+  const s = selectedMarkerNames.value
+  if (s.has(name)) s.delete(name)
+  else s.add(name)
+  selectedMarkerNames.value = new Set(s)
+}
+
+function toggleAllMarkers(checked: boolean) {
+  selectedMarkerNames.value = checked
+    ? new Set(currentMarkers.value.map(m => m.name))
+    : new Set()
+}
+
+function selectUncaptured() {
+  selectedMarkerNames.value = new Set(
+    currentMarkers.value.filter(m => !markerCaptureMap.value[m.name]).map(m => m.name)
+  )
+}
+
 async function sendMarkersToClients() {
   if (!selectedId.value || sendClientIds.value.length === 0) return
   sending.value = true
   sendResult.value = null
+  const names = selectedMarkerNames.value.size > 0
+    ? [...selectedMarkerNames.value]
+    : undefined
   try {
-    await Promise.all(sendClientIds.value.map(cid => projectStore.sendMarkers(selectedId.value!, cid)))
-    sendResult.value = { ok: true, text: `已发送 ${currentMarkers.value.length} 个标记到 ${sendClientIds.value.length} 个客户端` }
+    await Promise.all(sendClientIds.value.map(cid => projectStore.sendMarkers(selectedId.value!, cid, names)))
+    const markerCount = names?.length ?? currentMarkers.value.length
+    sendResult.value = { ok: true, text: `已发送 ${markerCount} 个标记到 ${sendClientIds.value.length} 个客户端` }
   } catch (e: any) {
     sendResult.value = { ok: false, text: e?.response?.data?.detail ?? '发送失败' }
   } finally {
@@ -454,6 +536,22 @@ watch(() => props.open, async (v) => {
     ])
   }
 })
+
+watch(capturePreviewClientId, async (cid) => {
+  if (cid && selectedId.value) {
+    await fetchCaptureStatus(selectedId.value, cid)
+  } else {
+    markerCaptureMap.value = {}
+    selectedMarkerNames.value = new Set(currentMarkers.value.map(m => m.name))
+  }
+})
+
+watch(currentMarkers, (markers) => {
+  // When markers change (e.g. new marker added), ensure all are selected by default
+  if (!capturePreviewClientId.value) {
+    selectedMarkerNames.value = new Set(markers.map(m => m.name))
+  }
+}, { deep: true })
 </script>
 
 <style scoped>
@@ -518,10 +616,19 @@ watch(() => props.open, async (v) => {
 .template-row .danger-btn { opacity: 0; transition: opacity 0.15s; }
 .template-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 3px; border: 1px solid #303030; flex-shrink: 0; }
 
+/* Marker list */
+.marker-list-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 6px; }
+.select-missing-btn { font-size: 11px; color: #888 !important; padding: 0 6px !important; height: 20px !important; }
+.capture-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; flex-shrink: 0; }
+.badge-ok { color: #52c41a; background: #162312; border: 1px solid #52c41a44; }
+.badge-missing { color: #888; background: #222; border: 1px solid #333; }
+
 /* Send annotation */
 .send-divider { height: 1px; background: #252525; margin: 10px 0; }
 .send-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .subsection-title { font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 5px; }
+.preview-client-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.preview-label { font-size: 11px; color: #555; flex-shrink: 0; }
 .send-client-row { padding: 4px 0; }
 .send-result { margin-top: 8px; font-size: 12px; padding: 5px 10px; border-radius: 4px; }
 .send-result.ok  { color: #52c41a; background: #162312; border: 1px solid #52c41a33; }

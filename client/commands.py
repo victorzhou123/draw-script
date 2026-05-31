@@ -285,12 +285,40 @@ def _show_point_overlay(
                                   tags="footer")
     cv.itemconfig("footer", state="hidden")
 
+    # ── Pause button (top right of header) ──
+    cv.create_rectangle(sw-90, 9, sw-10, 39, fill="#333", outline="#555", tags="pause_btn")
+    cv.create_text(sw-50, 24, text="暂停 [P]", fill="#aaa",
+                   font=("Microsoft YaHei UI", 10), anchor="center", tags="pause_btn")
+
     # ── Previous value hint ──
     if prev:
         px, py = prev["x"] + win_x, prev["y"] + win_y
         cv.create_oval(px-5, py-5, px+5, py+5, outline=_COLOR_PREV, fill="", width=1)
         cv.create_text(px+8, py-16, text=f"上次({px},{py})",
                        fill=_COLOR_PREV, font=("Consolas", 9), anchor="nw")
+
+    def _pause():
+        root.withdraw()
+        resume_win = tk.Toplevel()
+        resume_win.attributes("-topmost", True)
+        resume_win.overrideredirect(True)
+        ww, wh = 300, 72
+        resume_win.geometry(f"{ww}x{wh}+{(sw - ww) // 2}+{sh - wh - 60}")
+        resume_win.configure(bg="#1a1a2e")
+        tk.Label(
+            resume_win, text=f"标注已暂停  [{name}]",
+            bg="#1a1a2e", fg="#aaa", font=("Microsoft YaHei UI", 10),
+        ).pack(pady=(10, 4))
+        def _resume():
+            resume_win.destroy()
+            root.deiconify()
+            root.lift()
+            root.focus_force()
+        tk.Button(
+            resume_win, text="继续标注 ▶", command=_resume,
+            bg="#1d6b3e", fg="white", font=("Microsoft YaHei UI", 10, "bold"),
+            relief="flat", cursor="hand2", padx=20, pady=2,
+        ).pack()
 
     def _enter_capture():
         captured[0] = None
@@ -302,7 +330,7 @@ def _show_point_overlay(
         cv.itemconfig(tip_bg,  state="hidden")
         cv.itemconfig(tip_lbl, state="hidden")
         cv.itemconfig(header_lbl,
-            text=f"{progress}标记 [{name}]  (点)  —  左键点击确认  |  ESC 取消")
+            text=f"{progress}标记 [{name}]  (点)  —  左键点击确认  |  P 暂停  |  ESC 取消")
         cv.bind("<Motion>",   _on_motion)
         cv.bind("<Button-1>", _on_click)
         for seq in ("<Return>", "<Down>", "<Up>", "r", "R"):
@@ -320,7 +348,7 @@ def _show_point_overlay(
         else:
             txt = f"已记录  ({x}, {y})"
         cv.itemconfig(ok_lbl, text=txt)
-        cv.itemconfig(header_lbl, text=f"{progress}标记 [{name}]  (点)  —  确认或导航")
+        cv.itemconfig(header_lbl, text=f"{progress}标记 [{name}]  (点)  —  确认或导航  |  P 暂停")
         cv.unbind("<Motion>")
         cv.unbind("<Button-1>")
         root.bind("<Return>", lambda e: _done("next"))
@@ -356,8 +384,21 @@ def _show_point_overlay(
         captured[0] = (event.x, event.y)
         _enter_confirm(event.x, event.y)
 
+    cv.tag_bind("pause_btn", "<Button-1>", lambda e: _pause())
+    root.bind("p", lambda e: _pause())
+    root.bind("P", lambda e: _pause())
     root.bind("<Escape>", lambda e: (result.__setitem__(0, ("cancel", None)), root.destroy()))
-    _enter_capture()
+
+    if prev:
+        # Start in confirm mode showing the existing annotation
+        abs_x, abs_y = prev["x"] + win_x, prev["y"] + win_y
+        captured[0] = (abs_x, abs_y)
+        _enter_confirm(abs_x, abs_y)
+        cv.itemconfig(header_lbl,
+            text=f"{progress}标记 [{name}]  (点)  —  已标注，↑↓ 导航 | R 重标 | P 暂停 | ESC 取消")
+    else:
+        _enter_capture()
+
     root.mainloop()
     return result[0]
 
@@ -425,6 +466,11 @@ def _show_box_overlay(
                               anchor="n", tags="footer")
     cv.itemconfig("footer", state="hidden")
 
+    # ── Pause button (top right of header) ──
+    cv.create_rectangle(sw-90, 9, sw-10, 39, fill="#333", outline="#555", tags="pause_btn")
+    cv.create_text(sw-50, 24, text="暂停 [P]", fill="#aaa",
+                   font=("Microsoft YaHei UI", 10), anchor="center", tags="pause_btn")
+
     # ── Previous value hint ──
     if prev:
         px, py = prev["x"]+win_x, prev["y"]+win_y
@@ -434,6 +480,29 @@ def _show_box_overlay(
                                 outline=_COLOR_PREV, dash=(4,4), fill="", width=1)
             cv.create_text(px+2, py-14, text=f"上次 {pw}×{ph}",
                            fill=_COLOR_PREV, font=("Consolas",9), anchor="nw")
+
+    def _pause():
+        root.withdraw()
+        resume_win = tk.Toplevel()
+        resume_win.attributes("-topmost", True)
+        resume_win.overrideredirect(True)
+        ww, wh = 300, 72
+        resume_win.geometry(f"{ww}x{wh}+{(sw - ww) // 2}+{sh - wh - 60}")
+        resume_win.configure(bg="#1a1a2e")
+        tk.Label(
+            resume_win, text=f"标注已暂停  [{name}]",
+            bg="#1a1a2e", fg="#aaa", font=("Microsoft YaHei UI", 10),
+        ).pack(pady=(10, 4))
+        def _resume():
+            resume_win.destroy()
+            root.deiconify()
+            root.lift()
+            root.focus_force()
+        tk.Button(
+            resume_win, text="继续标注 ▶", command=_resume,
+            bg="#1d6b3e", fg="white", font=("Microsoft YaHei UI", 10, "bold"),
+            relief="flat", cursor="hand2", padx=20, pady=2,
+        ).pack()
 
     def _enter_idle():
         state[0] = "idle"
@@ -447,7 +516,7 @@ def _show_box_overlay(
         cv.itemconfig(size_lbl,   state="hidden")
         cv.itemconfig("footer",   state="hidden")
         cv.itemconfig(header_lbl,
-            text=f"{progress}标记 [{name}]  (框)  —  按住左键拖拽选框  |  ESC 取消")
+            text=f"{progress}标记 [{name}]  (框)  —  按住左键拖拽选框  |  P 暂停  |  ESC 取消")
         for seq in ("<Return>","<Down>","<Up>","r","R"):
             root.unbind(seq)
 
@@ -467,7 +536,7 @@ def _show_box_overlay(
         else:
             txt = f"已记录  ({bx},{by})  {bw}×{bh}"
         cv.itemconfig(ok_lbl, text=txt)
-        cv.itemconfig(header_lbl, text=f"{progress}标记 [{name}]  (框)  —  确认或导航")
+        cv.itemconfig(header_lbl, text=f"{progress}标记 [{name}]  (框)  —  确认或导航  |  P 暂停")
         root.bind("<Return>", lambda e: _done("next"))
         root.bind("<Down>",   lambda e: _done("next"))
         root.bind("<Up>",     lambda e: _done("prev"))
@@ -524,8 +593,21 @@ def _show_box_overlay(
     cv.bind("<ButtonPress-1>",   _on_press)
     cv.bind("<B1-Motion>",       _on_drag)
     cv.bind("<ButtonRelease-1>", _on_release)
+    cv.tag_bind("pause_btn", "<Button-1>", lambda e: _pause())
+    root.bind("p", lambda e: _pause())
+    root.bind("P", lambda e: _pause())
     root.bind("<Escape>", lambda e: (result.__setitem__(0, ("cancel", None)), root.destroy()))
-    _enter_idle()
+
+    if prev and prev.get("w") and prev.get("h"):
+        # Start in confirm mode showing the existing box annotation
+        abs_x, abs_y = prev["x"] + win_x, prev["y"] + win_y
+        box[0] = {"x": abs_x, "y": abs_y, "w": prev["w"], "h": prev["h"]}
+        _enter_confirm()
+        cv.itemconfig(header_lbl,
+            text=f"{progress}标记 [{name}]  (框)  —  已标注，↑↓ 导航 | R 重标 | P 暂停 | ESC 取消")
+    else:
+        _enter_idle()
+
     root.mainloop()
     return result[0]
 
@@ -574,7 +656,13 @@ def _run_annotation(project_id: str, project_name: str, markers: list[dict]) -> 
         print("\n  未绑定窗口，记录绝对坐标")
     print(f"{'='*55}\n")
 
+    # Pre-populate from server-provided existing captures
     captured: dict[int, dict] = {}
+    for i, marker in enumerate(markers):
+        existing = marker.get("existing")
+        if existing and existing.get("x") is not None:
+            captured[i] = {k: v for k, v in existing.items() if k in ("x", "y", "w", "h")}
+
     idx = 0
     cancelled = False
 

@@ -24,3 +24,4 @@ class ExecutionContext:
     log: list[str] = field(default_factory=list)
     completion_event: asyncio.Event | None = None
     completion_result: dict[str, Any] = field(default_factory=dict)
+    wait_barriers: dict[str, Any] = field(default_factory=dict)

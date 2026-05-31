@@ -59,6 +59,13 @@ export interface Marker {
   created_at: string
 }
 
+export interface MarkerCapture {
+  id: string
+  name: string
+  type: 'point' | 'box'
+  captured: boolean
+}
+
 export interface Template {
   id: string
   project_id: string
@@ -133,8 +140,13 @@ export const api = {
     http.post<Marker>(`/projects/${projectId}/markers`, data).then(r => r.data),
   deleteMarker: (projectId: string, markerId: string) =>
     http.delete(`/projects/${projectId}/markers/${markerId}`).then(r => r.data),
-  sendMarkers: (projectId: string, clientId: string) =>
-    http.post(`/projects/${projectId}/markers/send`, { client_id: clientId }).then(r => r.data),
+  getMarkerCaptures: (projectId: string, clientId: string) =>
+    http.get<MarkerCapture[]>(`/projects/${projectId}/markers/captures`, { params: { client_id: clientId } }).then(r => r.data),
+  sendMarkers: (projectId: string, clientId: string, markerNames?: string[]) =>
+    http.post(`/projects/${projectId}/markers/send`, {
+      client_id: clientId,
+      ...(markerNames ? { marker_names: markerNames } : {}),
+    }).then(r => r.data),
 
   // Templates
   getTemplates: (projectId: string) =>

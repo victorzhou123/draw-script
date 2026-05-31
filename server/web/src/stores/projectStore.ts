@@ -48,8 +48,8 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
-  async function sendMarkers(projectId: string, clientId: string) {
-    return api.sendMarkers(projectId, clientId)
+  async function sendMarkers(projectId: string, clientId: string, markerNames?: string[]) {
+    return api.sendMarkers(projectId, clientId, markerNames)
   }
 
   async function fetchTemplates(projectId: string) {

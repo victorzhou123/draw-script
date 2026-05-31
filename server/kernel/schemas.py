@@ -47,6 +47,7 @@ class MarkerResponse(BaseModel):
 
 class SendMarkersRequest(BaseModel):
     client_id: str
+    marker_names: list[str] | None = None  # None = send all markers
 
 
 # ── Template ─────────────────────────────────────────────────────────────────

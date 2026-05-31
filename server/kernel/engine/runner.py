@@ -75,6 +75,9 @@ async def run_branch(
                 "message": err_entry,
             })
 
+        if result.stop_branch:
+            return None
+
         next_nodes = ctx.graph.get_next_nodes(current.id, result.branch)
 
         # When fan-out includes a loop node, route by iteration count instead of parallelizing
