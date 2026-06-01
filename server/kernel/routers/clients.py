@@ -70,8 +70,10 @@ async def capture_client_screenshot(client_id: str):
         raise HTTPException(500, "Failed to send screenshot request to client")
 
     try:
-        b64_data = await asyncio.wait_for(future, timeout=settings.node_timeout)
-        return {"data": b64_data}
+        result = await asyncio.wait_for(future, timeout=settings.node_timeout)
+        if not result.get("success"):
+            raise HTTPException(500, result.get("error") or "Screenshot failed")
+        return {"data": result["screenshot"]}
     except asyncio.TimeoutError:
         client_ws_manager.pending_requests.pop(request_id, None)
         raise HTTPException(408, "Screenshot request timed out")
