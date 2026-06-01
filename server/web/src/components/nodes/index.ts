@@ -16,6 +16,7 @@ import {
   CodeOutlined,
   ApartmentOutlined,
   NodeCollapseOutlined,
+  PrinterOutlined,
 } from '@ant-design/icons-vue'
 
 export const ICON_MAP: Record<string, Component> = {
@@ -32,6 +33,7 @@ export const ICON_MAP: Record<string, Component> = {
   CodeOutlined,
   ApartmentOutlined,
   NodeCollapseOutlined,
+  PrinterOutlined,
 }
 
 // Port appearance: hidden by default, revealed by graph hover events
@@ -140,6 +142,7 @@ const NODE_DEFS = [
   { shape: 'node-webhook',    icon: 'LinkOutlined',        label: 'Webhook',    w: 120, h: 60  },
   { shape: 'node-compute',    icon: 'CodeOutlined',        label: 'Compute',    w: 120, h: 60  },
   { shape: 'node-script',     icon: 'ApartmentOutlined',   label: 'Script',     w: 120, h: 60  },
+  { shape: 'node-watch',      icon: 'PrinterOutlined',     label: 'Watch',      w: 120, h: 60  },
 ]
 
 export function registerNodes() {

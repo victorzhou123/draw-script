@@ -62,11 +62,14 @@ import StartForm from './node-forms/StartForm.vue'
 import EndForm from './node-forms/EndForm.vue'
 import ScriptForm from './node-forms/ScriptForm.vue'
 import ComputeForm from './node-forms/ComputeForm.vue'
+import WatchForm from './node-forms/WatchForm.vue'
+import ScreenshotForm from './node-forms/ScreenshotForm.vue'
 
 const FORM_MAP: Record<string, any> = {
   action: ActionForm, vision: VisionForm, condition: ConditionForm,
   loop: LoopForm, delay: DelayForm, http: HttpForm, webhook: WebhookForm,
   start: StartForm, end: EndForm, script: ScriptForm, compute: ComputeForm,
+  watch: WatchForm, screenshot: ScreenshotForm,
 }
 
 const props = defineProps<{
@@ -119,6 +122,7 @@ const nodeLabel = computed(() => {
     start: 'Start', end: 'End', action: 'Action', screenshot: 'Screenshot',
     vision: 'Vision', condition: 'Condition', delay: 'Delay', loop: 'Loop',
     http: 'HTTP', webhook: 'Webhook', compute: 'Compute', script: 'Script',
+    watch: 'Watch',
   }
   return map[nodeType.value] || nodeType.value
 })
@@ -165,6 +169,10 @@ watch(() => props.selectedNode, (node) => {
     script_id: node.data.script_id || '',
     post_process: node.data.post_process || [],
   }))
+  // Normalize watch node: ensure fields is always an array
+  if (d.type === 'watch') {
+    if (!Array.isArray(d.params.fields)) d.params.fields = []
+  }
   // Normalize legacy keyboard_press → keyboard_hotkey
   if (d.action_type === 'keyboard_press') {
     d.action_type = 'keyboard_hotkey'
@@ -208,6 +216,7 @@ function emitUpdate() {
 .badge-webhook    { color: #eb2f96; border-color: #eb2f96; background: #291321; }
 .badge-compute    { color: #36cfc9; border-color: #36cfc9; background: #112123; }
 .badge-script     { color: #b37feb; border-color: #9254de; background: #1a0a2e; }
+.badge-watch      { color: #ff7a45; border-color: #ff7a45; background: #2b1200; }
 .prop-form :deep(.ant-form-item) { margin-bottom: 12px; }
 .prop-form :deep(.ant-form-item-label > label) { font-size: 11px; color: #666; }
 .section-title { font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.8px; margin: 14px 0 6px; display: flex; align-items: center; gap: 6px; }

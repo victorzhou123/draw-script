@@ -16,7 +16,7 @@ function nodeContributions(data: any): string[] {
   if (!data) return []
   if (data.type === 'start' && Array.isArray(data.fields))
     return data.fields.map((f: any) => f.name).filter(Boolean)
-  if (data.type === 'vision' && data.result_var?.trim())
+  if ((data.type === 'vision' || data.type === 'screenshot') && data.result_var?.trim())
     return [data.result_var.trim()]
   if (data.type === 'compute' && Array.isArray(data.output_fields))
     return data.output_fields.filter(Boolean)

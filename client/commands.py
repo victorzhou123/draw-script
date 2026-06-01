@@ -817,16 +817,42 @@ class CommandHandler:
 
     async def handle_capture_screenshot(self, msg: dict) -> None:
         request_id = msg.get("request_id")
+        params: dict = msg.get("params") or {}
+        server_markers: dict | None = msg.get("_markers")
+        project_id: str = msg.get("project_id", "")
         try:
             import pyautogui
-            screenshot = await _run_blocking(pyautogui.screenshot)
+            range_marker_name = params.get("range_marker", "").strip()
+            region = None
+            if range_marker_name:
+                if server_markers:
+                    marker = _get_marker_from_server(range_marker_name, server_markers)
+                else:
+                    marker = get_marker(project_id, range_marker_name) if project_id else None
+                if not marker:
+                    await self._send({"type": "screenshot_response", "request_id": request_id,
+                                      "success": False, "error": f"Screenshot: marker '{range_marker_name}' not found"})
+                    return
+                mx = _int(marker.get("x"), 0)
+                my = _int(marker.get("y"), 0)
+                mw = _int(marker.get("w"), 0)
+                mh = _int(marker.get("h"), 0)
+                if mw <= 0 or mh <= 0:
+                    await self._send({"type": "screenshot_response", "request_id": request_id,
+                                      "success": False, "error": f"Screenshot: marker '{range_marker_name}' 不是方框标记"})
+                    return
+                region = (mx, my, mw, mh)
+
+            screenshot = await _run_blocking(pyautogui.screenshot, region=region)
             buf = io.BytesIO()
             screenshot.save(buf, format="PNG")
             b64 = base64.b64encode(buf.getvalue()).decode()
-            await self._send({"type": "screenshot_response", "request_id": request_id, "data": b64})
+            await self._send({"type": "screenshot_response", "request_id": request_id,
+                              "success": True, "screenshot": b64})
         except Exception as e:
             logger.error(f"Screenshot failed: {e}")
-            await self._send({"type": "error", "request_id": request_id, "message": str(e)})
+            await self._send({"type": "screenshot_response", "request_id": request_id,
+                              "success": False, "error": str(e)})
 
     async def handle_execute_node(self, msg: dict) -> None:
         node_type     = msg.get("node_type")

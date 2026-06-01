@@ -60,7 +60,11 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
     elif msg_type == "screenshot_response":
         request_id = msg.get("request_id")
         if request_id:
-            client_ws_manager.resolve_pending(request_id, msg.get("data"))
+            client_ws_manager.resolve_pending(request_id, {
+                "success": msg.get("success", True),
+                "screenshot": msg.get("screenshot"),
+                "error": msg.get("error"),
+            })
 
     elif msg_type == "node_result":
         node_id = msg.get("node_id")
