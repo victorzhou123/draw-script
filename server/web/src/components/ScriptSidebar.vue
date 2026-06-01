@@ -131,10 +131,11 @@ function getStartFields(script: Script): { name: string; default: string }[] {
   }
 }
 
-function getScriptMarkers(script: Script): string[] {
+function collectMarkers(script: Script, allScripts: Script[], names: Set<string>, visited: Set<string>): void {
+  if (visited.has(script.id)) return
+  visited.add(script.id)
   try {
     const flow = JSON.parse(script.flow_json || '{}')
-    const names = new Set<string>()
     for (const cell of (flow.cells ?? [])) {
       const data = cell.data ?? {}
       if (data.range_marker && typeof data.range_marker === 'string') {
@@ -147,11 +148,19 @@ function getScriptMarkers(script: Script): string[] {
           if (dm) names.add(dm[1])
         }
       }
+      const nodeType = data.type || data.node_type || cell.shape
+      if (nodeType === 'script' && data.script_id) {
+        const sub = allScripts.find(s => s.id === data.script_id)
+        if (sub) collectMarkers(sub, allScripts, names, visited)
+      }
     }
-    return Array.from(names).sort()
-  } catch {
-    return []
-  }
+  } catch { }
+}
+
+function getScriptMarkers(script: Script, allScripts: Script[]): string[] {
+  const names = new Set<string>()
+  collectMarkers(script, allScripts, names, new Set())
+  return Array.from(names).sort()
 }
 
 const emit = defineEmits<{
@@ -217,7 +226,9 @@ const infoClients = computed(() => {
   return clientStore.clients.filter(c => c.project_ids.includes(infoScript.value!.project_id!))
 })
 
-const infoMarkers = computed(() => infoScript.value ? getScriptMarkers(infoScript.value) : [])
+const infoMarkers = computed(() =>
+  infoScript.value ? getScriptMarkers(infoScript.value, scriptStore.scripts) : []
+)
 
 const curlCommand = computed(() => {
   if (!infoScript.value) return ''
