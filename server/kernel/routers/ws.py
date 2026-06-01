@@ -122,6 +122,8 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                         capture.window_process = window.get("process")
                         capture.window_x = window.get("x")
                         capture.window_y = window.get("y")
+                        capture.window_w = window.get("w")
+                        capture.window_h = window.get("h")
                 await db.commit()
             logger.info(f"Saved {len(markers)} captures for client {client_id} / project {project_id}")
 

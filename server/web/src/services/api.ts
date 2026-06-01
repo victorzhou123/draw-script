@@ -77,6 +77,8 @@ export interface MarkerCaptureData {
   h: number | null
   window_x: number | null
   window_y: number | null
+  window_w: number | null
+  window_h: number | null
 }
 
 export interface Template {
@@ -164,6 +166,8 @@ export const api = {
       client_id: clientId,
       ...(markerNames ? { marker_names: markerNames } : {}),
     }).then(r => r.data),
+  restoreWindow: (projectId: string, clientId: string) =>
+    http.post(`/projects/${projectId}/markers/restore-window`, { client_id: clientId }).then(r => r.data),
 
   // Templates
   getTemplates: (projectId: string) =>

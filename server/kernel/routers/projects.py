@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -217,8 +218,52 @@ async def get_marker_capture_data(
             "h": capture.h if capture else None,
             "window_x": capture.window_x if capture else None,
             "window_y": capture.window_y if capture else None,
+            "window_w": capture.window_w if capture else None,
+            "window_h": capture.window_h if capture else None,
         })
     return items
+
+
+# ── Restore window ────────────────────────────────────────────────────────────
+
+class RestoreWindowRequest(BaseModel):
+    client_id: str
+
+
+@router.post("/{project_id}/markers/restore-window")
+async def restore_window(
+    project_id: str,
+    body: RestoreWindowRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    result = await db.execute(
+        select(MarkerCapture)
+        .join(Marker, MarkerCapture.marker_id == Marker.id)
+        .where(
+            Marker.project_id == project_id,
+            MarkerCapture.client_id == body.client_id,
+            MarkerCapture.window_title.isnot(None),
+            MarkerCapture.window_w.isnot(None),
+        )
+        .limit(1)
+    )
+    cap = result.scalar_one_or_none()
+    if not cap:
+        raise HTTPException(400, "No window info recorded for this client")
+
+    from ws_manager import client_ws_manager
+    sent = await client_ws_manager.send_to_client(body.client_id, {
+        "type": "restore_window",
+        "title": cap.window_title,
+        "process": cap.window_process or "",
+        "x": cap.window_x or 0,
+        "y": cap.window_y or 0,
+        "w": cap.window_w,
+        "h": cap.window_h,
+    })
+    if not sent:
+        raise HTTPException(400, f"Client {body.client_id} is not connected")
+    return {"ok": True}
 
 
 # ── Templates ─────────────────────────────────────────────────────────────────

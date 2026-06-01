@@ -779,6 +779,7 @@ class CommandHandler:
             "capture_screenshot": self.handle_capture_screenshot,
             "execute_node":       self.handle_execute_node,
             "set_markers":        self.handle_set_markers,
+            "restore_window":     self.handle_restore_window,
             "stop":               self.handle_stop,
             "get_status":         self.handle_get_status,
             "compute_node":       self.handle_compute_node,
@@ -814,6 +815,25 @@ class CommandHandler:
             "markers": results,
             "window": window_info,
         })
+
+    async def handle_restore_window(self, msg: dict) -> None:
+        title   = msg.get("title", "")
+        process = msg.get("process", "")
+        x, y    = msg.get("x", 0), msg.get("y", 0)
+        w, h    = msg.get("w"), msg.get("h")
+        if not (title and w and h):
+            logger.warning("restore_window: missing title/w/h, skipping")
+            return
+        win = _find_window(title, process)
+        if not win:
+            logger.warning(f"restore_window: window '{title}' not found")
+            return
+        try:
+            import win32gui
+            win32gui.MoveWindow(win["hwnd"], x, y, w, h, True)
+            logger.info(f"restore_window: moved '{title}' to ({x},{y}) size {w}×{h}")
+        except Exception as e:
+            logger.error(f"restore_window: MoveWindow failed: {e}")
 
     async def handle_capture_screenshot(self, msg: dict) -> None:
         request_id = msg.get("request_id")

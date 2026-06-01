@@ -206,6 +206,14 @@
                     @click="refreshCaptureStatus"
                     title="刷新标注状态"
                   ><ReloadOutlined /></a-button>
+                  <a-tooltip title="还原窗口到标注时的位置和大小">
+                    <a-button
+                      size="small" class="icon-btn"
+                      :disabled="!capturePreviewClientId"
+                      :loading="restoringWindow"
+                      @click="restoreWindow"
+                    >还原窗口</a-button>
+                  </a-tooltip>
                 </div>
                 <div v-if="projectClientIds.length === 0" class="empty-hint">暂无客户端</div>
                 <div v-for="cid in projectClientIds" :key="cid" class="send-client-row">
@@ -411,6 +419,7 @@ const sending = ref(false)
 const sendResult = ref<{ ok: boolean; text: string } | null>(null)
 // Marker capture status preview
 const capturePreviewClientId = ref<string | null>(null)
+const restoringWindow = ref(false)
 const markerCaptureMap = ref<Record<string, boolean>>({})  // name → captured
 const selectedMarkerNames = ref<Set<string>>(new Set())
 const refreshingCaptures = ref(false)
@@ -481,6 +490,19 @@ async function refreshCaptureStatus() {
     await fetchCaptureStatus(selectedId.value, capturePreviewClientId.value)
   } finally {
     refreshingCaptures.value = false
+  }
+}
+
+async function restoreWindow() {
+  if (!capturePreviewClientId.value || !selectedId.value) return
+  restoringWindow.value = true
+  try {
+    await api.restoreWindow(selectedId.value, capturePreviewClientId.value)
+    message.success('已发送还原窗口指令')
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail ?? '还原失败')
+  } finally {
+    restoringWindow.value = false
   }
 }
 

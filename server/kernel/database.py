@@ -58,6 +58,8 @@ class MarkerCapture(Base):
     window_process: Mapped[str | None] = mapped_column(String, nullable=True)
     window_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
     window_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    window_w: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    window_h: Mapped[int | None] = mapped_column(Integer, nullable=True)
     captured_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -168,7 +170,9 @@ async def init_db() -> None:
         for col, coltype in [
             ("x", "INTEGER"), ("y", "INTEGER"), ("w", "INTEGER"), ("h", "INTEGER"),
             ("window_title", "TEXT"), ("window_process", "TEXT"),
-            ("window_x", "INTEGER"), ("window_y", "INTEGER"), ("captured_at", "TEXT"),
+            ("window_x", "INTEGER"), ("window_y", "INTEGER"),
+            ("window_w", "INTEGER"), ("window_h", "INTEGER"),
+            ("captured_at", "TEXT"),
         ]:
             try:
                 await conn.execute(text(f"ALTER TABLE markers ADD COLUMN {col} {coltype}"))
