@@ -413,7 +413,7 @@ async function copyCurl() {
   line-height: 1.6;
 }
 .curl-copy-btn {
-  position: absolute; top: 6px; right: 4px;
+  position: absolute; bottom: 6px; right: 4px;
   color: #888 !important;
 }
 .curl-copy-btn:hover { color: #d0d0d0 !important; }
