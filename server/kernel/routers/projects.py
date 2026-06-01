@@ -116,6 +116,7 @@ async def send_markers_to_client(
 
     from ws_manager import client_ws_manager
     if not client_ws_manager.is_connected(body.client_id):
+        logger.warning(f"send_markers: client {body.client_id} is not connected")
         raise HTTPException(400, f"Client {body.client_id} is not connected")
 
     result = await db.execute(
@@ -144,6 +145,7 @@ async def send_markers_to_client(
             item["existing"] = {"x": cap.x, "y": cap.y, "w": cap.w, "h": cap.h}
         marker_list.append(item)
 
+    logger.info(f"send_markers: sending {len(marker_list)} markers to client {body.client_id} for project {project_id}")
     sent = await client_ws_manager.send_to_client(body.client_id, {
         "type": "set_markers",
         "project_id": project_id,
@@ -151,9 +153,10 @@ async def send_markers_to_client(
         "markers": marker_list,
     })
     if not sent:
+        logger.warning(f"send_markers: WS send failed for client {body.client_id}")
         raise HTTPException(500, "Failed to send to client")
 
-    logger.info(f"Sent {len(markers)} markers to client {body.client_id} for project {project_id}")
+    logger.info(f"send_markers: OK — {len(markers)} markers sent to client {body.client_id}")
     return {"ok": True, "count": len(markers)}
 
 
@@ -249,6 +252,7 @@ async def restore_window(
     )
     cap = result.scalar_one_or_none()
     if not cap:
+        logger.warning(f"restore_window: no window info for client {body.client_id} in project {project_id}")
         raise HTTPException(400, "No window info recorded for this client")
 
     from ws_manager import client_ws_manager
@@ -262,6 +266,7 @@ async def restore_window(
         "h": cap.window_h,
     })
     if not sent:
+        logger.warning(f"restore_window: client {body.client_id} is not connected")
         raise HTTPException(400, f"Client {body.client_id} is not connected")
     return {"ok": True}
 
