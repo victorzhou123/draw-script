@@ -12,9 +12,15 @@ from database import init_db
 from log_handler import memory_handler
 from routers import clients, models, projects, scripts, webhooks, ws
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-logging.getLogger().addHandler(memory_handler)
+
+# basicConfig is a no-op if uvicorn's dictConfig already ran (which attaches a
+# NullHandler to root before importing this module).  Set root level and attach
+# the in-memory handler explicitly so it always works regardless of startup order.
+_root = logging.getLogger()
+_root.setLevel(logging.INFO)
+if memory_handler not in _root.handlers:
+    _root.addHandler(memory_handler)
 
 
 @asynccontextmanager
