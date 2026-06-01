@@ -19,8 +19,10 @@ logger = logging.getLogger(__name__)
 # the in-memory handler explicitly so it always works regardless of startup order.
 _root = logging.getLogger()
 _root.setLevel(logging.INFO)
-if memory_handler not in _root.handlers:
-    _root.addHandler(memory_handler)
+for _lg_name in ("", "uvicorn", "uvicorn.error", "uvicorn.access"):
+    _lg = logging.getLogger(_lg_name)
+    if memory_handler not in _lg.handlers:
+        _lg.addHandler(memory_handler)
 
 
 @asynccontextmanager
