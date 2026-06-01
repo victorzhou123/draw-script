@@ -166,16 +166,22 @@ async def init_db() -> None:
             await conn.execute(text("ALTER TABLE executions ADD COLUMN result_json TEXT"))
         except Exception:
             pass
-        # Marker coordinate columns
+        # Legacy: coordinate columns that were once on markers (now on marker_captures)
         for col, coltype in [
             ("x", "INTEGER"), ("y", "INTEGER"), ("w", "INTEGER"), ("h", "INTEGER"),
             ("window_title", "TEXT"), ("window_process", "TEXT"),
-            ("window_x", "INTEGER"), ("window_y", "INTEGER"),
-            ("window_w", "INTEGER"), ("window_h", "INTEGER"),
-            ("captured_at", "TEXT"),
+            ("window_x", "INTEGER"), ("window_y", "INTEGER"), ("captured_at", "TEXT"),
         ]:
             try:
                 await conn.execute(text(f"ALTER TABLE markers ADD COLUMN {col} {coltype}"))
+            except Exception:
+                pass
+        # marker_captures columns
+        for col, coltype in [
+            ("window_w", "INTEGER"), ("window_h", "INTEGER"),
+        ]:
+            try:
+                await conn.execute(text(f"ALTER TABLE marker_captures ADD COLUMN {col} {coltype}"))
             except Exception:
                 pass
 
