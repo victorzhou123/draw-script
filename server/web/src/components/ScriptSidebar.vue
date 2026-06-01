@@ -46,7 +46,7 @@
       v-model:open="infoModalOpen"
       title="脚本信息"
       :footer="null"
-      width="420px"
+      width="640px"
       :body-style="{ padding: '20px 24px' }"
     >
       <a-spin :spinning="infoLoading">
@@ -85,6 +85,27 @@
             </template>
             <span v-else class="no-data">—</span>
           </div>
+
+          <!-- Markers -->
+          <div class="info-label">涉及标记</div>
+          <div class="info-value markers-row">
+            <template v-if="infoMarkers.length">
+              <span v-for="m in infoMarkers" :key="m" class="tag-marker">{{ m }}</span>
+            </template>
+            <span v-else class="no-data">—</span>
+          </div>
+
+          <!-- Curl -->
+          <div class="info-label curl-label">调用方式</div>
+          <div class="info-value curl-block-wrap">
+            <pre class="curl-block">{{ curlCommand }}</pre>
+            <a-tooltip :title="curlCopied ? '已复制' : '复制'">
+              <a-button type="text" size="small" class="curl-copy-btn" @click="copyCurl">
+                <CheckOutlined v-if="curlCopied" style="color:#52c41a" />
+                <CopyOutlined v-else />
+              </a-button>
+            </a-tooltip>
+          </div>
         </div>
       </a-spin>
     </a-modal>
@@ -99,6 +120,39 @@ import { useScriptStore } from '@/stores/scriptStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { useClientStore } from '@/stores/clientStore'
 import type { Script } from '@/services/api'
+
+function getStartFields(script: Script): { name: string; default: string }[] {
+  try {
+    const flow = JSON.parse(script.flow_json || '{}')
+    const startCell = (flow.cells ?? []).find((c: any) => c.shape === 'node-start')
+    return startCell?.data?.fields ?? []
+  } catch {
+    return []
+  }
+}
+
+function getScriptMarkers(script: Script): string[] {
+  try {
+    const flow = JSON.parse(script.flow_json || '{}')
+    const names = new Set<string>()
+    for (const cell of (flow.cells ?? [])) {
+      const data = cell.data ?? {}
+      if (data.range_marker && typeof data.range_marker === 'string') {
+        names.add(data.range_marker)
+      }
+      for (const val of Object.values(data.params ?? {})) {
+        if (typeof val === 'string') {
+          for (const m of val.matchAll(/\{\{markers\.([^.}]+)/g)) names.add(m[1])
+          const dm = val.match(/^\$markers\.([^.]+)/)
+          if (dm) names.add(dm[1])
+        }
+      }
+    }
+    return Array.from(names).sort()
+  } catch {
+    return []
+  }
+}
 
 const emit = defineEmits<{
   (e: 'scriptSelected', id: string): void
@@ -163,6 +217,29 @@ const infoClients = computed(() => {
   return clientStore.clients.filter(c => c.project_ids.includes(infoScript.value!.project_id!))
 })
 
+const infoMarkers = computed(() => infoScript.value ? getScriptMarkers(infoScript.value) : [])
+
+const curlCommand = computed(() => {
+  if (!infoScript.value) return ''
+  const base = `${window.location.protocol}//${window.location.host}`
+  const url = `${base}/api/scripts/${infoScript.value.id}/run`
+  const fields = getStartFields(infoScript.value)
+  const params: Record<string, string> = {}
+  for (const f of fields) {
+    if (f.name) params[f.name] = f.default ?? ''
+  }
+  const body: Record<string, any> = {
+    client_id: '<client_id>',
+    wait: true,
+  }
+  if (Object.keys(params).length > 0) body.params = params
+  const bodyStr = JSON.stringify(body, null, 2)
+    .split('\n')
+    .map((line, i) => i === 0 ? line : '      ' + line)
+    .join('\n')
+  return `curl -X POST ${url} \\\n    -H "Content-Type: application/json" \\\n    -d '${bodyStr}'`
+})
+
 async function openInfo(script: Script) {
   infoScript.value = script
   idCopied.value = false
@@ -180,6 +257,26 @@ function copyId() {
   navigator.clipboard.writeText(infoScript.value.id)
   idCopied.value = true
   setTimeout(() => { idCopied.value = false }, 2000)
+}
+
+const curlCopied = ref(false)
+async function copyCurl() {
+  const text = curlCommand.value
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  }
+  curlCopied.value = true
+  message.success('已复制')
+  setTimeout(() => { curlCopied.value = false }, 2000)
 }
 </script>
 
@@ -249,7 +346,7 @@ function copyId() {
   font-size: 12px; color: #666;
   padding-top: 2px;
 }
-.info-value { font-size: 13px; color: #d0d0d0; }
+.info-value { font-size: 13px; color: #d0d0d0; min-width: 0; }
 
 .id-row { display: flex; align-items: center; gap: 6px; }
 .id-text {
@@ -281,4 +378,32 @@ function copyId() {
 .status-dot.offline { background: #444; }
 .client-name { font-size: 12px; color: #ccc; }
 .client-platform { font-size: 11px; color: #555; margin-left: auto; }
+
+.markers-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-marker {
+  display: inline-block;
+  background: #1f3a2a; border: 1px solid #2d6a4a;
+  color: #7ec8a0; border-radius: 4px;
+  padding: 1px 8px; font-size: 12px;
+}
+
+.curl-label { padding-top: 6px; }
+.curl-block-wrap {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+.curl-block {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px; color: #abb2bf;
+  background: #1a1a1a; border: 1px solid #2a2a2a;
+  border-radius: 6px; padding: 10px 36px 10px 12px;
+  margin: 0; white-space: pre; overflow-x: auto;
+  line-height: 1.6;
+}
+.curl-copy-btn {
+  position: absolute; top: 6px; right: 4px;
+  color: #888 !important;
+}
+.curl-copy-btn:hover { color: #d0d0d0 !important; }
 </style>

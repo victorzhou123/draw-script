@@ -1,6 +1,7 @@
 import json
 
 from engine.base_handler import BaseNodeHandler, NodeResult
+from engine.log_utils import truncate_for_log
 from engine.node_registry import NodeRegistry
 
 
@@ -17,7 +18,7 @@ class WatchNodeHandler(BaseNodeHandler):
 
         label = data.get("label", "").strip()
         prefix = f'[watch] {label}: ' if label else '[watch] '
-        message = prefix + json.dumps(snapshot, ensure_ascii=False, default=str)
+        message = prefix + json.dumps(truncate_for_log(snapshot), ensure_ascii=False, default=str)
 
         await self.ctx.ui_manager.broadcast_event("execution_log", {
             "execution_id": self.ctx.execution_id,

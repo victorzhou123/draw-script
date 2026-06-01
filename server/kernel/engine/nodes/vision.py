@@ -5,6 +5,8 @@ import logging
 import re
 import uuid
 
+from engine.log_utils import truncate_for_log
+
 from config import settings
 from engine.base_handler import BaseNodeHandler, NodeResult
 from engine.node_registry import NodeRegistry
@@ -111,7 +113,7 @@ class VisionNodeHandler(BaseNodeHandler):
         screenshot_b64 = output.get("screenshot")
         await self._log(f"[Vision] client result keys={list(result.keys())}, has_screenshot={bool(screenshot_b64)}")
         if not screenshot_b64:
-            await self._log(f"[Vision] 未收到 screenshot, output={output}")
+            await self._log(f"[Vision] 未收到 screenshot, output={truncate_for_log(output)}")
             return NodeResult(success=False, error="Vision node: client did not return screenshot")
 
         screenshot_bytes = base64.b64decode(screenshot_b64)
@@ -134,7 +136,7 @@ class VisionNodeHandler(BaseNodeHandler):
 
             from cv.vision_engine import VisionEngine
             vision_result = await VisionEngine().analyze(vision_type, screenshot_bytes, params, model_config)
-            await self._log(f"[Vision] 分析完成: found={vision_result.found}, text={vision_result.text!r}, location={vision_result.location}, raw={vision_result.raw}")
+            await self._log(f"[Vision] 分析完成: found={vision_result.found}, text={truncate_for_log(vision_result.text)!r}, location={vision_result.location}")
             self.ctx.variables["last_vision_result"] = vision_result.__dict__
 
             if result_var:
