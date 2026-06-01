@@ -9,10 +9,12 @@ from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from database import init_db
+from log_handler import memory_handler
 from routers import clients, models, projects, scripts, webhooks, ws
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logging.getLogger().addHandler(memory_handler)
 
 
 @asynccontextmanager
@@ -65,6 +67,17 @@ app.include_router(webhooks.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(models.router, prefix="/api")
 app.include_router(ws.router)
+
+
+@app.get("/api/logs")
+def get_logs(limit: int = 300):
+    return memory_handler.get_records(limit)
+
+
+@app.delete("/api/logs")
+def clear_logs():
+    memory_handler.clear()
+    return {"ok": True}
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(static_dir):

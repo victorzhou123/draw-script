@@ -52,6 +52,11 @@
           <RobotOutlined /> AI 模型
         </a-button>
       </a-tooltip>
+      <a-tooltip title="后端日志">
+        <a-button size="small" class="tool-btn log-btn" @click="emit('openLogs')">
+          <FileSearchOutlined /> 日志
+        </a-button>
+      </a-tooltip>
       <div class="toolbar-divider" />
       <a-tooltip title="使用帮助">
         <a-button size="small" class="tool-btn help-btn" @click="emit('openHelp')">
@@ -67,6 +72,7 @@ import { computed } from 'vue'
 import {
   UndoOutlined, RedoOutlined, LoadingOutlined, CheckOutlined,
   FileTextOutlined, LaptopOutlined, FolderOutlined, QuestionCircleOutlined, RobotOutlined,
+  FileSearchOutlined,
 } from '@ant-design/icons-vue'
 import { useScriptStore } from '@/stores/scriptStore'
 import { useClientStore } from '@/stores/clientStore'
@@ -81,6 +87,7 @@ const emit = defineEmits<{
   (e: 'openProjects'): void
   (e: 'openClients'): void
   (e: 'openModels'): void
+  (e: 'openLogs'): void
   (e: 'openHelp'): void
 }>()
 
@@ -136,4 +143,6 @@ const connectedCount = computed(() => clientStore.connectedIds.size)
 .help-btn:hover { color: #85a5ff !important; background: #1f2a4a !important; }
 .ai-btn { color: #9254de !important; }
 .ai-btn:hover { color: #b37feb !important; background: #1a0a2e !important; }
+.log-btn { color: #36cfc9 !important; }
+.log-btn:hover { color: #5cdbd3 !important; background: #0a1f1e !important; }
 </style>
