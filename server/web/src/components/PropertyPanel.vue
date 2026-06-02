@@ -57,7 +57,6 @@ import ConditionForm from './node-forms/ConditionForm.vue'
 import LoopForm from './node-forms/LoopForm.vue'
 import DelayForm from './node-forms/DelayForm.vue'
 import HttpForm from './node-forms/HttpForm.vue'
-import WebhookForm from './node-forms/WebhookForm.vue'
 import StartForm from './node-forms/StartForm.vue'
 import EndForm from './node-forms/EndForm.vue'
 import ScriptForm from './node-forms/ScriptForm.vue'
@@ -67,7 +66,7 @@ import ScreenshotForm from './node-forms/ScreenshotForm.vue'
 
 const FORM_MAP: Record<string, any> = {
   action: ActionForm, vision: VisionForm, condition: ConditionForm,
-  loop: LoopForm, delay: DelayForm, http: HttpForm, webhook: WebhookForm,
+  loop: LoopForm, delay: DelayForm, http: HttpForm,
   start: StartForm, end: EndForm, script: ScriptForm, compute: ComputeForm,
   watch: WatchForm, screenshot: ScreenshotForm,
 }
@@ -121,7 +120,7 @@ const nodeLabel = computed(() => {
   const map: Record<string, string> = {
     start: 'Start', end: 'End', action: 'Action', screenshot: 'Screenshot',
     vision: 'Vision', condition: 'Condition', delay: 'Delay', loop: 'Loop',
-    http: 'HTTP', webhook: 'Webhook', compute: 'Compute', script: 'Script',
+    http: 'HTTP', compute: 'Compute', script: 'Script',
     watch: 'Watch',
   }
   return map[nodeType.value] || nodeType.value
@@ -131,6 +130,7 @@ const formComponent = computed(() => FORM_MAP[nodeType.value] ?? null)
 
 provide(FORM_CTX, {
   localData,
+  nodeId: editingNodeId,
   contextFields,
   availableMarkers,
   availableTemplates,
@@ -168,6 +168,8 @@ watch(() => props.selectedNode, (node) => {
     output_fields: node.data.output_fields || [],
     script_id: node.data.script_id || '',
     post_process: node.data.post_process || [],
+    input_mappings: node.data.input_mappings || [],
+    output_mappings: node.data.output_mappings || [],
   }))
   // Normalize watch node: ensure fields is always an array
   if (d.type === 'watch') {
@@ -213,7 +215,6 @@ function emitUpdate() {
 .badge-delay      { color: #fa8c16; border-color: #fa8c16; background: #2b1d11; }
 .badge-loop       { color: #597ef7; border-color: #2f54eb; background: #131629; }
 .badge-http       { color: #13c2c2; border-color: #13c2c2; background: #112123; }
-.badge-webhook    { color: #eb2f96; border-color: #eb2f96; background: #291321; }
 .badge-compute    { color: #36cfc9; border-color: #36cfc9; background: #112123; }
 .badge-script     { color: #b37feb; border-color: #9254de; background: #1a0a2e; }
 .badge-watch      { color: #ff7a45; border-color: #ff7a45; background: #2b1200; }

@@ -117,20 +117,6 @@ class Template(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class Webhook(Base):
-    __tablename__ = "webhooks"
-
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
-    url: Mapped[str] = mapped_column(String, default="")
-    events: Mapped[str] = mapped_column(Text, default="[]")
-    secret: Mapped[str] = mapped_column(String, default="")
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    # inbound trigger fields
-    script_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    client_id: Mapped[str | None] = mapped_column(String, nullable=True)
-
-
 class AIModelConfig(Base):
     __tablename__ = "ai_model_configs"
 
@@ -152,14 +138,6 @@ async def init_db() -> None:
         # Migrate: add project_id to scripts if column not yet present
         try:
             await conn.execute(text("ALTER TABLE scripts ADD COLUMN project_id TEXT"))
-        except Exception:
-            pass
-        try:
-            await conn.execute(text("ALTER TABLE webhooks ADD COLUMN script_id TEXT"))
-        except Exception:
-            pass
-        try:
-            await conn.execute(text("ALTER TABLE webhooks ADD COLUMN client_id TEXT"))
         except Exception:
             pass
         try:

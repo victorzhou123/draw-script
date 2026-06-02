@@ -62,7 +62,7 @@ class UIWebSocket {
         executionStore.onProgress(msg.node_id as string, msg.status as string)
         break
       case 'execution_log':
-        executionStore.addLog(msg.message as string)
+        executionStore.addLog(msg.message as string, msg.client_id as string | undefined)
         break
       case 'execution_finished':
         executionStore.onFinished(
@@ -70,6 +70,13 @@ class UIWebSocket {
           msg.client_id as string,
           msg.status as string,
           msg.error as string | null,
+        )
+        break
+      case 'watch_snapshot':
+        executionStore.onWatchSnapshot(
+          msg.node_id as string,
+          msg.client_id as string,
+          msg.snapshot as Record<string, unknown>,
         )
         break
     }

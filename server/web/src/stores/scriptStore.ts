@@ -45,6 +45,14 @@ export const useScriptStore = defineStore('script', () => {
     if (currentScript.value?.id === id) currentScript.value = null
   }
 
+  async function renameScript(id: string, name: string) {
+    const updated = await api.updateScript(id, { name })
+    const idx = scripts.value.findIndex(s => s.id === id)
+    if (idx !== -1) scripts.value[idx] = updated
+    if (currentScript.value?.id === id) currentScript.value = { ...currentScript.value, name: updated.name }
+    return updated
+  }
+
   async function duplicateScript(id: string) {
     const original = scripts.value.find(s => s.id === id)
     if (!original) return
@@ -57,5 +65,5 @@ export const useScriptStore = defineStore('script', () => {
     return copy
   }
 
-  return { scripts, currentScript, loading, fetchScripts, selectScript, createScript, saveScript, deleteScript, duplicateScript }
+  return { scripts, currentScript, loading, fetchScripts, selectScript, createScript, saveScript, deleteScript, duplicateScript, renameScript }
 })

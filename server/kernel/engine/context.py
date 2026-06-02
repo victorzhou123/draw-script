@@ -25,3 +25,6 @@ class ExecutionContext:
     completion_event: asyncio.Event | None = None
     completion_result: dict[str, Any] = field(default_factory=dict)
     wait_barriers: dict[str, Any] = field(default_factory=dict)
+    # Shared across shallow-copied branch contexts so any branch can signal end.
+    end_event: asyncio.Event = field(default_factory=asyncio.Event)
+    _result_box: list = field(default_factory=list)  # holds at most one dict

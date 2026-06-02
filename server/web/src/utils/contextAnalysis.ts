@@ -20,6 +20,8 @@ function nodeContributions(data: any): string[] {
     return [data.result_var.trim()]
   if (data.type === 'compute' && Array.isArray(data.output_fields))
     return data.output_fields.filter(Boolean)
+  if (data.type === 'script' && Array.isArray(data.output_mappings) && data.output_mappings.length)
+    return data.output_mappings.map((m: any) => m.to?.trim()).filter(Boolean)
   return []
 }
 

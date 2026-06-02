@@ -120,42 +120,6 @@ class ExecutionResponse(BaseModel):
         from_attributes = True
 
 
-# ── Webhook ───────────────────────────────────────────────────────────────────
-
-class WebhookCreate(BaseModel):
-    name: str
-    url: str = ""
-    events: list[str] = []
-    secret: str = ""
-    enabled: bool = True
-    # inbound trigger: which script/client to run when /receive/{name} is called
-    script_id: str | None = None
-    client_id: str | None = None
-
-
-class WebhookUpdate(BaseModel):
-    name: str | None = None
-    url: str | None = None
-    events: list[str] | None = None
-    secret: str | None = None
-    enabled: bool | None = None
-    script_id: str | None = None
-    client_id: str | None = None
-
-
-class WebhookResponse(BaseModel):
-    id: str
-    name: str
-    url: str
-    events: str
-    secret: str
-    enabled: bool
-    script_id: str | None = None
-    client_id: str | None = None
-
-    class Config:
-        from_attributes = True
-
 
 class RunScriptRequest(BaseModel):
     client_id: str

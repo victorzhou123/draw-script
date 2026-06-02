@@ -51,6 +51,35 @@
     >
       <a-spin :spinning="infoLoading">
         <div v-if="infoScript" class="info-grid">
+          <!-- Script Name -->
+          <div class="info-label">脚本名称</div>
+          <div class="info-value name-row">
+            <template v-if="nameEditing">
+              <a-input
+                ref="nameInputRef"
+                v-model:value="nameValue"
+                size="small"
+                class="name-input"
+                @keyup.enter="saveName"
+                @keyup.esc="cancelName"
+              />
+              <a-button type="text" size="small" class="name-action-btn confirm-btn" @click="saveName">
+                <CheckOutlined style="color:#52c41a" />
+              </a-button>
+              <a-button type="text" size="small" class="name-action-btn" @click="cancelName">
+                <CloseOutlined />
+              </a-button>
+            </template>
+            <template v-else>
+              <span class="name-text">{{ infoScript.name }}</span>
+              <a-tooltip title="重命名">
+                <a-button type="text" size="small" class="name-action-btn" @click="startEditName">
+                  <EditOutlined />
+                </a-button>
+              </a-tooltip>
+            </template>
+          </div>
+
           <!-- Script ID -->
           <div class="info-label">脚本 ID</div>
           <div class="info-value id-row">
@@ -113,8 +142,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { InfoCircleOutlined, CopyOutlined, CheckOutlined } from '@ant-design/icons-vue'
+import { ref, computed, nextTick } from 'vue'
+import { InfoCircleOutlined, CopyOutlined, CheckOutlined, EditOutlined, CloseOutlined } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptStore } from '@/stores/scriptStore'
 import { useProjectStore } from '@/stores/projectStore'
@@ -216,6 +245,29 @@ const infoLoading   = ref(false)
 const infoScript    = ref<Script | null>(null)
 const idCopied      = ref(false)
 
+const nameEditing  = ref(false)
+const nameValue    = ref('')
+const nameInputRef = ref<any>(null)
+
+function startEditName() {
+  nameValue.value = infoScript.value?.name ?? ''
+  nameEditing.value = true
+  nextTick(() => nameInputRef.value?.focus())
+}
+
+function cancelName() {
+  nameEditing.value = false
+}
+
+async function saveName() {
+  const newName = nameValue.value.trim()
+  if (!newName || !infoScript.value) { cancelName(); return }
+  if (newName === infoScript.value.name) { cancelName(); return }
+  const updated = await scriptStore.renameScript(infoScript.value.id, newName)
+  infoScript.value = { ...infoScript.value, name: updated.name }
+  nameEditing.value = false
+}
+
 const infoProject = computed(() => {
   if (!infoScript.value?.project_id) return null
   return projectStore.projects.find(p => p.id === infoScript.value!.project_id) ?? null
@@ -254,6 +306,7 @@ const curlCommand = computed(() => {
 async function openInfo(script: Script) {
   infoScript.value = script
   idCopied.value = false
+  nameEditing.value = false
   infoModalOpen.value = true
   infoLoading.value = true
   await Promise.all([
@@ -359,6 +412,12 @@ async function copyCurl() {
 }
 .info-value { font-size: 13px; color: #d0d0d0; min-width: 0; }
 
+.name-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.name-text { font-size: 13px; color: #d0d0d0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.name-input { flex: 1; min-width: 0; font-size: 12px; background: #1a1a1a; border-color: #1890ff; color: #d0d0d0; }
+.name-action-btn { flex-shrink: 0; color: #555 !important; padding: 0 4px !important; }
+.name-action-btn:hover { color: #aaa !important; }
+.confirm-btn { color: #555 !important; }
 .id-row { display: flex; align-items: center; gap: 6px; }
 .id-text {
   font-family: 'Consolas', 'Monaco', monospace;

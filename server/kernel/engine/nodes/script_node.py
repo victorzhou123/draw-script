@@ -36,6 +36,18 @@ class ScriptNodeHandler(BaseNodeHandler):
         if not start:
             return NodeResult(success=False, error="Script node: referenced script has no start node")
 
+        input_mappings: list = self.ctx.node.data.get("input_mappings") or []
+        output_mappings: list = self.ctx.node.data.get("output_mappings") or []
+
+        if input_mappings:
+            child_vars = {}
+            for m in input_mappings:
+                src, dst = m.get("from", "").strip(), m.get("to", "").strip()
+                if src and dst and src in self.ctx.variables:
+                    child_vars[dst] = self.ctx.variables[src]
+        else:
+            child_vars = dict(self.ctx.variables)
+
         from engine.context import ExecutionContext
         sub_ctx = ExecutionContext(
             execution_id=self.ctx.execution_id,
@@ -46,7 +58,7 @@ class ScriptNodeHandler(BaseNodeHandler):
             ui_manager=self.ctx.ui_manager,
             session_factory=self.ctx.session_factory,
             project_id=self.ctx.project_id,
-            variables=dict(self.ctx.variables),
+            variables=child_vars,
             stop_event=self.ctx.stop_event,
             log=self.ctx.log,
             completion_event=None,
@@ -70,7 +82,14 @@ class ScriptNodeHandler(BaseNodeHandler):
 
         await _log(f"  ◀ 子脚本完成：{script_name}")
 
-        if sub_ctx.completion_result:
-            self.ctx.variables.update(sub_ctx.completion_result)
+        result = sub_ctx._result_box[0] if sub_ctx._result_box else sub_ctx.completion_result
+        if result:
+            if output_mappings:
+                for m in output_mappings:
+                    src, dst = m.get("from", "").strip(), m.get("to", "").strip()
+                    if src and dst and src in result:
+                        self.ctx.variables[dst] = result[src]
+            else:
+                self.ctx.variables.update(result)
 
-        return NodeResult(success=True, output=sub_ctx.completion_result)
+        return NodeResult(success=True, output=result)

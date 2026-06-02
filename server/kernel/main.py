@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from config import settings
 from database import init_db
 from log_handler import memory_handler
-from routers import clients, models, projects, scripts, webhooks, ws
+from routers import clients, models, projects, scripts, ws
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,6 @@ app.add_middleware(
 
 app.include_router(scripts.router, prefix="/api")
 app.include_router(clients.router, prefix="/api")
-app.include_router(webhooks.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(models.router, prefix="/api")
 app.include_router(ws.router)

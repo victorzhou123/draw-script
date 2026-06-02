@@ -17,7 +17,12 @@
     <div v-if="!collapsed" class="panel-content">
       <div class="clients-row">
         <div v-if="clientStore.clients.length === 0" class="empty-text">暂无客户端</div>
-        <div v-for="c in clientStore.clients" :key="c.id" class="client-chip">
+        <div
+          v-for="c in clientStore.clients" :key="c.id"
+          class="client-chip"
+          :class="{ 'chip-active': selectedLogClientId === c.id }"
+          @click.stop="selectedLogClientId = selectedLogClientId === c.id ? null : c.id"
+        >
           <span class="chip-dot" :class="`dot-${c.status}`" />
           <span class="chip-name">{{ c.name }}</span>
           <span class="chip-status">{{ statusText(c.status) }}</span>
@@ -28,8 +33,11 @@
       </div>
 
       <div class="log-box" ref="logBoxEl">
-        <div v-for="(line, i) in executionStore.logs" :key="i" class="log-line">{{ line }}</div>
-        <div v-if="!executionStore.logs.length" class="log-empty">等待执行...</div>
+        <template v-if="selectedLogClientId">
+          <div v-for="(line, i) in executionStore.logsFor(selectedLogClientId)" :key="i" class="log-line">{{ line }}</div>
+          <div v-if="!executionStore.logsFor(selectedLogClientId).length" class="log-empty">等待执行...</div>
+        </template>
+        <div v-else class="log-empty">点击客户端查看日志</div>
       </div>
     </div>
   </div>
@@ -47,6 +55,7 @@ const emit = defineEmits<{ (e: 'toggle'): void }>()
 const clientStore = useClientStore()
 const executionStore = useExecutionStore()
 const logBoxEl = ref<HTMLElement>()
+const selectedLogClientId = ref<string | null>(null)
 
 onMounted(() => clientStore.fetchClients())
 
@@ -56,10 +65,13 @@ function statusText(s: string) {
   return { idle: '空闲', running: '运行中', disconnected: '离线', timeout: '超时' }[s] ?? s
 }
 
-watch(() => executionStore.logs.length, async () => {
-  await nextTick()
-  if (logBoxEl.value) logBoxEl.value.scrollTop = logBoxEl.value.scrollHeight
-})
+watch(
+  () => selectedLogClientId.value ? executionStore.logsFor(selectedLogClientId.value).length : 0,
+  async () => {
+    await nextTick()
+    if (logBoxEl.value) logBoxEl.value.scrollTop = logBoxEl.value.scrollHeight
+  },
+)
 </script>
 
 <style scoped>
@@ -92,7 +104,11 @@ watch(() => executionStore.logs.length, async () => {
   border: 1px solid #2e2e2e;
   border-radius: 4px;
   font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.15s;
 }
+.client-chip:hover { border-color: #444; }
+.client-chip.chip-active { border-color: #1890ff44; background: #111d2c; }
 .chip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .dot-idle         { background: #52c41a; }
 .dot-running      { background: #1890ff; box-shadow: 0 0 4px #1890ff; }

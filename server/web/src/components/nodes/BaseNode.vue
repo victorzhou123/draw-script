@@ -149,8 +149,6 @@ const isActive = computed(() => {
 .node-type-http  { border-color: #13c2c2; background: #112123; }
 .node-type-http  .node-icon, .node-type-http  .node-label { color: #13c2c2; }
 
-.node-type-webhook { border-color: #eb2f96; background: #291321; }
-.node-type-webhook .node-icon, .node-type-webhook .node-label { color: #eb2f96; }
 
 @keyframes pulse {
   0%, 100% { box-shadow: 0 0 14px rgba(82,196,26,0.55); }

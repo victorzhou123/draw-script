@@ -27,4 +27,10 @@ class WatchNodeHandler(BaseNodeHandler):
         })
         self.ctx.log.append(message)
 
+        await self.ctx.ui_manager.broadcast_event("watch_snapshot", {
+            "node_id": self.ctx.node.id,
+            "client_id": self.ctx.client_id,
+            "snapshot": snapshot,
+        })
+
         return NodeResult(success=True, output={"snapshot": snapshot})

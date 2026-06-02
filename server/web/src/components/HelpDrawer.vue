@@ -33,7 +33,7 @@ const GUIDE_MD = `
 
 1. **新建脚本** — 在左侧"脚本"面板点击 **+**，输入名称后确认。
 2. **编辑流程** — 从"节点"面板拖拽节点到画布，连线构成执行流程。
-3. **运行脚本** — 在顶部工具栏选择客户端，点击运行；也可通过 API / Webhook 触发。
+3. **运行脚本** — 在顶部工具栏选择客户端，点击运行；也可通过 API 触发。
 
 ---
 
@@ -49,14 +49,13 @@ const GUIDE_MD = `
 | **截图** | 截取当前屏幕并保存到变量 |
 | **视觉识别** | 使用 OpenCV / OCR / Qwen-VL 识别图像内容 |
 | **HTTP 请求** | 向外部接口发送请求，结果存入变量 |
-| **Webhook** | 流程执行到此节点时触发出站 Webhook 通知 |
 
 ---
 
 ## 变量系统
 
 - 所有节点共享同一个 \`variables\` 字典（执行上下文）。
-- 通过 API 或 Webhook 触发时，请求 Body 中的字段会自动注入为初始变量。
+- 通过 API 触发时，请求 Body 中的字段会自动注入为初始变量。
 - 在节点属性面板中可用 \`{{变量名}}\` 语法引用变量值。
 
 ---
@@ -127,53 +126,6 @@ Content-Type: application/json
 \`\`\`
 
 \`params\` 中的所有字段会作为初始变量注入脚本执行上下文，脚本节点可通过 \`{{key1}}\` 引用。
-
----
-
-## Webhook 触发（推荐第三方集成使用）
-
-### 第一步：创建触发器
-
-\`\`\`
-POST /api/webhooks
-Content-Type: application/json
-\`\`\`
-
-\`\`\`json
-{
-  "name": "my-trigger",
-  "script_id": "脚本ID",
-  "client_id": "客户端ID",
-  "enabled": true
-}
-\`\`\`
-
-### 第二步：第三方调用
-
-\`\`\`
-POST /api/webhooks/receive/{name}
-Content-Type: application/json
-\`\`\`
-
-\`\`\`json
-{
-  "order_id": "12345",
-  "action": "place_order"
-}
-\`\`\`
-
-请求 Body 整体作为参数注入脚本变量。
-
-**响应**
-
-\`\`\`json
-{
-  "received": true,
-  "name": "my-trigger",
-  "triggered": true,
-  "execution_id": "执行ID"
-}
-\`\`\`
 
 ---
 

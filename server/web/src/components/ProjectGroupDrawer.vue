@@ -598,7 +598,7 @@ function toggleSendClient(cid: string) {
 const NODE_TYPE_LABEL: Record<string, string> = {
   action: '操作', vision: '视觉', condition: '条件', screenshot: '截图',
   http: 'HTTP', compute: '计算', delay: '延时', loop: '循环',
-  wait: '等待', script: '子脚本', webhook: 'Webhook',
+  wait: '等待', script: '子脚本',
 }
 
 interface MarkerUsage { scriptName: string; nodeLabel: string; nodeType: string }

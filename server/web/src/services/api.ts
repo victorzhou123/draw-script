@@ -34,15 +34,6 @@ export interface Execution {
   log: string
 }
 
-export interface Webhook {
-  id: string
-  name: string
-  url: string
-  events: string
-  secret: string
-  enabled: boolean
-}
-
 export interface Project {
   id: string
   name: string
@@ -131,14 +122,6 @@ export const api = {
     http.post(`/projects/${projectId}/clients/${clientId}`).then(r => r.data),
   removeClientFromProject: (projectId: string, clientId: string) =>
     http.delete(`/projects/${projectId}/clients/${clientId}`).then(r => r.data),
-
-  // Webhooks
-  getWebhooks: () => http.get<Webhook[]>('/webhooks').then(r => r.data),
-  createWebhook: (data: Omit<Webhook, 'id'>) =>
-    http.post<Webhook>('/webhooks', data).then(r => r.data),
-  updateWebhook: (id: string, data: Partial<Webhook>) =>
-    http.put<Webhook>(`/webhooks/${id}`, data).then(r => r.data),
-  deleteWebhook: (id: string) => http.delete(`/webhooks/${id}`).then(r => r.data),
 
   // Projects
   getProjects: () => http.get<Project[]>('/projects').then(r => r.data),

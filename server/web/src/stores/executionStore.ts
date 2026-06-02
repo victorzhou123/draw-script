@@ -14,8 +14,11 @@ export const useExecutionStore = defineStore('execution', () => {
   // Per-client execution tracking: clientId → execution info
   const clientExecutions = ref<Record<string, ClientExecution>>({})
 
-  // Shared log across all executions
-  const logs = ref<string[]>([])
+  // Per-client execution logs: clientId → log lines
+  const clientLogs = ref<Record<string, string[]>>({})
+
+  // Watch node snapshots: nodeId → clientId → snapshot
+  const watchSnapshots = ref<Record<string, Record<string, Record<string, unknown>>>>({})
 
   // Currently highlighted node in graph editor
   const activeNodeId = ref<string | null>(null)
@@ -47,9 +50,28 @@ export const useExecutionStore = defineStore('execution', () => {
     await Promise.allSettled(clientIds.filter(isRunning).map(id => stopOnClient(id)))
   }
 
-  function addLog(message: string) {
-    logs.value.push(message)
-    if (logs.value.length > 500) logs.value.shift()
+  function logsFor(clientId: string): string[] {
+    return clientLogs.value[clientId] ?? []
+  }
+
+  function addLog(message: string, clientId?: string) {
+    const key = clientId || '__system__'
+    if (!clientLogs.value[key]) clientLogs.value[key] = []
+    clientLogs.value[key].push(message)
+    if (clientLogs.value[key].length > 500) clientLogs.value[key].shift()
+  }
+
+  function clearLogs(clientId?: string) {
+    if (clientId) {
+      clientLogs.value[clientId] = []
+    } else {
+      clientLogs.value = {}
+    }
+  }
+
+  function onWatchSnapshot(nodeId: string, clientId: string, snapshot: Record<string, unknown>) {
+    if (!watchSnapshots.value[nodeId]) watchSnapshots.value[nodeId] = {}
+    watchSnapshots.value[nodeId][clientId] = snapshot
   }
 
   // WS event handlers
@@ -70,13 +92,13 @@ export const useExecutionStore = defineStore('execution', () => {
       }
     }
     activeNodeId.value = null
-    if (error) addLog(`[ERROR] ${error}`)
+    if (error) addLog(`[ERROR] ${error}`, clientId)
   }
 
   return {
-    clientExecutions, logs, activeNodeId,
+    clientExecutions, clientLogs, activeNodeId, watchSnapshots,
     isRunning, anyRunning,
     runOnClient, stopOnClient, runOnProject, stopOnProject,
-    addLog, onProgress, onFinished,
+    logsFor, addLog, clearLogs, onProgress, onFinished, onWatchSnapshot,
   }
 })

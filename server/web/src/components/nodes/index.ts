@@ -139,7 +139,6 @@ const NODE_DEFS = [
   { shape: 'node-loop',       icon: 'SyncOutlined',        label: 'Loop',       w: 120, h: 60  },
   { shape: 'node-wait',       icon: 'NodeCollapseOutlined',label: 'Wait',       w: 120, h: 60  },
   { shape: 'node-http',       icon: 'GlobalOutlined',      label: 'HTTP',       w: 120, h: 60  },
-  { shape: 'node-webhook',    icon: 'LinkOutlined',        label: 'Webhook',    w: 120, h: 60  },
   { shape: 'node-compute',    icon: 'CodeOutlined',        label: 'Compute',    w: 120, h: 60  },
   { shape: 'node-script',     icon: 'ApartmentOutlined',   label: 'Script',     w: 120, h: 60  },
   { shape: 'node-watch',      icon: 'PrinterOutlined',     label: 'Watch',      w: 120, h: 60  },

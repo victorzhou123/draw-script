@@ -9,21 +9,18 @@
       </a-radio-group>
     </a-form-item>
 
-    <a-form-item label="检测范围">
-      <a-select v-model:value="d.range_marker" :style="{ width: '100%' }" placeholder="选择方框标记作为识别区域" allow-clear @change="update()">
-        <a-select-option v-for="m in ctx.availableMarkers.value" :key="m.name" :value="m.name">
-          <span class="marker-menu-type" :class="`type-${m.type}`">{{ m.type === 'point' ? '点' : '方框' }}</span>
-          {{ m.name }}
-        </a-select-option>
-      </a-select>
-      <div class="hint-text" style="margin-top:4px">留空默认范围为选择的窗口</div>
-      <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:2px">
-        当前项目暂无标记，请先在项目中添加方框类型标记
-      </div>
-    </a-form-item>
-
     <!-- Template match -->
     <template v-if="d.vision_type === 'template_match'">
+      <a-form-item label="检测范围">
+        <a-select v-model:value="d.range_marker" :style="{ width: '100%' }" placeholder="选择方框标记作为识别区域" allow-clear @change="update()">
+          <a-select-option v-for="m in ctx.availableMarkers.value" :key="m.name" :value="m.name">
+            <span class="marker-menu-type" :class="`type-${m.type}`">{{ m.type === 'point' ? '点' : '方框' }}</span>
+            {{ m.name }}
+          </a-select-option>
+        </a-select>
+        <div class="hint-text" style="margin-top:4px">留空默认范围为选择的窗口</div>
+        <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:2px">当前项目暂无标记，请先在项目中添加方框类型标记</div>
+      </a-form-item>
       <a-form-item label="模板来源">
         <a-radio-group v-model:value="templateSource" size="small" button-style="solid" @change="onTemplateSourceChange">
           <a-radio-button value="fixed">固定模板</a-radio-button>
@@ -60,6 +57,30 @@
 
     <!-- OCR -->
     <template v-if="d.vision_type === 'ocr'">
+      <a-form-item label="图片来源">
+        <a-radio-group v-model:value="ocrImageSource" size="small" button-style="solid" @change="onOcrImageSourceChange">
+          <a-radio-button value="screenshot">客户端截图</a-radio-button>
+          <a-radio-button value="context">Context 字段</a-radio-button>
+        </a-radio-group>
+      </a-form-item>
+      <a-form-item v-if="ocrImageSource === 'context'" label="Context 字段">
+        <a-select v-model:value="d.params.ocr_context_image_var" :style="{ width: '100%' }" placeholder="选择包含 base64 图片数据的字段" allow-clear @change="update()">
+          <a-select-option v-for="f in ctx.contextFields.value" :key="f.name" :value="f.name">
+            <span class="ctx-dot" :class="f.certain ? 'certain' : 'conditional'" />{{ f.name }}
+            <span v-if="!f.certain" class="ctx-warn">⚠ 条件分支</span>
+          </a-select-option>
+        </a-select>
+      </a-form-item>
+      <a-form-item v-if="ocrImageSource === 'screenshot'" label="检测范围">
+        <a-select v-model:value="d.range_marker" :style="{ width: '100%' }" placeholder="选择方框标记作为识别区域" allow-clear @change="update()">
+          <a-select-option v-for="m in ctx.availableMarkers.value" :key="m.name" :value="m.name">
+            <span class="marker-menu-type" :class="`type-${m.type}`">{{ m.type === 'point' ? '点' : '方框' }}</span>
+            {{ m.name }}
+          </a-select-option>
+        </a-select>
+        <div class="hint-text" style="margin-top:4px">留空默认范围为选择的窗口</div>
+        <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:2px">当前项目暂无标记，请先在项目中添加方框类型标记</div>
+      </a-form-item>
       <a-form-item label="识别结果存入">
         <a-auto-complete v-model:value="d.result_var" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))" placeholder="context 字段名（存储全部识别文字）" allow-clear @change="update()" />
       </a-form-item>
@@ -67,6 +88,30 @@
 
     <!-- AI Vision -->
     <template v-if="d.vision_type === 'ai_vision'">
+      <a-form-item label="图片来源">
+        <a-radio-group v-model:value="aiImageSource" size="small" button-style="solid" @change="onAiImageSourceChange">
+          <a-radio-button value="screenshot">客户端截图</a-radio-button>
+          <a-radio-button value="context">Context 字段</a-radio-button>
+        </a-radio-group>
+      </a-form-item>
+      <a-form-item v-if="aiImageSource === 'context'" label="Context 字段">
+        <a-select v-model:value="d.params.context_image_var" :style="{ width: '100%' }" placeholder="选择包含 base64 图片数据的字段" allow-clear @change="update()">
+          <a-select-option v-for="f in ctx.contextFields.value" :key="f.name" :value="f.name">
+            <span class="ctx-dot" :class="f.certain ? 'certain' : 'conditional'" />{{ f.name }}
+            <span v-if="!f.certain" class="ctx-warn">⚠ 条件分支</span>
+          </a-select-option>
+        </a-select>
+      </a-form-item>
+      <a-form-item v-if="aiImageSource === 'screenshot'" label="检测范围">
+        <a-select v-model:value="d.range_marker" :style="{ width: '100%' }" placeholder="选择方框标记作为识别区域" allow-clear @change="update()">
+          <a-select-option v-for="m in ctx.availableMarkers.value" :key="m.name" :value="m.name">
+            <span class="marker-menu-type" :class="`type-${m.type}`">{{ m.type === 'point' ? '点' : '方框' }}</span>
+            {{ m.name }}
+          </a-select-option>
+        </a-select>
+        <div class="hint-text" style="margin-top:4px">留空默认范围为选择的窗口</div>
+        <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:2px">当前项目暂无标记，请先在项目中添加方框类型标记</div>
+      </a-form-item>
       <a-form-item label="AI 模型">
         <a-select v-model:value="d.params.model_id" :style="{ width: '100%' }" placeholder="选择 AI 模型" allow-clear @change="update()">
           <a-select-option v-for="m in ctx.aiModels.value" :key="m.id" :value="m.id">
@@ -108,6 +153,16 @@
 
     <!-- Color detect -->
     <template v-if="d.vision_type === 'color_detect'">
+      <a-form-item label="检测范围">
+        <a-select v-model:value="d.range_marker" :style="{ width: '100%' }" placeholder="选择方框标记作为识别区域" allow-clear @change="update()">
+          <a-select-option v-for="m in ctx.availableMarkers.value" :key="m.name" :value="m.name">
+            <span class="marker-menu-type" :class="`type-${m.type}`">{{ m.type === 'point' ? '点' : '方框' }}</span>
+            {{ m.name }}
+          </a-select-option>
+        </a-select>
+        <div class="hint-text" style="margin-top:4px">留空默认范围为选择的窗口</div>
+        <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:2px">当前项目暂无标记，请先在项目中添加方框类型标记</div>
+      </a-form-item>
       <a-form-item label="颜色 (Hex)">
         <a-input v-model:value="d.params.color" placeholder="#FF0000" @change="update()" />
       </a-form-item>
@@ -129,10 +184,14 @@ const ctx = inject(FORM_CTX)!
 const d = ctx.localData
 
 const templateSource = ref<'fixed' | 'context'>('fixed')
+const aiImageSource = ref<'screenshot' | 'context'>('screenshot')
+const ocrImageSource = ref<'screenshot' | 'context'>('screenshot')
 
 watch(d, (data) => {
   if (!data || data.type !== 'vision') return
   templateSource.value = String(data.params?.template_context_var || '') ? 'context' : 'fixed'
+  aiImageSource.value = String(data.params?.context_image_var || '') ? 'context' : 'screenshot'
+  ocrImageSource.value = String(data.params?.ocr_context_image_var || '') ? 'context' : 'screenshot'
 }, { immediate: true })
 
 function update() { ctx.emitUpdate() }
@@ -140,6 +199,16 @@ function update() { ctx.emitUpdate() }
 function onTemplateSourceChange() {
   if (templateSource.value === 'fixed') { d.value.params.template_context_var = '' }
   else { d.value.params.template_id = '' }
+  update()
+}
+
+function onAiImageSourceChange() {
+  if (aiImageSource.value === 'screenshot') { d.value.params.context_image_var = '' }
+  update()
+}
+
+function onOcrImageSourceChange() {
+  if (ocrImageSource.value === 'screenshot') { d.value.params.ocr_context_image_var = '' }
   update()
 }
 </script>

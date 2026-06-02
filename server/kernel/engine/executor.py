@@ -112,7 +112,8 @@ class ExecutionEngine:
                                          completion_event=completion_event)
         else:
             status = "stopped" if stop_event.is_set() else "completed"
-            result_json = _json.dumps(ctx.completion_result, ensure_ascii=False) if ctx.completion_result else None
+            completion = ctx._result_box[0] if ctx._result_box else ctx.completion_result
+            result_json = _json.dumps(completion, ensure_ascii=False) if completion else None
             await self._finish_execution(execution_id, client_id, status, None, "\n".join(log),
                                          result_json=result_json, completion_event=completion_event)
 

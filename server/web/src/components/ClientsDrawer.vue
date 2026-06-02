@@ -123,13 +123,17 @@
       <div class="log-section">
         <div class="section-header">
           <span class="section-title"><CodeOutlined /> 执行日志</span>
-          <a-button size="small" type="text" class="icon-btn" @click="executionStore.logs.splice(0)">
+          <span v-if="selectedClientId" class="log-client-tag">{{ clientName(selectedClientId) }}</span>
+          <a-button size="small" type="text" class="icon-btn" :disabled="!selectedClientId" @click="executionStore.clearLogs(selectedClientId!)">
             <ClearOutlined />
           </a-button>
         </div>
         <div class="log-box" ref="logBoxEl">
-          <div v-for="(line, i) in executionStore.logs" :key="i" class="log-line">{{ line }}</div>
-          <div v-if="!executionStore.logs.length" class="log-empty">等待执行...</div>
+          <template v-if="selectedClientId">
+            <div v-for="(line, i) in executionStore.logsFor(selectedClientId)" :key="i" class="log-line">{{ line }}</div>
+            <div v-if="!executionStore.logsFor(selectedClientId).length" class="log-empty">等待执行...</div>
+          </template>
+          <div v-else class="log-empty">点击客户端卡片查看日志</div>
         </div>
       </div>
     </div>
@@ -181,6 +185,7 @@ function clientScripts(c: Client) {
 }
 function runtimeStatus(c: Client) { return executionStore.isRunning(c.id) ? 'running' : c.status }
 function statusLabel(s: string) { return { idle: '空闲', running: '运行中', disconnected: '离线', timeout: '超时' }[s] ?? s }
+function clientName(cid: string) { return clientStore.clients.find(c => c.id === cid)?.name ?? cid }
 function toggleClient(id: string) { selectedClientId.value = selectedClientId.value === id ? null : id }
 async function refresh() { await clientStore.fetchClients() }
 
@@ -211,10 +216,13 @@ async function stopOnProject() {
 watch(() => props.open, async (v) => {
   if (v) await Promise.all([clientStore.fetchClients(), projectStore.fetchProjects(), scriptStore.fetchScripts()])
 })
-watch(() => executionStore.logs.length, async () => {
-  await nextTick()
-  if (logBoxEl.value) logBoxEl.value.scrollTop = logBoxEl.value.scrollHeight
-})
+watch(
+  () => selectedClientId.value ? executionStore.logsFor(selectedClientId.value).length : 0,
+  async () => {
+    await nextTick()
+    if (logBoxEl.value) logBoxEl.value.scrollTop = logBoxEl.value.scrollHeight
+  },
+)
 </script>
 
 <style scoped>
@@ -270,5 +278,6 @@ watch(() => executionStore.logs.length, async () => {
 .log-box { flex: 1; overflow-y: auto; background: #111; border: 1px solid #222; border-radius: 4px; padding: 8px 10px; font-family: 'Consolas', 'Monaco', monospace; font-size: 11px; min-height: 60px; }
 .log-line { color: #7ec87e; line-height: 1.7; white-space: pre-wrap; word-break: break-all; }
 .log-empty { color: #2e2e2e; font-size: 11px; }
+.log-client-tag { font-size: 11px; color: #1890ff; background: #111d2c; border: 1px solid #1890ff33; padding: 1px 8px; border-radius: 10px; margin-left: auto; margin-right: 4px; }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 </style>

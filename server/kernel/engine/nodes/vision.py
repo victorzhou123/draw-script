@@ -54,6 +54,79 @@ class VisionNodeHandler(BaseNodeHandler):
                             with open(tpl_path, "rb") as fh:
                                 params["template_b64"] = base64.b64encode(fh.read()).decode()
 
+        # ocr shortcut: use context image directly, skip client screenshot
+        if vision_type == "ocr":
+            ocr_context_image_var = params.pop("ocr_context_image_var", "").strip()
+            if ocr_context_image_var:
+                raw = self.ctx.variables.get(ocr_context_image_var, "")
+                if not raw or not isinstance(raw, str):
+                    return NodeResult(success=False, error=f"OCR: context 字段 '{ocr_context_image_var}' 为空或类型无效")
+                if raw.startswith("data:") and "," in raw:
+                    raw = raw.split(",", 1)[1]
+                try:
+                    img_bytes = base64.b64decode(raw)
+                except Exception as e:
+                    return NodeResult(success=False, error=f"OCR: context 字段 base64 解码失败: {e}")
+                try:
+                    from cv.vision_engine import VisionEngine
+                    vision_result = await VisionEngine().analyze("ocr", img_bytes, params, None)
+                    await self._log(f"[Vision] OCR完成(context图): text={truncate_for_log(vision_result.text)!r}")
+                    self.ctx.variables["last_vision_result"] = vision_result.__dict__
+                    if result_var:
+                        self.ctx.variables[result_var] = vision_result.text
+                    return NodeResult(success=True, output=vision_result.__dict__)
+                except Exception as e:
+                    await self._log(f"[Vision] OCR异常: {e}")
+                    return NodeResult(success=False, error=str(e))
+
+        # ai_vision shortcut: use context image directly, skip client screenshot
+        if vision_type == "ai_vision":
+            context_image_var = params.pop("context_image_var", "").strip()
+            if context_image_var:
+                raw = self.ctx.variables.get(context_image_var, "")
+                if not raw or not isinstance(raw, str):
+                    return NodeResult(success=False, error=f"AI视觉: context 字段 '{context_image_var}' 为空或类型无效")
+                if raw.startswith("data:") and "," in raw:
+                    raw = raw.split(",", 1)[1]
+                try:
+                    img_bytes = base64.b64decode(raw)
+                except Exception as e:
+                    return NodeResult(success=False, error=f"AI视觉: context 字段 base64 解码失败: {e}")
+
+                model_config = None
+                model_id = params.get("model_id", "").strip()
+                if model_id:
+                    from database import AIModelConfig
+                    async with self.ctx.session_factory() as session:
+                        mc = await session.get(AIModelConfig, model_id)
+                        if mc:
+                            model_config = {"api_key": mc.api_key, "base_url": mc.base_url, "model_name": mc.model_name}
+
+                try:
+                    from cv.vision_engine import VisionEngine
+                    vision_result = await VisionEngine().analyze(vision_type, img_bytes, params, model_config)
+                    await self._log(f"[Vision] AI分析完成(context图): found={vision_result.found}, text={truncate_for_log(vision_result.text)!r}")
+                    self.ctx.variables["last_vision_result"] = vision_result.__dict__
+
+                    if result_var:
+                        if vision_result.found and vision_result.location:
+                            x, y = int(vision_result.location.get("x", 0)), int(vision_result.location.get("y", 0))
+                            self.ctx.variables[result_var] = f"{x},{y}"
+                        elif vision_result.text:
+                            post_process: list = data.get("post_process") or []
+                            value = vision_result.text
+                            if "parse_markdown_json" in post_process:
+                                value = _parse_markdown_json(value)
+                                await self._log(f"[Vision] post_process parse_markdown_json → {type(value).__name__}")
+                            self.ctx.variables[result_var] = value
+                        else:
+                            self.ctx.variables[result_var] = None
+
+                    return NodeResult(success=True, output=vision_result.__dict__)
+                except Exception as e:
+                    await self._log(f"[Vision] 异常: {e}")
+                    return NodeResult(success=False, error=str(e))
+
         request_id = str(uuid.uuid4())
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         self.ctx.ws_manager.pending_requests[request_id] = future

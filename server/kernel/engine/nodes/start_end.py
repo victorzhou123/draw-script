@@ -21,16 +21,19 @@ class StartNodeHandler(BaseNodeHandler):
 @NodeRegistry.register("end")
 class EndNodeHandler(BaseNodeHandler):
     async def execute(self) -> NodeResult:
-        return_fields: list[str] = self.ctx.node.data.get("return_fields", [])
-        if return_fields:
-            self.ctx.completion_result = {
-                k: self.ctx.variables[k]
-                for k in return_fields
-                if k in self.ctx.variables
-            }
-        else:
-            self.ctx.completion_result = dict(self.ctx.variables)
+        if self.ctx._result_box:
+            # Another branch already hit end; first wins.
+            return NodeResult()
 
+        return_fields: list[str] = self.ctx.node.data.get("return_fields", [])
+        result = (
+            {k: self.ctx.variables[k] for k in return_fields if k in self.ctx.variables}
+            if return_fields
+            else dict(self.ctx.variables)
+        )
+        self.ctx._result_box.append(result)
+        self.ctx.completion_result = result
+        self.ctx.end_event.set()
         return NodeResult()
 
 

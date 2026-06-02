@@ -94,11 +94,47 @@ async def run_branch(
         if len(next_nodes) <= 1:
             current = next_nodes[0] if next_nodes else None
         else:
-            # Fan-out: run all downstream branches in parallel
-            errors = await asyncio.gather(*[
-                run_branch(copy.copy(ctx), node, visited_count, script_name)
+            # Fan-out: run branches in parallel; return early if any branch hits end
+            branch_tasks = [
+                asyncio.create_task(run_branch(copy.copy(ctx), node, visited_count, script_name))
                 for node in next_nodes
-            ])
-            return next((e for e in errors if e), None)
+            ]
+            return await _wait_for_branches(ctx, branch_tasks)
 
     return None
+
+
+async def _wait_for_branches(ctx, branch_tasks: list) -> str | None:
+    """Wait for parallel branches; returns early when end_event fires."""
+    end_waiter = asyncio.create_task(ctx.end_event.wait())
+    pending = set(branch_tasks)
+
+    while pending:
+        done, _ = await asyncio.wait(pending | {end_waiter}, return_when=asyncio.FIRST_COMPLETED)
+
+        if end_waiter in done:
+            if ctx._result_box:
+                ctx.completion_result = ctx._result_box[0]
+            for task in pending - done:
+                task.add_done_callback(_log_bg_branch_error)
+            return None
+
+        for task in done:
+            result = task.result()
+            if result:
+                end_waiter.cancel()
+                return result
+
+        pending -= done
+
+    end_waiter.cancel()
+    return None
+
+
+def _log_bg_branch_error(task: asyncio.Task) -> None:
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        pass
+    except Exception as exc:
+        logger.warning("Background branch error after end: %s", exc)

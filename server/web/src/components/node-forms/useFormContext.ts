@@ -7,6 +7,7 @@ export interface ContextField {
 
 export interface FormContext {
   localData: Ref<any>
+  nodeId: Ref<string>
   contextFields: ComputedRef<ContextField[]>
   availableMarkers: ComputedRef<any[]>
   availableTemplates: ComputedRef<any[]>

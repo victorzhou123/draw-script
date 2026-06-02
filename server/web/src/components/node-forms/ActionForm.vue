@@ -57,6 +57,16 @@
         <div v-if="!ctx.contextFields.value.length" class="hint-text" style="margin-top:-6px">当前节点上游暂无 context 变量</div>
       </template>
 
+      <a-form-item v-if="d.action_type === 'mouse_double_click'" label="点击间隔 (ms)">
+        <a-input-number
+          v-model:value="d.params.interval_ms"
+          :min="0" :max="2000" :step="10"
+          :style="{ width: '100%' }"
+          placeholder="100"
+          @change="update()"
+        />
+      </a-form-item>
+
       <a-form-item v-if="['mouse_click','mouse_double_click'].includes(d.action_type)" label="按键">
         <a-select v-model:value="d.params.button" @change="update()">
           <a-select-option value="left">左键</a-select-option>
