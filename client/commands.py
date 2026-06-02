@@ -880,9 +880,9 @@ class CommandHandler:
         project_id    = msg.get("project_id", "")
         request_id    = msg.get("request_id") or msg.get("node_id")
         server_markers = msg.get("_markers")  # DB coordinates from server (authoritative)
-        if project_id or server_markers:
-            params = _resolve_marker_params(params, project_id, server_markers)
         try:
+            if project_id or server_markers:
+                params = _resolve_marker_params(params, project_id, server_markers)
             if node_type in ("template_match", "ocr", "ai_vision", "color_detect"):
                 success, output, error = await self._execute_vision(
                     node_type, params, project_id, server_markers
@@ -911,8 +911,12 @@ class CommandHandler:
 
         if action_type == "mouse_double_click":
             x, y = _int(params.get("x"), 0), _int(params.get("y"), 0)
-            await _run_blocking(pyautogui.doubleClick, x, y,
-                                button=params.get("button","left"))
+            interval = _int(params.get("interval_ms"), 100) / 1000.0
+            button = params.get("button") or "left"
+            await _run_blocking(pyautogui.click, x, y,
+                                clicks=2,
+                                interval=interval,
+                                button=button)
             return True, {"x": x, "y": y}, None
 
         if action_type == "mouse_move":
