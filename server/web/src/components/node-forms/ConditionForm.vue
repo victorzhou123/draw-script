@@ -6,11 +6,25 @@
         <a-select-option value="vision_text_contains">识别文字包含</a-select-option>
         <a-select-option value="variable_compare">变量比较</a-select-option>
         <a-select-option value="http_status">HTTP状态码</a-select-option>
+        <a-select-option value="boolean_check">布尔值判断</a-select-option>
       </a-select>
     </a-form-item>
     <template v-if="d.condition_type === 'vision_text_contains'">
       <a-form-item label="包含文字">
         <a-input v-model:value="d.params.value" @change="update()" />
+      </a-form-item>
+    </template>
+    <template v-if="d.condition_type === 'boolean_check'">
+      <a-form-item label="变量路径">
+        <a-auto-complete v-model:value="d.params.variable" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))"
+          placeholder="例如: last_vision_result.found" allow-clear @change="update()">
+          <template #option="{ value: val }">
+            <span class="ctx-dot" :class="ctx.contextFields.value.find((f:any) => f.name === val)?.certain ? 'certain' : 'conditional'" />
+            {{ val }}
+          </template>
+        </a-auto-complete>
+        <div v-if="!ctx.contextFields.value.length" class="hint-text" style="margin-top:4px">当前节点上游暂无 context 变量</div>
+        <div class="hint-text" style="margin-top:4px">判断该变量的值是否为真（非空、非零、非False）</div>
       </a-form-item>
     </template>
     <template v-if="d.condition_type === 'variable_compare'">

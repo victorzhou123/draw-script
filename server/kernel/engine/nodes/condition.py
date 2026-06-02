@@ -36,6 +36,11 @@ class ConditionNodeHandler(BaseNodeHandler):
             status = response.get("status_code", 0)
             return self._compare(status, params.get("operator", "=="), int(params.get("value", 200)))
 
+        if condition_type == "boolean_check":
+            var_path = params.get("variable", "")
+            val = self._get_var(var_path) if var_path else None
+            return bool(val)
+
         return False
 
     def _resolve_value(self, value):
