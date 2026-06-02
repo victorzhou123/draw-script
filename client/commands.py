@@ -1061,9 +1061,15 @@ class CommandHandler:
         code: str = msg.get("code", "")
         context: dict = dict(msg.get("context", {}))
         try:
-            namespace: dict = {"context": context}
+            namespace: dict = {**context, "context": context}
             exec(compile(code, "<compute>", "exec"), namespace)
-            updated_context = namespace.get("context", context)
+            # Collect direct variable assignments (both existing and new keys)
+            updated_context = dict(context)
+            for k, v in namespace.items():
+                if not k.startswith("__") and k != "context":
+                    updated_context[k] = v
+            # Also apply context["x"] = y style updates
+            updated_context.update(namespace.get("context", {}))
             await self._send({
                 "type": "node_result",
                 "request_id": request_id,
