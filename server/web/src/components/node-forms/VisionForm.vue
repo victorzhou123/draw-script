@@ -163,6 +163,16 @@
         <div class="hint-text" style="margin-top:4px">留空默认范围为选择的窗口</div>
         <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:2px">当前项目暂无标记，请先在项目中添加方框类型标记</div>
       </a-form-item>
+      <a-form-item label="检测模式">
+        <a-select v-model:value="d.params.mode" :style="{ width: '100%' }" @change="update()">
+          <a-select-option value="largest_contour">最大色块（返回坐标字符串）</a-select-option>
+          <a-select-option value="all_contours">所有目标（返回坐标数组）</a-select-option>
+        </a-select>
+      </a-form-item>
+      <a-form-item v-if="d.params.mode === 'all_contours'" label="最小面积">
+        <a-input-number v-model:value="d.params.min_area" :min="0" :style="{ width: '100%' }" placeholder="过滤小于此面积的色块（像素²）" @change="update()" />
+        <div class="hint-text" style="margin-top:4px">建议 100~500，过滤噪点用</div>
+      </a-form-item>
       <a-form-item label="颜色 (Hex)">
         <a-input v-model:value="d.params.color" placeholder="#FF0000" @change="update()" />
       </a-form-item>

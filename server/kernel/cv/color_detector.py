@@ -11,7 +11,7 @@ def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
 
-def _do_detect(screenshot_bytes: bytes, color: str, tolerance: int, mode: str) -> VisionResult:
+def _do_detect(screenshot_bytes: bytes, color: str, tolerance: int, mode: str, min_area: int) -> VisionResult:
     import cv2
     import numpy as np
 
@@ -28,6 +28,8 @@ def _do_detect(screenshot_bytes: bytes, color: str, tolerance: int, mode: str) -
     found = pixel_count > 0
 
     location = None
+    locations = None
+
     if found and mode == "largest_contour":
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contours:
@@ -35,11 +37,24 @@ def _do_detect(screenshot_bytes: bytes, color: str, tolerance: int, mode: str) -
             x, y, w, h = cv2.boundingRect(largest)
             location = {"x": x + w // 2, "y": y + h // 2, "w": w, "h": h}
 
+    elif found and mode == "all_contours":
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        locations = []
+        for c in contours:
+            if cv2.contourArea(c) >= min_area:
+                x, y, w, h = cv2.boundingRect(c)
+                locations.append({"x": x + w // 2, "y": y + h // 2})
+        found = len(locations) > 0
+
+    raw: dict = {"pixel_count": pixel_count, "color": color}
+    if locations is not None:
+        raw["locations"] = locations
+
     return VisionResult(
         found=found,
         confidence=1.0 if found else 0.0,
         location=location,
-        raw={"pixel_count": pixel_count, "color": color},
+        raw=raw,
     )
 
 
@@ -48,8 +63,9 @@ class ColorDetector:
         color = params.get("color", "#FF0000")
         tolerance = int(params.get("tolerance", 20))
         mode = params.get("mode", "largest_contour")
+        min_area = int(params.get("min_area", 0))
         loop = asyncio.get_running_loop()
         try:
-            return await loop.run_in_executor(_executor, _do_detect, screenshot, color, tolerance, mode)
+            return await loop.run_in_executor(_executor, _do_detect, screenshot, color, tolerance, mode, min_area)
         except Exception as e:
             return VisionResult(found=False, raw={"error": str(e)})

@@ -941,7 +941,18 @@ class CommandHandler:
             keys = params.get("keys", [])
             if isinstance(keys, str):
                 keys = keys.split("+")
-            await _run_blocking(pyautogui.hotkey, *keys)
+            hold_ms = _int(params.get("hold_ms"), 0)
+            if hold_ms > 0:
+                import time
+                def _hold():
+                    for key in keys:
+                        pyautogui.keyDown(key)
+                    time.sleep(hold_ms / 1000.0)
+                    for key in reversed(keys):
+                        pyautogui.keyUp(key)
+                await _run_blocking(_hold)
+            else:
+                await _run_blocking(pyautogui.hotkey, *keys)
             return True, {"keys": keys}, None
 
         if action_type == "keyboard_press":

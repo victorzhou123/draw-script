@@ -103,14 +103,37 @@
     </template>
 
     <template v-if="d.action_type === 'keyboard_hotkey'">
-      <a-form-item label="按键 / 快捷键">
-        <div class="key-capture" :class="{ recording: isRecordingKey }" tabindex="0"
-          @focus="isRecordingKey = true" @blur="isRecordingKey = false" @keydown.prevent="onCaptureKeyDown">
-          <span v-if="isRecordingKey" class="key-hint">请按下按键…</span>
-          <span v-else-if="d.params.keys" class="key-value">{{ d.params.keys }}</span>
-          <span v-else class="key-placeholder">点击后按下按键</span>
-          <CloseCircleOutlined v-if="d.params.keys && !isRecordingKey" class="key-clear" @mousedown.prevent="clearKey" />
-        </div>
+      <a-form-item label="按键来源">
+        <a-radio-group v-model:value="keySource" size="small" button-style="solid" @change="onKeySourceChange">
+          <a-radio-button value="fixed">固定按键</a-radio-button>
+          <a-radio-button value="context">Context</a-radio-button>
+        </a-radio-group>
+      </a-form-item>
+      <template v-if="keySource === 'fixed'">
+        <a-form-item label="按键 / 快捷键">
+          <div class="key-capture" :class="{ recording: isRecordingKey }" tabindex="0"
+            @focus="isRecordingKey = true" @blur="isRecordingKey = false" @keydown.prevent="onCaptureKeyDown">
+            <span v-if="isRecordingKey" class="key-hint">请按下按键…</span>
+            <span v-else-if="d.params.keys" class="key-value">{{ d.params.keys }}</span>
+            <span v-else class="key-placeholder">点击后按下按键</span>
+            <CloseCircleOutlined v-if="d.params.keys && !isRecordingKey" class="key-clear" @mousedown.prevent="clearKey" />
+          </div>
+        </a-form-item>
+      </template>
+      <template v-else>
+        <a-form-item label="Context 变量">
+          <a-select v-model:value="keyContextVar" :style="{ width: '100%' }" placeholder="选择变量" allow-clear @change="onKeyContextVarSelect">
+            <a-select-option v-for="f in ctx.contextFields.value" :key="f.name" :value="f.name">
+              <span class="ctx-dot" :class="f.certain ? 'certain' : 'conditional'" />
+              {{ f.name }}
+              <span v-if="!f.certain" class="ctx-warn">⚠ 条件分支</span>
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <div v-if="!ctx.contextFields.value.length" class="hint-text" style="margin-top:-6px">当前节点上游暂无 context 变量</div>
+      </template>
+      <a-form-item label="长按时长 (ms)">
+        <a-input-number v-model:value="d.params.hold_ms" :min="0" :style="{ width: '100%' }" placeholder="0 = 普通按键，>0 = 长按" @change="update()" />
       </a-form-item>
     </template>
   </div>
@@ -129,6 +152,8 @@ const contextVarSelected = ref<string | undefined>(undefined)
 const currentMarkerName = ref<string | null>(null)
 const textSource = ref<'manual' | 'context'>('manual')
 const textContextVar = ref<string | undefined>(undefined)
+const keySource = ref<'fixed' | 'context'>('fixed')
+const keyContextVar = ref<string | undefined>(undefined)
 const isRecordingKey = ref(false)
 
 const KEY_MAP: Record<string, string> = {
@@ -167,6 +192,15 @@ watch(d, (data) => {
   } else {
     textSource.value = 'manual'
     textContextVar.value = undefined
+  }
+  const keysVal = String(params.keys || '')
+  const tplKeysM = keysVal.match(/^\{\{([^}]+)\}\}$/)
+  if (keysVal.startsWith('$') || tplKeysM) {
+    keySource.value = 'context'
+    keyContextVar.value = tplKeysM ? tplKeysM[1].trim() : keysVal.slice(1)
+  } else {
+    keySource.value = 'fixed'
+    keyContextVar.value = undefined
   }
   isRecordingKey.value = false
 }, { immediate: true })
@@ -232,6 +266,16 @@ function onCaptureKeyDown(e: KeyboardEvent) {
 }
 
 function clearKey() { d.value.params.keys = ''; update() }
+
+function onKeySourceChange() {
+  keyContextVar.value = undefined; d.value.params.keys = ''; update()
+}
+
+function onKeyContextVarSelect(varName: string | undefined) {
+  keyContextVar.value = varName
+  d.value.params.keys = varName ? `{{${varName}}}` : ''
+  update()
+}
 </script>
 
 <style scoped>

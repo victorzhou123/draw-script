@@ -213,7 +213,10 @@ class VisionNodeHandler(BaseNodeHandler):
             self.ctx.variables["last_vision_result"] = vision_result.__dict__
 
             if result_var:
-                if vision_result.found and vision_result.location:
+                locations = vision_result.raw.get("locations")
+                if locations is not None:
+                    self.ctx.variables[result_var] = locations
+                elif vision_result.found and vision_result.location:
                     x, y = int(vision_result.location.get("x", 0)), int(vision_result.location.get("y", 0))
                     self.ctx.variables[result_var] = f"{x},{y}"
                 elif vision_result.text:
