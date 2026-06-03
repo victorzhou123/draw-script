@@ -83,7 +83,7 @@ class ScriptNodeHandler(BaseNodeHandler):
         await _log(f"  ◀ 子脚本完成：{script_name}")
 
         result = sub_ctx._result_box[0] if sub_ctx._result_box else sub_ctx.completion_result
-        if result:
+        if result is not None:
             if output_mappings:
                 for m in output_mappings:
                     src, dst = m.get("from", "").strip(), m.get("to", "").strip()

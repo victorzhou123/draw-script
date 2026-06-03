@@ -1093,13 +1093,23 @@ class CommandHandler:
         try:
             namespace: dict = {**context, "context": context}
             exec(compile(code, "<compute>", "exec"), namespace)
+            import json, types
+            def _json_serializable(v):
+                try:
+                    json.dumps(v)
+                    return True
+                except (TypeError, ValueError):
+                    return False
+
             # Collect direct variable assignments (both existing and new keys)
             updated_context = dict(context)
             for k, v in namespace.items():
-                if not k.startswith("__") and k != "context":
+                if not k.startswith("__") and k != "context" and not isinstance(v, types.ModuleType) and _json_serializable(v):
                     updated_context[k] = v
             # Also apply context["x"] = y style updates
-            updated_context.update(namespace.get("context", {}))
+            for k, v in namespace.get("context", {}).items():
+                if _json_serializable(v):
+                    updated_context[k] = v
             await self._send({
                 "type": "node_result",
                 "request_id": request_id,

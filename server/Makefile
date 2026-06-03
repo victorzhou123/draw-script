@@ -33,15 +33,19 @@ dev-bg:
 	@echo "[dev-bg] 已启动  日志: $(LOG)"
 
 stop:
-	@stopped=0; \
-	if [ -f "$(BPID)" ]; then \
-		kill $$(cat "$(BPID)") 2>/dev/null && echo "后端已停止" || echo "后端进程不存在"; \
+	@if [ -f "$(BPID)" ]; then \
+		pid=$$(cat "$(BPID)"); \
+		pkill -P "$$pid" 2>/dev/null; kill "$$pid" 2>/dev/null && echo "后端已停止" || echo "后端进程不存在"; \
 		rm -f "$(BPID)"; \
-		stopped=1; \
-	fi; \
-	if [ -f "$(FPID)" ]; then \
-		kill $$(cat "$(FPID)") 2>/dev/null && echo "前端已停止" || echo "前端进程不存在"; \
+	else \
+		pkill -f "python3 main.py" 2>/dev/null && echo "后端已停止(fallback)" || true; \
+		pkill -f "uvicorn main:app" 2>/dev/null || true; \
+	fi
+	@if [ -f "$(FPID)" ]; then \
+		pid=$$(cat "$(FPID)"); \
+		pkill -P "$$pid" 2>/dev/null; kill "$$pid" 2>/dev/null && echo "前端已停止" || echo "前端进程不存在"; \
 		rm -f "$(FPID)"; \
-		stopped=1; \
-	fi; \
-	[ "$$stopped" = "0" ] && echo "没有正在运行的服务" || true
+	else \
+		pkill -f "npm run dev" 2>/dev/null && echo "前端已停止(fallback)" || true; \
+		pkill -f "vite" 2>/dev/null || true; \
+	fi

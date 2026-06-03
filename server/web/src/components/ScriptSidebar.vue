@@ -124,6 +124,24 @@
             <span v-else class="no-data">—</span>
           </div>
 
+          <!-- References (this script calls) -->
+          <div class="info-label">引用脚本</div>
+          <div class="info-value ref-scripts-row">
+            <template v-if="referencesScripts.length">
+              <span v-for="s in referencesScripts" :key="s.id" class="tag-script-ref" @click="goToScript(s.id)">{{ s.name }}</span>
+            </template>
+            <span v-else class="no-data">—</span>
+          </div>
+
+          <!-- Referenced by (other scripts call this) -->
+          <div class="info-label">被引用于</div>
+          <div class="info-value ref-scripts-row">
+            <template v-if="referencedByScripts.length">
+              <span v-for="s in referencedByScripts" :key="s.id" class="tag-script-ref" @click="goToScript(s.id)">{{ s.name }}</span>
+            </template>
+            <span v-else class="no-data">—</span>
+          </div>
+
           <!-- Curl -->
           <div class="info-label curl-label">调用方式</div>
           <div class="info-value curl-block-wrap">
@@ -347,6 +365,35 @@ const infoClients = computed(() => {
 const infoMarkers = computed(() =>
   infoScript.value ? getScriptMarkers(infoScript.value, scriptStore.scripts) : []
 )
+
+const referencesScripts = computed(() => {
+  if (!infoScript.value) return []
+  try {
+    const flow = JSON.parse(infoScript.value.flow_json || '{}')
+    const ids = new Set<string>()
+    for (const cell of (flow.cells ?? [])) {
+      if (cell.data?.type === 'script' && cell.data?.script_id) ids.add(cell.data.script_id)
+    }
+    return scriptStore.scripts.filter(s => ids.has(s.id))
+  } catch { return [] }
+})
+
+const referencedByScripts = computed(() => {
+  if (!infoScript.value) return []
+  const id = infoScript.value.id
+  return scriptStore.scripts.filter(s => {
+    if (s.id === id) return false
+    try {
+      const flow = JSON.parse(s.flow_json || '{}')
+      return (flow.cells ?? []).some((c: any) => c.data?.type === 'script' && c.data?.script_id === id)
+    } catch { return false }
+  })
+})
+
+async function goToScript(id: string) {
+  infoModalOpen.value = false
+  await onSelect(id)
+}
 
 const startFields = computed(() =>
   infoScript.value ? getStartFields(infoScript.value) : []
@@ -610,6 +657,16 @@ async function copyCurl() {
 .client-platform { font-size: 11px; color: #555; margin-left: auto; }
 
 .markers-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.ref-scripts-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-script-ref {
+  display: inline-block;
+  background: #2a1f3a; border: 1px solid #5a3a8a;
+  color: #b79dff; border-radius: 4px;
+  padding: 1px 8px; font-size: 12px;
+  cursor: pointer; transition: border-color 0.15s, color 0.15s;
+}
+.tag-script-ref:hover { border-color: #7a5aaa; color: #d0b8ff; }
 .tag-marker {
   display: inline-block;
   background: #1f3a2a; border: 1px solid #2d6a4a;

@@ -21,7 +21,9 @@ class WaitNodeHandler(BaseNodeHandler):
         my_count = barrier["count"]
 
         if my_count >= expected:
-            # Last branch to arrive — wake the others and continue downstream
+            # Last branch to arrive — wake the others and continue downstream.
+            # Delete the barrier so the next loop iteration starts fresh.
+            del self.ctx.wait_barriers[node_id]
             barrier["event"].set()
             return NodeResult()
 
