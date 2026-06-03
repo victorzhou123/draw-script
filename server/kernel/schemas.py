@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+import json
+
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── Project ──────────────────────────────────────────────────────────────────
@@ -114,7 +116,14 @@ class ExecutionResponse(BaseModel):
     status: str
     started_at: datetime | None
     finished_at: datetime | None
-    result_json: str | None = None
+    result_json: Any | None = None
+
+    @field_validator("result_json", mode="before")
+    @classmethod
+    def parse_result_json(cls, v):
+        if isinstance(v, str):
+            return json.loads(v)
+        return v
 
     class Config:
         from_attributes = True

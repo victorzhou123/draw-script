@@ -1,9 +1,15 @@
 import asyncio
+import re
 import uuid
 
 from config import settings
 from engine.base_handler import BaseNodeHandler, NodeResult
 from engine.node_registry import NodeRegistry
+
+
+def _preprocess_code(code: str) -> str:
+    """Replace {{var}} template syntax with bare variable names for exec."""
+    return re.sub(r'\{\{([^}]+)\}\}', lambda m: m.group(1).strip(), code)
 
 
 @NodeRegistry.register("compute")
@@ -13,6 +19,8 @@ class ComputeNodeHandler(BaseNodeHandler):
         code: str = data.get("code", "").strip()
         if not code:
             return NodeResult()
+
+        code = _preprocess_code(code)
 
         request_id = str(uuid.uuid4())
         future: asyncio.Future = asyncio.get_running_loop().create_future()

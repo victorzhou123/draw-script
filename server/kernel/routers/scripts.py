@@ -102,6 +102,21 @@ async def run_script(
     await db.commit()
     await db.refresh(execution)
 
+    import sys, logging as _lg_mod
+    _r = _lg_mod.getLogger("routers.scripts")
+    sys.stderr.write(
+        f"[DIAG] run_script reached | logger={_r.name} "
+        f"level={_r.getEffectiveLevel()} handlers={_r.handlers} "
+        f"parent={_r.parent.name if _r.parent else None} "
+        f"parent_handlers={_r.parent.handlers if _r.parent else None}\n"
+    )
+    sys.stderr.flush()
+    logger.info(f"[DIAG] run_script called: script_id={script_id} log_level_check={logger.isEnabledFor(10)}")
+    logger.debug(
+        f"run_script request: script_id={script_id} client_id={body.client_id} "
+        f"wait={body.wait} params={body.params}"
+    )
+
     flow = json.loads(script.flow_json) if script.flow_json else {}
     engine = get_engine(request)
 
@@ -125,6 +140,10 @@ async def run_script(
             flow, script.project_id, body.params, None, script.name,
         )
 
+    logger.debug(
+        f"run_script response: execution_id={execution.id} status={execution.status} "
+        f"result={execution.result_json}"
+    )
     return execution
 
 

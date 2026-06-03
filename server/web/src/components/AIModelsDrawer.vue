@@ -18,6 +18,24 @@
             <a-tag :color="ocrTagColor">{{ ocrStatusText }}</a-tag>
           </div>
           <p class="model-desc">基于飞桨的 OCR 识别引擎，支持中英文文字识别，在 Vision 节点中作为 OCR 后端使用。</p>
+
+          <div class="variant-selector">
+            <span class="variant-label">模型版本</span>
+            <a-radio-group v-model:value="selectedVariant" size="small" :disabled="ocrInitializing">
+              <a-radio-button value="mobile">
+                <span>轻量版</span>
+                <span class="variant-hint">PP-OCRv4 · 快速</span>
+              </a-radio-button>
+              <a-radio-button value="server">
+                <span>精准版</span>
+                <span class="variant-hint">PP-OCRv5 · 高精度</span>
+              </a-radio-button>
+            </a-radio-group>
+            <div v-if="ocrStatus?.loaded" class="variant-current">
+              当前已加载：{{ ocrStatus.variant === 'server' ? '精准版 (PP-OCRv5)' : '轻量版 (PP-OCRv4)' }}
+            </div>
+          </div>
+
           <div class="model-card-footer">
             <a-button
               v-if="!ocrStatus?.loaded"
@@ -35,7 +53,7 @@
               :disabled="ocrInitializing"
               @click="handleReinitOCR"
             >
-              {{ ocrInitializing ? '加载中…' : '重新初始化' }}
+              {{ ocrInitializing ? '加载中…' : '切换 / 重新加载' }}
             </a-button>
             <a-button size="small" class="secondary-btn" @click="refreshOCRStatus">
               刷新状态
@@ -183,6 +201,7 @@ const modelStore = useModelStore()
 // ── OCR status ──────────────────────────────────────────────────────
 const ocrStatus = ref<OCRStatus | null>(null)
 const ocrInitializing = ref(false)
+const selectedVariant = ref<'mobile' | 'server'>('mobile')
 
 const ocrTagColor = ref('default')
 const ocrStatusText = ref('检测中…')
@@ -201,6 +220,7 @@ async function refreshOCRStatus() {
   try {
     const res = await api.getLocalModelStatus()
     ocrStatus.value = res.paddleocr
+    if (res.paddleocr?.variant) selectedVariant.value = res.paddleocr.variant
     updateOCRDisplay()
     if (ocrStatus.value?.loading) {
       ocrInitializing.value = true
@@ -214,7 +234,7 @@ async function refreshOCRStatus() {
 async function handleInitOCR() {
   ocrInitializing.value = true
   try {
-    await api.initLocalModel()
+    await api.initLocalModel(selectedVariant.value)
     message.info('正在初始化 PaddleOCR，请稍候…')
     setTimeout(refreshOCRStatus, 2000)
   } catch {
@@ -226,7 +246,7 @@ async function handleInitOCR() {
 async function handleReinitOCR() {
   ocrInitializing.value = true
   try {
-    await api.reinitLocalModel()
+    await api.reinitLocalModel(selectedVariant.value)
     message.info('正在重新初始化 PaddleOCR，请稍候…')
     setTimeout(refreshOCRStatus, 2000)
   } catch {
@@ -479,6 +499,28 @@ watch(
 
 .model-card-footer { display: flex; gap: 8px; }
 .secondary-btn { color: #555 !important; }
+
+.variant-selector {
+  margin-bottom: 12px;
+}
+.variant-label {
+  display: block;
+  font-size: 11px;
+  color: #555;
+  margin-bottom: 6px;
+}
+.variant-hint {
+  display: block;
+  font-size: 10px;
+  color: #666;
+  line-height: 1.2;
+  margin-top: 1px;
+}
+.variant-current {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #52c41a;
+}
 
 .error-text {
   font-size: 11px;

@@ -159,3 +159,4 @@ class ExecutionEngine:
             "error": error,
         })
         logger.info(f"Execution {execution_id} finished: {status}")
+        logger.debug(f"Execution {execution_id} result: {result_json}")

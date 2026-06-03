@@ -12,11 +12,23 @@ _executor = ThreadPoolExecutor(max_workers=1)
 _ocr_instance = None
 _ocr_loading = False
 _ocr_error: str | None = None
+_ocr_variant: str = "mobile"
 
 _AUTOSTART_FLAG = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".ocr_autostart")
 
 # Upscale factor applied before recognition — small game UI text benefits greatly from 3x
 _UPSCALE = 3
+
+_VARIANT_MODELS = {
+    "mobile": {
+        "text_detection_model_name": "PP-OCRv4_mobile_det",
+        "text_recognition_model_name": "en_PP-OCRv4_mobile_rec",
+    },
+    "server": {
+        "text_detection_model_name": "PP-OCRv5_server_det",
+        "text_recognition_model_name": "PP-OCRv5_server_rec",
+    },
+}
 
 
 def _get_ocr():
@@ -24,15 +36,16 @@ def _get_ocr():
     if _ocr_instance is None:
         os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
         from paddleocr import PaddleOCR
+        model_kwargs = _VARIANT_MODELS.get(_ocr_variant, _VARIANT_MODELS["mobile"])
         try:
-            # PaddleOCR 3.x: use PP-OCRv4 with higher detection limit for small text
+            # PaddleOCR 3.x
             _ocr_instance = PaddleOCR(
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=False,
                 text_det_limit_side_len=2048,
                 text_det_limit_type="max",
-                text_recognition_model_name="en_PP-OCRv4_mobile_rec",
+                **model_kwargs,
             )
         except TypeError:
             # PaddleOCR 2.x fallback
@@ -67,22 +80,25 @@ def get_ocr_status() -> dict:
         "loaded": _ocr_instance is not None,
         "loading": _ocr_loading,
         "error": _ocr_error,
+        "variant": _ocr_variant,
     }
 
 
-async def init_ocr_async() -> None:
-    global _ocr_loading
+async def init_ocr_async(variant: str = "mobile") -> None:
+    global _ocr_loading, _ocr_variant
     if _ocr_instance is not None or _ocr_loading:
         return
+    _ocr_variant = variant if variant in _VARIANT_MODELS else "mobile"
     _ocr_loading = True
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(_executor, _do_init)
 
 
-async def reinit_ocr_async() -> None:
-    global _ocr_instance, _ocr_loading
+async def reinit_ocr_async(variant: str = "mobile") -> None:
+    global _ocr_instance, _ocr_loading, _ocr_variant
     if _ocr_loading:
         return
+    _ocr_variant = variant if variant in _VARIANT_MODELS else "mobile"
     _ocr_instance = None
     _ocr_loading = True
     loop = asyncio.get_running_loop()

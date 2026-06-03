@@ -164,6 +164,7 @@ watch(() => props.selectedNode, (node) => {
     fields: node.data.fields || [],
     return_fields: node.data.return_fields || [],
     known_fields: node.data.known_fields || [],
+    return_field_descriptions: node.data.return_field_descriptions || {},
     code: node.data.code || '',
     output_fields: node.data.output_fields || [],
     script_id: node.data.script_id || '',

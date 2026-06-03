@@ -1,6 +1,9 @@
 import logging
+import re
 from collections import deque
 from datetime import datetime
+
+_WS_FRAME_RE = re.compile(r'^[<>%] ')
 
 
 class MemoryLogHandler(logging.Handler):
@@ -9,6 +12,8 @@ class MemoryLogHandler(logging.Handler):
         self._records: deque = deque(maxlen=maxlen)
 
     def emit(self, record: logging.LogRecord) -> None:
+        if record.name == 'uvicorn.error' and _WS_FRAME_RE.match(record.getMessage()):
+            return
         try:
             self._records.append({
                 "time": datetime.fromtimestamp(record.created).strftime("%H:%M:%S.") + f"{record.msecs:03.0f}",

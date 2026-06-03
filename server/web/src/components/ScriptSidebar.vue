@@ -134,6 +134,54 @@
                 <CopyOutlined v-else />
               </a-button>
             </a-tooltip>
+            <template v-if="startFields.length">
+              <div class="param-desc-list">
+                <div v-for="f in startFields" :key="f.name" class="param-desc-item">
+                  <code class="param-fname">{{ f.name }}</code>
+                  <code class="param-ftype">{{ f.type }}</code>
+                  <span class="param-fdesc">{{ f.description }}</span>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Return Results -->
+          <div class="info-label return-label">返回结果</div>
+          <div class="info-value return-block">
+            <!-- Success -->
+            <div class="return-subsection">
+              <div class="return-sub-header">
+                <span class="return-badge success">成功</span>
+                <code class="return-status-code">status: "completed"</code>
+              </div>
+              <template v-if="returnInfo.fields.length">
+                <div v-for="f in returnInfo.fields" :key="f.name" class="return-field-item">
+                  <code class="return-fname">{{ f.name }}</code>
+                  <span class="return-fdesc">{{ f.description || '' }}</span>
+                </div>
+              </template>
+              <span v-else class="no-data" style="font-size:11px; display:block; margin: 4px 0 6px;">end 节点无返回字段</span>
+              <div class="return-example-label">result_json：</div>
+              <pre class="return-example">{{ successJsonExample }}</pre>
+            </div>
+            <!-- Failure -->
+            <div class="return-subsection">
+              <div class="return-sub-header">
+                <span class="return-badge error">失败</span>
+                <code class="return-status-code">status: "error" | "stopped"</code>
+              </div>
+              <div class="return-example-label">result_json：</div>
+              <pre class="return-example">null</pre>
+            </div>
+          </div>
+
+          <!-- Copy as Markdown -->
+          <div class="md-copy-row">
+            <a-button size="small" class="md-copy-btn" @click="copyMarkdown">
+              <CheckOutlined v-if="mdCopied" style="color:#52c41a" />
+              <CopyOutlined v-else />
+              {{ mdCopied ? '已复制' : '复制为 Markdown' }}
+            </a-button>
           </div>
         </div>
       </a-spin>
@@ -150,13 +198,31 @@ import { useProjectStore } from '@/stores/projectStore'
 import { useClientStore } from '@/stores/clientStore'
 import type { Script } from '@/services/api'
 
-function getStartFields(script: Script): { name: string; default: string }[] {
+function getStartFields(script: Script): { name: string; type: string; default: string; description: string }[] {
   try {
     const flow = JSON.parse(script.flow_json || '{}')
     const startCell = (flow.cells ?? []).find((c: any) => c.shape === 'node-start')
-    return startCell?.data?.fields ?? []
+    return (startCell?.data?.fields ?? []).map((f: any) => ({
+      name: f.name ?? '',
+      type: f.type ?? 'any',
+      default: f.default ?? '',
+      description: f.description ?? '',
+    }))
   } catch {
     return []
+  }
+}
+
+function getReturnInfo(script: Script): { fields: Array<{ name: string; description: string }> } {
+  try {
+    const flow = JSON.parse(script.flow_json || '{}')
+    const endCell = (flow.cells ?? []).find((c: any) => c.shape === 'node-end')
+    if (!endCell) return { fields: [] }
+    const returnFields: string[] = endCell.data?.return_fields ?? []
+    const descriptions: Record<string, string> = endCell.data?.return_field_descriptions ?? {}
+    return { fields: returnFields.map(name => ({ name, description: descriptions[name] ?? '' })) }
+  } catch {
+    return { fields: [] }
   }
 }
 
@@ -282,6 +348,22 @@ const infoMarkers = computed(() =>
   infoScript.value ? getScriptMarkers(infoScript.value, scriptStore.scripts) : []
 )
 
+const startFields = computed(() =>
+  infoScript.value ? getStartFields(infoScript.value) : []
+)
+
+const returnInfo = computed(() =>
+  infoScript.value ? getReturnInfo(infoScript.value) : { fields: [] }
+)
+
+const successJsonExample = computed(() => {
+  const fields = returnInfo.value.fields
+  if (!fields.length) return 'null'
+  const obj: Record<string, string> = {}
+  for (const f of fields) obj[f.name] = `<${f.name}>`
+  return JSON.stringify(obj, null, 2)
+})
+
 const curlCommand = computed(() => {
   if (!infoScript.value) return ''
   const base = `${window.location.protocol}//${window.location.host}`
@@ -321,6 +403,84 @@ function copyId() {
   navigator.clipboard.writeText(infoScript.value.id)
   idCopied.value = true
   setTimeout(() => { idCopied.value = false }, 2000)
+}
+
+const mdCopied = ref(false)
+
+function buildMarkdown(): string {
+  if (!infoScript.value) return ''
+  const lines: string[] = []
+
+  lines.push(`# ${infoScript.value.name}`)
+  lines.push('')
+
+  // 调用方式
+  lines.push('## 调用方式')
+  lines.push('')
+  lines.push('```bash')
+  lines.push(curlCommand.value)
+  lines.push('```')
+  lines.push('')
+
+  const fields = startFields.value.filter(f => f.name)
+  if (fields.length) {
+    lines.push('**请求参数（params）**')
+    lines.push('')
+    lines.push('| 字段 | 类型 | 说明 |')
+    lines.push('| ---- | ---- | ---- |')
+    for (const f of fields) {
+      lines.push(`| \`${f.name}\` | ${f.type} | ${f.description || ''} |`)
+    }
+    lines.push('')
+  }
+
+  // 返回结果
+  lines.push('## 返回结果')
+  lines.push('')
+  lines.push('**成功** `status: "completed"`')
+  lines.push('')
+
+  const rFields = returnInfo.value.fields
+  if (rFields.length) {
+    lines.push('| 字段 | 说明 |')
+    lines.push('| ---- | ---- |')
+    for (const f of rFields) {
+      lines.push(`| \`${f.name}\` | ${f.description || ''} |`)
+    }
+    lines.push('')
+    lines.push('`result_json` 示例：')
+    lines.push('')
+    lines.push('```json')
+    lines.push(successJsonExample.value)
+    lines.push('```')
+  } else {
+    lines.push('`result_json` 为 `null`（end 节点无返回字段）')
+  }
+  lines.push('')
+  lines.push('**失败** `status: "error" | "stopped"`')
+  lines.push('')
+  lines.push('`result_json` 为 `null`，错误信息见响应的 `log` 字段。')
+
+  return lines.join('\n')
+}
+
+async function copyMarkdown() {
+  const text = buildMarkdown()
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  }
+  mdCopied.value = true
+  message.success('已复制为 Markdown')
+  setTimeout(() => { mdCopied.value = false }, 2000)
 }
 
 const curlCopied = ref(false)
@@ -476,4 +636,81 @@ async function copyCurl() {
   color: #888 !important;
 }
 .curl-copy-btn:hover { color: #d0d0d0 !important; }
+
+.md-copy-row {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 6px;
+  border-top: 1px solid #222;
+  margin-top: 4px;
+}
+.md-copy-btn {
+  font-size: 12px !important;
+  color: #666 !important;
+  border-color: #303030 !important;
+  background: transparent !important;
+  display: flex; align-items: center; gap: 5px;
+}
+.md-copy-btn:hover { color: #aaa !important; border-color: #555 !important; }
+
+.param-desc-list {
+  margin-top: 8px;
+  border-top: 1px solid #222;
+  padding-top: 7px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.param-desc-item { display: flex; align-items: baseline; gap: 6px; }
+.param-fname {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px; color: #7ec8e3;
+  background: #1e2a30; border-radius: 3px;
+  padding: 1px 5px; flex-shrink: 0;
+}
+.param-ftype {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 10px; color: #555;
+  flex-shrink: 0;
+}
+.param-fdesc { font-size: 11px; color: #666; min-width: 0; word-break: break-word; }
+
+/* return results */
+.return-label { padding-top: 6px; }
+.return-block { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.return-subsection {
+  border: 1px solid #2a2a2a; border-radius: 6px;
+  padding: 8px 10px; background: #1a1a1a;
+}
+.return-sub-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+}
+.return-badge {
+  display: inline-block; border-radius: 3px;
+  padding: 1px 6px; font-size: 11px; font-weight: 600;
+}
+.return-badge.success { background: #1f3a2a; border: 1px solid #2d6a4a; color: #7ec8a0; }
+.return-badge.error   { background: #3a1f1f; border: 1px solid #6a2d2d; color: #e07070; }
+.return-status-code {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px; color: #666;
+}
+.return-field-item {
+  display: flex; align-items: baseline; gap: 8px;
+  margin-bottom: 4px;
+}
+.return-fname {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px; color: #7ec8e3;
+  background: #1e2a30; border-radius: 3px;
+  padding: 1px 5px; flex-shrink: 0;
+}
+.return-fdesc { font-size: 11px; color: #555; min-width: 0; word-break: break-word; }
+.return-example-label { font-size: 10px; color: #444; margin: 6px 0 3px; }
+.return-example {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px; color: #abb2bf;
+  background: #111; border-radius: 4px;
+  padding: 6px 8px; margin: 0;
+  white-space: pre; overflow-x: auto; line-height: 1.5;
+}
 </style>

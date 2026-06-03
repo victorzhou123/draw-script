@@ -107,23 +107,27 @@ async def local_model_status():
     return {"paddleocr": get_ocr_status()}
 
 
+class OCRInitBody(BaseModel):
+    variant: str = "mobile"
+
+
 @router.post("/local/init")
-async def init_local_model():
+async def init_local_model(body: OCRInitBody = OCRInitBody()):
     from cv.ocr_engine import init_ocr_async, get_ocr_status
     from ws_manager import ui_ws_manager
     async def _run():
-        await init_ocr_async()
+        await init_ocr_async(body.variant)
         await ui_ws_manager.broadcast_event("ocr_status_changed", {"paddleocr": get_ocr_status()})
     asyncio.create_task(_run())
     return {"status": "initializing"}
 
 
 @router.post("/local/reinit")
-async def reinit_local_model():
+async def reinit_local_model(body: OCRInitBody = OCRInitBody()):
     from cv.ocr_engine import reinit_ocr_async, get_ocr_status
     from ws_manager import ui_ws_manager
     async def _run():
-        await reinit_ocr_async()
+        await reinit_ocr_async(body.variant)
         await ui_ws_manager.broadcast_event("ocr_status_changed", {"paddleocr": get_ocr_status()})
     asyncio.create_task(_run())
     return {"status": "reinitializing"}

@@ -10,12 +10,24 @@
   >
     <template #extra>
       <div style="display:flex;align-items:center;gap:8px">
+        <a-input
+          v-model:value="searchKeyword"
+          size="small"
+          placeholder="搜索日志..."
+          allow-clear
+          style="width:180px"
+        >
+          <template #prefix><SearchOutlined style="color:#444" /></template>
+        </a-input>
         <a-select
           v-model:value="levelFilter"
           size="small"
           style="width:100px"
           :options="levelOptions"
         />
+        <a-button size="small" class="log-ctrl-btn" :class="{ 'btn-active': hideNoise }" @click="hideNoise = !hideNoise">
+          {{ hideNoise ? '已屏蔽噪音' : '屏蔽噪音' }}
+        </a-button>
         <a-button size="small" class="log-ctrl-btn" @click="loadLogs">
           <ReloadOutlined /> 刷新
         </a-button>
@@ -38,7 +50,7 @@
         <span class="log-time">{{ rec.time }}</span>
         <span class="log-level">{{ rec.level.padEnd(8) }}</span>
         <span class="log-name">{{ rec.name }}</span>
-        <span class="log-msg">{{ rec.msg }}</span>
+        <span class="log-msg" v-html="highlight(rec.msg)"></span>
       </div>
       <div v-if="filtered.length === 0" class="log-empty">暂无日志</div>
     </div>
@@ -47,7 +59,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
-import { ReloadOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import axios from 'axios'
 
@@ -61,8 +73,18 @@ interface LogRecord {
   msg: string
 }
 
+const WS_NOISE_RE = /^[<>%] /
+
+function isNoise(r: LogRecord): boolean {
+  if (r.name === 'uvicorn.error' && WS_NOISE_RE.test(r.msg)) return true
+  if (r.name === 'uvicorn.access' && r.msg.includes('/api/logs')) return true
+  return false
+}
+
 const records = ref<LogRecord[]>([])
 const levelFilter = ref('ALL')
+const searchKeyword = ref('')
+const hideNoise = ref(true)
 const autoRefresh = ref(true)
 const logContainer = ref<HTMLElement>()
 
@@ -74,11 +96,26 @@ const levelOptions = [
   { label: 'ERROR', value: 'ERROR' },
 ]
 
-const filtered = computed(() =>
-  levelFilter.value === 'ALL'
-    ? records.value
-    : records.value.filter(r => r.level === levelFilter.value)
-)
+const filtered = computed(() => {
+  let list = records.value
+  if (hideNoise.value) list = list.filter(r => !isNoise(r))
+  if (levelFilter.value !== 'ALL') list = list.filter(r => r.level === levelFilter.value)
+  const kw = searchKeyword.value.trim().toLowerCase()
+  if (kw) list = list.filter(r => r.msg.toLowerCase().includes(kw) || r.name.toLowerCase().includes(kw))
+  return list
+})
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function highlight(text: string): string {
+  const kw = searchKeyword.value.trim()
+  if (!kw) return escapeHtml(text)
+  const escaped = escapeHtml(text)
+  const escapedKw = escapeHtml(kw).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return escaped.replace(new RegExp(escapedKw, 'gi'), m => `<mark class="log-highlight">${m}</mark>`)
+}
 
 async function loadLogs() {
   try {
@@ -159,4 +196,15 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   font-size: 12px;
 }
 .log-ctrl-btn:hover { color: #ccc !important; border-color: #555 !important; }
+.btn-active {
+  color: #1890ff !important;
+  border-color: #1890ff !important;
+}
+
+:deep(.log-highlight) {
+  background: #b8860b;
+  color: #fff;
+  border-radius: 2px;
+  padding: 0 1px;
+}
 </style>

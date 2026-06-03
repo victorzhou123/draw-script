@@ -98,6 +98,7 @@ export interface OCRStatus {
   loaded: boolean
   loading: boolean
   error: string | null
+  variant: 'mobile' | 'server'
 }
 
 export const api = {
@@ -179,8 +180,10 @@ export const api = {
   deleteModel: (id: string) => http.delete(`/models/${id}`).then(r => r.data),
   getLocalModelStatus: () =>
     http.get<{ paddleocr: OCRStatus }>('/models/local/status').then(r => r.data),
-  initLocalModel: () => http.post('/models/local/init').then(r => r.data),
-  reinitLocalModel: () => http.post('/models/local/reinit').then(r => r.data),
+  initLocalModel: (variant: 'mobile' | 'server' = 'mobile') =>
+    http.post('/models/local/init', { variant }).then(r => r.data),
+  reinitLocalModel: (variant: 'mobile' | 'server' = 'mobile') =>
+    http.post('/models/local/reinit', { variant }).then(r => r.data),
   testModelCredentials: (data: { api_key: string; base_url: string; model_name: string }) =>
     http.post<ModelTestResult>('/models/test', data).then(r => r.data),
   testSavedModel: (id: string) =>
