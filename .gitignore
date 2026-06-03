@@ -25,6 +25,12 @@ server/kernel/static/assets/
 # Client local config (contains machine-specific settings)
 client/config.toml
 
+# Runtime / logs
+server/.backend.pid
+server/.frontend.pid
+server/server.log
+server/kernel/templates/
+
 # IDE / OS
 .DS_Store
 .idea/
