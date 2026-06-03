@@ -44,15 +44,23 @@
       <a-form-item label="相似度阈值">
         <a-slider v-model:value="d.params.threshold" :min="0.5" :max="1.0" :step="0.05" @change="update()" />
       </a-form-item>
+      <a-form-item label="检测模式">
+        <a-select v-model:value="d.params.mode" :style="{ width: '100%' }" @change="update()">
+          <a-select-option value="single">单个匹配（返回坐标字符串）</a-select-option>
+          <a-select-option value="all_matches">所有匹配（返回坐标数组）</a-select-option>
+        </a-select>
+      </a-form-item>
       <a-form-item label="结果存入">
         <a-auto-complete v-model:value="d.result_var" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))" placeholder="context 字段名" allow-clear @change="update()" />
       </a-form-item>
-      <a-form-item label="匹配成功时写入">
-        <a-input v-model:value="d.found_value" placeholder="留空则写入坐标 x,y" @change="update()" />
-      </a-form-item>
-      <a-form-item label="未匹配时写入">
-        <a-input v-model:value="d.not_found_value" placeholder="留空则写入 None" @change="update()" />
-      </a-form-item>
+      <template v-if="d.params.mode !== 'all_matches'">
+        <a-form-item label="匹配成功时写入">
+          <a-input v-model:value="d.found_value" placeholder="留空则写入坐标 x,y" @change="update()" />
+        </a-form-item>
+        <a-form-item label="未匹配时写入">
+          <a-input v-model:value="d.not_found_value" placeholder="留空则写入 None" @change="update()" />
+        </a-form-item>
+      </template>
     </template>
 
     <!-- OCR -->
@@ -202,6 +210,7 @@ watch(d, (data) => {
   templateSource.value = String(data.params?.template_context_var || '') ? 'context' : 'fixed'
   aiImageSource.value = String(data.params?.context_image_var || '') ? 'context' : 'screenshot'
   ocrImageSource.value = String(data.params?.ocr_context_image_var || '') ? 'context' : 'screenshot'
+  if (!data.params.mode) { data.params.mode = 'single'; ctx.emitUpdate() }
 }, { immediate: true })
 
 function update() { ctx.emitUpdate() }

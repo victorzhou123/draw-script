@@ -165,19 +165,23 @@ class VisionNodeHandler(BaseNodeHandler):
         if vision_type == "template_match":
             found = output.get("found", False)
             location = output.get("location")
+            locations = output.get("locations")
             confidence = output.get("confidence", 0.0)
 
             if result_var:
-                found_value = data.get("found_value", "") or ""
-                not_found_value = data.get("not_found_value", "None") or "None"
-                if found_value or not_found_value not in ("", "None"):
-                    self.ctx.variables[result_var] = found_value if found else (None if not_found_value == "None" else not_found_value)
+                if locations is not None:
+                    self.ctx.variables[result_var] = locations
                 else:
-                    if found and location:
-                        x, y = int(location.get("x", 0)), int(location.get("y", 0))
-                        self.ctx.variables[result_var] = f"{x},{y}"
+                    found_value = data.get("found_value", "") or ""
+                    not_found_value = data.get("not_found_value", "None") or "None"
+                    if found_value or not_found_value not in ("", "None"):
+                        self.ctx.variables[result_var] = found_value if found else (None if not_found_value == "None" else not_found_value)
                     else:
-                        self.ctx.variables[result_var] = None
+                        if found and location:
+                            x, y = int(location.get("x", 0)), int(location.get("y", 0))
+                            self.ctx.variables[result_var] = f"{x},{y}"
+                        else:
+                            self.ctx.variables[result_var] = None
 
             self.ctx.variables["last_vision_result"] = output
             return NodeResult(success=True, output=output)

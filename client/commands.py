@@ -1021,7 +1021,7 @@ class CommandHandler:
                 return False, {}, "Template match: no template configured"
 
             threshold = float(params.get("threshold", 0.8))
-            # marker offset for converting local match coords back to screen coords
+            match_mode = params.get("mode") or "single"
             region_offset = (mx, my)
 
             def _do_match():
@@ -1041,13 +1041,32 @@ class CommandHandler:
                     return {"found": False, "confidence": 0.0, "location": None, "error": "Failed to decode images"}
 
                 res = cv2.matchTemplate(sc_img, tmpl_img, cv2.TM_CCOEFF_NORMED)
+                th, tw = tmpl_img.shape[:2]
+
+                if match_mode == "all_matches":
+                    ys, xs = np.where(res >= threshold)
+                    candidates = sorted(
+                        zip(xs.tolist(), ys.tolist()),
+                        key=lambda p: float(res[p[1], p[0]]),
+                        reverse=True,
+                    )
+                    accepted: list[tuple[int, int]] = []
+                    locations = []
+                    for mx2, my2 in candidates:
+                        if any(abs(mx2 - ax) < tw // 2 and abs(my2 - ay) < th // 2 for ax, ay in accepted):
+                            continue
+                        accepted.append((mx2, my2))
+                        locations.append({
+                            "x": region_offset[0] + mx2 + tw // 2,
+                            "y": region_offset[1] + my2 + th // 2,
+                        })
+                    max_conf = float(res[candidates[0][1], candidates[0][0]]) if candidates else 0.0
+                    return {"found": len(locations) > 0, "confidence": max_conf, "locations": locations}
+
                 _, max_val, _, max_loc = cv2.minMaxLoc(res)
-
                 found = float(max_val) >= threshold
-                h, w = tmpl_img.shape[:2]
-                cx = region_offset[0] + max_loc[0] + w // 2
-                cy = region_offset[1] + max_loc[1] + h // 2
-
+                cx = region_offset[0] + max_loc[0] + tw // 2
+                cy = region_offset[1] + max_loc[1] + th // 2
                 return {
                     "found": found,
                     "confidence": float(max_val),
