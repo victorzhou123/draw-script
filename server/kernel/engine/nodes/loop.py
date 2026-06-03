@@ -1,3 +1,5 @@
+import asyncio
+import copy
 import logging
 
 from engine.base_handler import BaseNodeHandler, NodeResult
@@ -22,8 +24,12 @@ class LoopNodeHandler(BaseNodeHandler):
             if not body_starts:
                 break
 
+            # Reset wait barriers so each iteration gets a fresh sync state.
+            self.ctx.wait_barriers.clear()
+
             current = body_starts[0]
             visited: dict[str, int] = {}
+            dead_end = False
 
             while current and current.id != loop_node_id and not self.ctx.stop_event.is_set():
                 visited[current.id] = visited.get(current.id, 0) + 1
@@ -70,10 +76,42 @@ class LoopNodeHandler(BaseNodeHandler):
                         })
                     return NodeResult(success=False, error=result.error)
 
-                next_nodes = self.ctx.graph.get_next_nodes(current.id, result.branch)
-                current = next_nodes[0] if next_nodes else None
+                if result.stop_branch:
+                    # This branch is done (e.g. non-last arrival at a wait node).
+                    break
 
-            if current is None:
+                next_nodes = self.ctx.graph.get_next_nodes(current.id, result.branch)
+                # Exclude the back-edge to the loop node itself (marks end of body).
+                body_next = [n for n in next_nodes if n.id != loop_node_id]
+
+                if len(body_next) > 1:
+                    # Fan-out: run all branches in parallel, stopping at the loop boundary.
+                    from engine.runner import run_branch
+                    branch_tasks = [
+                        asyncio.create_task(
+                            run_branch(
+                                copy.copy(self.ctx), node, visited.copy(),
+                                f"loop {iteration}/{max_count}",
+                                stop_node_ids={loop_node_id},
+                            )
+                        )
+                        for node in body_next
+                    ]
+                    branch_errors = await asyncio.gather(*branch_tasks, return_exceptions=True)
+                    for err in branch_errors:
+                        if isinstance(err, Exception):
+                            return NodeResult(success=False, error=str(err))
+                        if err:
+                            return NodeResult(success=False, error=err)
+                    current = None  # fan-out consumed the rest of this iteration
+                elif body_next:
+                    current = body_next[0]
+                else:
+                    # No continuation and we didn't reach the loop back-edge.
+                    current = None
+                    dead_end = True
+
+            if dead_end:
                 break
 
         return NodeResult(success=True, branch="exit")

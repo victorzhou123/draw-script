@@ -57,14 +57,15 @@ class DrawScriptAgent:
                     pass
 
     async def _receive_loop(self) -> None:
+        _tasks: set[asyncio.Task] = set()
         async for raw in self._ws:
             try:
                 msg = json.loads(raw)
-                await self._handler.dispatch(msg)
+                task = asyncio.create_task(self._handler.dispatch(msg))
+                _tasks.add(task)
+                task.add_done_callback(_tasks.discard)
             except json.JSONDecodeError:
                 logger.warning(f"Invalid JSON received: {raw[:200]}")
-            except Exception as e:
-                logger.exception(f"Message handling error: {e}")
 
     async def _heartbeat_loop(self) -> None:
         while True:

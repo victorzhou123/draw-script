@@ -14,6 +14,7 @@ async def run_branch(
     start_node,
     visited_count: dict[str, int],
     script_name: str,
+    stop_node_ids: set[str] | None = None,
 ) -> str | None:
     """Run a flow branch starting from start_node. Returns error string or None.
 
@@ -22,6 +23,8 @@ async def run_branch(
     """
     current = start_node
     while current and not ctx.stop_event.is_set():
+        if stop_node_ids and current.id in stop_node_ids:
+            return None
         visited_count[current.id] = visited_count.get(current.id, 0) + 1
         if visited_count[current.id] > MAX_VISITS:
             return "Infinite loop detected"
