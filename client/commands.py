@@ -226,32 +226,19 @@ _TRANSP_KEY  = "#010203"   # near-black used as window transparency key
 
 CV_OVERLAY_DURATION_S = 2.0  # fallback seconds when overlay_mode == "fixed"
 
-# node_id -> active Tk root; protected by _overlay_lock
-_active_overlays: dict[str, object] = {}
+# node_id -> threading.Event; set the event to signal that overlay should close.
+# The overlay thread itself calls root.destroy() — no cross-thread Tk calls.
+_active_overlays: dict[str, threading.Event] = {}
 _overlay_lock = threading.Lock()
 
 
-def _cleanup_overlay(node_id: str, root) -> None:
-    """Remove *root* from the registry and destroy it (called from its own mainloop)."""
-    with _overlay_lock:
-        if _active_overlays.get(node_id) is root:
-            _active_overlays.pop(node_id, None)
-    try:
-        root.destroy()
-    except Exception:
-        pass
-
-
 def _dismiss_all_overlays() -> None:
-    """Destroy every active overlay (called on script stop)."""
+    """Signal every active overlay to close (called on script stop)."""
     with _overlay_lock:
-        roots = list(_active_overlays.values())
+        events = list(_active_overlays.values())
         _active_overlays.clear()
-    for root in roots:
-        try:
-            root.after(0, root.destroy)
-        except Exception:
-            pass
+    for ev in events:
+        ev.set()
 
 
 def _show_match_overlay(
@@ -262,28 +249,26 @@ def _show_match_overlay(
     """Click-through overlay that highlights template match locations.
 
     duration_s=None keeps the overlay alive until the next call for the same node.
-    Runs in a daemon thread; all exceptions are swallowed — purely cosmetic.
+    Runs in a daemon thread; all Tk calls stay in this thread — no cross-thread
+    Tcl operations, which avoids Tcl_AsyncDelete crashes.
     """
     import tkinter as tk
 
-    # Replace any existing overlay for this node
+    # Signal any existing overlay for this node to close (thread-safe: just sets an Event)
     with _overlay_lock:
-        old = _active_overlays.pop(node_id, None)
-    if old is not None:
-        try:
-            old.after(0, old.destroy)
-        except Exception:
-            pass
+        old_event = _active_overlays.pop(node_id, None)
+    if old_event is not None:
+        old_event.set()
 
-    root = None
+    stop_event = threading.Event()
+    with _overlay_lock:
+        _active_overlays[node_id] = stop_event
+
     try:
         screen_w = ctypes.windll.user32.GetSystemMetrics(0)
         screen_h = ctypes.windll.user32.GetSystemMetrics(1)
 
         root = tk.Tk()
-        with _overlay_lock:
-            _active_overlays[node_id] = root
-
         root.overrideredirect(True)
         root.attributes("-topmost", True)
         root.geometry(f"{screen_w}x{screen_h}+0+0")
@@ -312,18 +297,25 @@ def _show_match_overlay(
         ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE,
                                             style | WS_EX_TRANSPARENT)
 
+        # Fixed duration: schedule stop_event.set() inside the mainloop (same thread)
         if duration_s is not None:
-            root.after(int(duration_s * 1000),
-                       lambda: _cleanup_overlay(node_id, root))
+            root.after(int(duration_s * 1000), stop_event.set)
 
+        # Poll stop_event every 50 ms; destroy from within this thread only
+        def _poll_stop():
+            if stop_event.is_set():
+                root.destroy()
+                return
+            root.after(50, _poll_stop)
+
+        root.after(50, _poll_stop)
         root.mainloop()
     except Exception:
         pass
     finally:
-        if root is not None:
-            with _overlay_lock:
-                if _active_overlays.get(node_id) is root:
-                    _active_overlays.pop(node_id, None)
+        with _overlay_lock:
+            if _active_overlays.get(node_id) is stop_event:
+                _active_overlays.pop(node_id, None)
 
 
 def _show_point_overlay(
