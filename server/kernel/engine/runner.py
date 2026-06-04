@@ -2,7 +2,6 @@ import asyncio
 import copy
 import logging
 
-from engine.base_handler import interpolate_value
 from engine.node_registry import NodeRegistry
 
 logger = logging.getLogger(__name__)
@@ -95,20 +94,12 @@ async def run_branch(
 
         next_nodes = ctx.graph.get_next_nodes(current.id, result.branch)
 
-        # When fan-out includes a loop node, route by iteration count instead of parallelizing
+        # When fan-out includes a loop node, route exclusively to it.
+        # The loop node manages its own counter and decides when to exit.
         if len(next_nodes) > 1:
             loop_nodes = [n for n in next_nodes if n.node_type == "loop"]
             if loop_nodes:
-                loop_node = loop_nodes[0]
-                raw_count = interpolate_value(ctx.variables, loop_node.data.get("params", {}).get("count", 1))
-                try:
-                    max_count = int(raw_count)
-                except (TypeError, ValueError):
-                    max_count = 1
-                if visited_count.get(loop_node.id, 0) < max_count:
-                    next_nodes = [loop_node]
-                else:
-                    next_nodes = [n for n in next_nodes if n.node_type != "loop"]
+                next_nodes = [loop_nodes[0]]
 
         if len(next_nodes) <= 1:
             current = next_nodes[0] if next_nodes else None
