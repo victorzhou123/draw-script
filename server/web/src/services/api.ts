@@ -178,6 +178,8 @@ export const api = {
   // Global Variables
   getGlobalVars: (projectId: string) =>
     http.get<GlobalVariable[]>(`/projects/${projectId}/global-vars`).then(r => r.data),
+  upsertGlobalVar: (projectId: string, varName: string, value: any) =>
+    http.put<GlobalVariable>(`/projects/${projectId}/global-vars/${encodeURIComponent(varName)}`, { value }).then(r => r.data),
   deleteGlobalVar: (projectId: string, varName: string) =>
     http.delete(`/projects/${projectId}/global-vars/${encodeURIComponent(varName)}`).then(r => r.data),
 

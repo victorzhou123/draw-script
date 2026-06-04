@@ -110,7 +110,7 @@ async def run_branch(
                     max_count = int(raw_count)
                 except (TypeError, ValueError):
                     max_count = 1
-                if ctx.loop_counters.get(loop_node.id, 0) >= max_count:
+                if ctx.loop_counters.get(loop_node.id, 1) >= max_count:
                     if ctx.graph.get_next_nodes(loop_node.id, "exit"):
                         next_nodes = [loop_node]
                     else:

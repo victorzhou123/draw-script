@@ -75,6 +75,15 @@ export const useProjectStore = defineStore('project', () => {
     globalVars.value[projectId] = await api.getGlobalVars(projectId)
   }
 
+  async function upsertGlobalVar(projectId: string, varName: string, value: any) {
+    const updated = await api.upsertGlobalVar(projectId, varName, value)
+    if (!globalVars.value[projectId]) globalVars.value[projectId] = []
+    const idx = globalVars.value[projectId].findIndex(v => v.name === varName)
+    if (idx >= 0) globalVars.value[projectId][idx] = updated
+    else globalVars.value[projectId].push(updated)
+    return updated
+  }
+
   async function deleteGlobalVar(projectId: string, varName: string) {
     await api.deleteGlobalVar(projectId, varName)
     if (globalVars.value[projectId]) {
@@ -92,7 +101,7 @@ export const useProjectStore = defineStore('project', () => {
     fetchProjects, createProject, deleteProject,
     fetchMarkers, createMarker, deleteMarker, sendMarkers,
     fetchTemplates, uploadTemplate, deleteTemplate,
-    fetchGlobalVars, deleteGlobalVar,
+    fetchGlobalVars, upsertGlobalVar, deleteGlobalVar,
     getProjectName,
   }
 })

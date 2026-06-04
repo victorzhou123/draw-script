@@ -14,7 +14,7 @@ class LoopNodeHandler(BaseNodeHandler):
             max_count = 1
 
         node_id = self.ctx.node.id
-        self.ctx.loop_counters[node_id] = self.ctx.loop_counters.get(node_id, 0) + 1
+        self.ctx.loop_counters[node_id] = self.ctx.loop_counters.get(node_id, 1) + 1
         iteration = self.ctx.loop_counters[node_id]
 
         # TODO: if a condition node inside the loop body exits without passing

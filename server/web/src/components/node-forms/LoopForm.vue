@@ -10,6 +10,7 @@
     <template v-if="countSource === 'fixed'">
       <a-form-item label="最大循环次数">
         <a-input-number v-model:value="d.params.count" :min="1" :max="1000" @change="update()" />
+        <div class="hint-text" style="margin-top:4px">填入的数字表示主干部分执行的次数</div>
       </a-form-item>
     </template>
     <template v-else>

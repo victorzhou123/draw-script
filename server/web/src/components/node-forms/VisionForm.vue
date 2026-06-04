@@ -61,6 +61,19 @@
           <a-input v-model:value="d.not_found_value" placeholder="留空则写入 None" @change="update()" />
         </a-form-item>
       </template>
+      <a-form-item label="结果标记">
+        <a-switch v-model:checked="d.params.show_overlay" @change="update()" />
+        <span class="hint-text" style="margin-left:8px">识别成功后在客户端屏幕高亮匹配位置</span>
+      </a-form-item>
+      <a-form-item v-if="d.params.show_overlay" label="标记时长(秒)">
+        <a-input-number
+          v-model:value="d.params.overlay_duration"
+          :min="0.5" :max="10" :step="0.5"
+          :style="{ width: '120px' }"
+          placeholder="2"
+          @change="update()"
+        />
+      </a-form-item>
     </template>
 
     <!-- OCR -->

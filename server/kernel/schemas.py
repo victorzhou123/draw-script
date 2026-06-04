@@ -85,6 +85,10 @@ class GlobalVariableResponse(BaseModel):
                 return v
         return v
 
+
+class GlobalVariableUpsert(BaseModel):
+    value: Any
+
     class Config:
         from_attributes = True
 

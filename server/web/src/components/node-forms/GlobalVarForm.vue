@@ -77,12 +77,56 @@
       <a-button size="small" class="add-btn" @click="addReadItem">+ 添加读取项</a-button>
       <div class="hint">全局变量名 → 写入 context 的 key（留空与变量名相同）</div>
     </template>
+
+    <!-- ── data panel ── -->
+    <a-divider style="margin: 10px 0; border-color: #2a2a2a;" />
+    <div class="panel-header" @click="panelOpen = !panelOpen">
+      <span class="panel-title">当前数据 <span class="panel-count">({{ allVars.length }})</span></span>
+      <span class="panel-arrow">{{ panelOpen ? '▲' : '▼' }}</span>
+    </div>
+
+    <template v-if="panelOpen">
+      <div v-if="allVars.length === 0 && !adding" class="empty-hint">暂无数据</div>
+
+      <div v-for="v in allVars" :key="v.name" class="var-row">
+        <template v-if="editingName === v.name">
+          <span class="var-name">{{ v.name }}</span>
+          <a-input
+            v-model:value="editingValue"
+            size="small"
+            class="var-val-input"
+            @keydown.enter="saveEdit(v.name)"
+            @keydown.esc="cancelEdit"
+          />
+          <a-button type="text" size="small" class="icon-btn ok" @click="saveEdit(v.name)">✓</a-button>
+          <a-button type="text" size="small" class="icon-btn" @click="cancelEdit">✕</a-button>
+        </template>
+        <template v-else>
+          <span class="var-name">{{ v.name }}</span>
+          <span class="var-val" :title="displayValue(v.value)">{{ displayValue(v.value) }}</span>
+          <a-button type="text" size="small" class="icon-btn" @click="startEdit(v)">✏</a-button>
+          <a-button type="text" size="small" danger class="icon-btn" @click="deleteVar(v.name)">✕</a-button>
+        </template>
+      </div>
+
+      <!-- add new row -->
+      <div v-if="adding" class="var-row">
+        <a-input v-model:value="newName" size="small" placeholder="变量名" class="var-name-input" @keydown.esc="adding = false" />
+        <a-input v-model:value="newValue" size="small" placeholder='值（JSON 或字符串）' class="var-val-input" @keydown.enter="saveNew" @keydown.esc="adding = false" />
+        <a-button type="text" size="small" class="icon-btn ok" @click="saveNew">✓</a-button>
+        <a-button type="text" size="small" class="icon-btn" @click="adding = false">✕</a-button>
+      </div>
+
+      <a-button v-if="!adding" size="small" class="add-btn" style="margin-top:6px" @click="startAdd">+ 手动添加</a-button>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, inject, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { FORM_CTX } from './useFormContext'
+import { useProjectStore } from '@/stores/projectStore'
+import { useScriptStore } from '@/stores/scriptStore'
 
 interface WriteItem {
   var_name: string
@@ -98,6 +142,11 @@ interface ReadItem {
 
 const ctx = inject(FORM_CTX)!
 const d = ctx.localData
+const projectStore = useProjectStore()
+const scriptStore = useScriptStore()
+
+const projectId = computed(() => scriptStore.currentScript?.project_id ?? null)
+const allVars = computed(() => projectId.value ? (projectStore.globalVars[projectId.value] ?? []) : [])
 
 watch(d, (data) => {
   if (!data || data.type !== 'global-var') return
@@ -143,6 +192,57 @@ function onReadVarNameChange(item: ReadItem) {
 }
 
 function update() { ctx.emitUpdate() }
+
+// ── data panel ──
+const panelOpen = ref(true)
+const editingName = ref<string | null>(null)
+const editingValue = ref('')
+const adding = ref(false)
+const newName = ref('')
+const newValue = ref('')
+
+function displayValue(val: any): string {
+  if (val === null || val === undefined) return 'null'
+  const s = typeof val === 'string' ? val : JSON.stringify(val)
+  return s.length > 40 ? s.slice(0, 38) + '…' : s
+}
+
+function startEdit(v: { name: string; value: any }) {
+  editingName.value = v.name
+  editingValue.value = typeof v.value === 'string' ? v.value : JSON.stringify(v.value)
+}
+
+function cancelEdit() {
+  editingName.value = null
+  editingValue.value = ''
+}
+
+async function saveEdit(name: string) {
+  if (!projectId.value) return
+  let parsed: any
+  try { parsed = JSON.parse(editingValue.value) } catch { parsed = editingValue.value }
+  await projectStore.upsertGlobalVar(projectId.value, name, parsed)
+  cancelEdit()
+}
+
+async function deleteVar(name: string) {
+  if (!projectId.value) return
+  await projectStore.deleteGlobalVar(projectId.value, name)
+}
+
+function startAdd() {
+  newName.value = ''
+  newValue.value = ''
+  adding.value = true
+}
+
+async function saveNew() {
+  if (!projectId.value || !newName.value.trim()) return
+  let parsed: any
+  try { parsed = JSON.parse(newValue.value) } catch { parsed = newValue.value }
+  await projectStore.upsertGlobalVar(projectId.value, newName.value.trim(), parsed)
+  adding.value = false
+}
 </script>
 
 <style scoped>
@@ -155,5 +255,20 @@ function update() { ctx.emitUpdate() }
 .item-del    { flex-shrink: 0; padding: 0 4px !important; }
 .add-btn     { width: 100%; margin-top: 4px; color: #555 !important; border-color: #303030 !important; background: transparent !important; font-size: 11px !important; }
 .add-btn:hover { color: #888 !important; border-color: #555 !important; }
-.hint { font-size: 11px; color: #444; margin-top: 4px; line-height: 1.5; }
+.hint        { font-size: 11px; color: #444; margin-top: 4px; line-height: 1.5; }
+
+.panel-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 2px 0 6px; user-select: none; }
+.panel-title  { font-size: 11px; color: #666; }
+.panel-count  { color: #444; }
+.panel-arrow  { font-size: 10px; color: #444; }
+
+.empty-hint { font-size: 11px; color: #3a3a3a; padding: 4px 0; }
+
+.var-row { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.var-name { font-size: 11px; color: #888; min-width: 80px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.var-val  { font-size: 11px; color: #555; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; }
+.var-name-input { width: 90px; flex-shrink: 0; }
+.var-val-input  { flex: 1; min-width: 0; font-size: 11px; }
+.icon-btn { flex-shrink: 0; padding: 0 3px !important; font-size: 11px; color: #555 !important; }
+.icon-btn.ok { color: #52c41a !important; }
 </style>

@@ -220,6 +220,60 @@ _COLOR_CROSS = "#00d4ff"
 _COLOR_OK    = "#52c41a"
 _COLOR_PREV  = "#faad14"
 _COLOR_FILL  = "#1a6aff"
+_COLOR_MATCH = "#00ff41"   # CV result highlight colour
+_TRANSP_KEY  = "#010203"   # near-black used as window transparency key
+
+CV_OVERLAY_DURATION_S = 2.0  # seconds to display CV match highlights
+
+
+def _show_match_overlay(
+    locations: list[dict], tmpl_w: int, tmpl_h: int,
+    duration_s: float = CV_OVERLAY_DURATION_S,
+) -> None:
+    """Click-through overlay that highlights template match locations.
+
+    Intended to run in a daemon thread; auto-destroys after *duration_s* seconds.
+    All exceptions are swallowed — the overlay is purely cosmetic.
+    """
+    import tkinter as tk
+
+    try:
+        screen_w = ctypes.windll.user32.GetSystemMetrics(0)
+        screen_h = ctypes.windll.user32.GetSystemMetrics(1)
+
+        root = tk.Tk()
+        root.overrideredirect(True)
+        root.attributes("-topmost", True)
+        root.geometry(f"{screen_w}x{screen_h}+0+0")
+        root.configure(bg=_TRANSP_KEY)
+        root.attributes("-transparentcolor", _TRANSP_KEY)
+
+        canvas = tk.Canvas(root, bg=_TRANSP_KEY, highlightthickness=0)
+        canvas.pack(fill="both", expand=True)
+
+        half_w, half_h = max(tmpl_w // 2, 1), max(tmpl_h // 2, 1)
+        for loc in locations:
+            cx, cy = loc["x"], loc["y"]
+            x1, y1 = cx - half_w, cy - half_h
+            x2, y2 = cx + half_w, cy + half_h
+            canvas.create_rectangle(x1, y1, x2, y2,
+                                    outline=_COLOR_MATCH, width=3, fill="")
+            canvas.create_line(cx - 8, cy, cx + 8, cy, fill=_COLOR_MATCH, width=2)
+            canvas.create_line(cx, cy - 8, cx, cy + 8, fill=_COLOR_MATCH, width=2)
+
+        # -transparentcolor sets WS_EX_LAYERED; add WS_EX_TRANSPARENT for click-through
+        root.update()
+        hwnd = root.winfo_id()
+        GWL_EXSTYLE       = -20
+        WS_EX_TRANSPARENT = 0x00000020
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE,
+                                            style | WS_EX_TRANSPARENT)
+
+        root.after(int(duration_s * 1000), root.destroy)
+        root.mainloop()
+    except Exception:
+        pass
 
 
 def _show_point_overlay(
@@ -1061,7 +1115,8 @@ class CommandHandler:
                             "y": region_offset[1] + my2 + th // 2,
                         })
                     max_conf = float(res[candidates[0][1], candidates[0][0]]) if candidates else 0.0
-                    return {"found": len(locations) > 0, "confidence": max_conf, "locations": locations}
+                    return {"found": len(locations) > 0, "confidence": max_conf,
+                            "locations": locations, "_tmpl_w": tw, "_tmpl_h": th}
 
                 _, max_val, _, max_loc = cv2.minMaxLoc(res)
                 found = float(max_val) >= threshold
@@ -1071,10 +1126,24 @@ class CommandHandler:
                     "found": found,
                     "confidence": float(max_val),
                     "location": {"x": cx, "y": cy} if found else None,
+                    "_tmpl_w": tw, "_tmpl_h": th,
                 }
 
             try:
                 result = await _run_blocking(_do_match)
+                tmpl_w = result.pop("_tmpl_w", 0)
+                tmpl_h = result.pop("_tmpl_h", 0)
+                if result.get("found") and params.get("show_overlay"):
+                    locs = result.get("locations") or (
+                        [result["location"]] if result.get("location") else []
+                    )
+                    duration = float(params.get("overlay_duration") or CV_OVERLAY_DURATION_S)
+                    import threading
+                    threading.Thread(
+                        target=_show_match_overlay,
+                        args=(locs, tmpl_w, tmpl_h, duration),
+                        daemon=True,
+                    ).start()
                 return True, result, None
             except Exception as e:
                 return False, {}, str(e)

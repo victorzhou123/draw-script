@@ -10,7 +10,7 @@ from engine.node_registry import NodeRegistry
 logger = logging.getLogger(__name__)
 
 
-@NodeRegistry.register("global_var")
+@NodeRegistry.register("global-var")
 class GlobalVarNodeHandler(BaseNodeHandler):
     async def execute(self) -> NodeResult:
         data = self.ctx.node.data

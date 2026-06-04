@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from database import GlobalVariable, Marker, MarkerCapture, Project, ProjectClient, Script, Template, get_session
 from schemas import (
-    GlobalVariableResponse,
+    GlobalVariableResponse, GlobalVariableUpsert,
     MarkerCreate, MarkerResponse,
     ProjectCreate, ProjectResponse, ProjectUpdate,
     SendMarkersRequest, TemplateResponse,
@@ -385,6 +385,30 @@ async def list_global_vars(project_id: str, db: AsyncSession = Depends(get_sessi
         .order_by(GlobalVariable.name)
     )
     return result.scalars().all()
+
+
+@router.put("/{project_id}/global-vars/{var_name}", response_model=GlobalVariableResponse)
+async def upsert_global_var(project_id: str, var_name: str, body: GlobalVariableUpsert, db: AsyncSession = Depends(get_session)):
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await db.execute(
+        select(GlobalVariable).where(
+            GlobalVariable.project_id == project_id,
+            GlobalVariable.name == var_name,
+        )
+    )
+    import json as _json
+    row = result.scalar_one_or_none()
+    encoded = _json.dumps(body.value, ensure_ascii=False)
+    if row:
+        row.value = encoded
+    else:
+        row = GlobalVariable(project_id=project_id, name=var_name, value=encoded)
+        db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
 
 
 @router.delete("/{project_id}/global-vars/{var_name}")
