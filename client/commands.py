@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import os
+import queue as _queue
 import threading
 from typing import Callable
 
@@ -226,19 +227,97 @@ _TRANSP_KEY  = "#010203"   # near-black used as window transparency key
 
 CV_OVERLAY_DURATION_S = 2.0  # fallback seconds when overlay_mode == "fixed"
 
-# node_id -> threading.Event; set the event to signal that overlay should close.
-# The overlay thread itself calls root.destroy() — no cross-thread Tk calls.
-_active_overlays: dict[str, threading.Event] = {}
-_overlay_lock = threading.Lock()
+# Single dedicated tkinter thread — one Toplevel window updated in place.
+# Other threads send dicts via this queue; no Tk calls ever leave the mainloop thread.
+_overlay_queue: _queue.SimpleQueue = _queue.SimpleQueue()
+_overlay_thread: threading.Thread | None = None
+_overlay_thread_lock = threading.Lock()
+
+
+def _ensure_overlay_thread() -> None:
+    global _overlay_thread
+    with _overlay_thread_lock:
+        if _overlay_thread is None or not _overlay_thread.is_alive():
+            t = threading.Thread(target=_overlay_mainloop, daemon=True)
+            t.start()
+            _overlay_thread = t
+
+
+def _overlay_mainloop() -> None:
+    """Dedicated tkinter thread.  Creates one Toplevel once and updates it in place,
+    avoiding repeated window creation that causes screen flicker and Tcl_AsyncDelete."""
+    import tkinter as tk
+    try:
+        root = tk.Tk()
+        root.withdraw()  # hidden master; keeps the Tcl interpreter alive
+
+        sw = root.winfo_screenwidth()
+        sh = root.winfo_screenheight()
+
+        top = tk.Toplevel(root)
+        top.overrideredirect(True)
+        top.attributes("-topmost", True)
+        top.geometry(f"{sw}x{sh}+0+0")
+        top.configure(bg=_TRANSP_KEY)
+        top.attributes("-transparentcolor", _TRANSP_KEY)
+        top.withdraw()  # hide while we apply Win32 styles
+
+        canvas = tk.Canvas(top, bg=_TRANSP_KEY, highlightthickness=0)
+        canvas.pack(fill="both", expand=True)
+
+        top.update()
+        hwnd = top.winfo_id()
+        GWL_EXSTYLE       = -20
+        WS_EX_TRANSPARENT = 0x00000020
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE,
+                                            style | WS_EX_TRANSPARENT)
+        top.deiconify()  # canvas is empty → fully transparent; no visual flash
+
+        _pending: list = [None]  # [after_id | None]
+
+        def _clear():
+            if _pending[0] is not None:
+                root.after_cancel(_pending[0])
+                _pending[0] = None
+            canvas.delete("all")
+
+        def _draw(locations, tmpl_w, tmpl_h, duration_s):
+            _clear()
+            hw = max(tmpl_w // 2, 1)
+            hh = max(tmpl_h // 2, 1)
+            for loc in locations:
+                cx, cy = loc["x"], loc["y"]
+                canvas.create_rectangle(cx - hw, cy - hh, cx + hw, cy + hh,
+                                        outline=_COLOR_MATCH, width=3, fill="")
+                canvas.create_line(cx - 8, cy, cx + 8, cy,
+                                   fill=_COLOR_MATCH, width=2)
+                canvas.create_line(cx, cy - 8, cx, cy + 8,
+                                   fill=_COLOR_MATCH, width=2)
+            if duration_s is not None:
+                _pending[0] = root.after(int(duration_s * 1000), _clear)
+
+        def _process_queue():
+            try:
+                while True:
+                    cmd = _overlay_queue.get_nowait()
+                    if cmd["action"] == "show":
+                        _draw(cmd["locations"], cmd["tmpl_w"],
+                              cmd["tmpl_h"], cmd.get("duration_s"))
+                    elif cmd["action"] == "dismiss":
+                        _clear()
+            except _queue.Empty:
+                pass
+            root.after(50, _process_queue)
+
+        root.after(50, _process_queue)
+        root.mainloop()
+    except Exception:
+        pass
 
 
 def _dismiss_all_overlays() -> None:
-    """Signal every active overlay to close (called on script stop)."""
-    with _overlay_lock:
-        events = list(_active_overlays.values())
-        _active_overlays.clear()
-    for ev in events:
-        ev.set()
+    _overlay_queue.put({"action": "dismiss"})
 
 
 def _show_match_overlay(
@@ -246,76 +325,16 @@ def _show_match_overlay(
     locations: list[dict], tmpl_w: int, tmpl_h: int,
     duration_s: float | None = CV_OVERLAY_DURATION_S,
 ) -> None:
-    """Click-through overlay that highlights template match locations.
-
-    duration_s=None keeps the overlay alive until the next call for the same node.
-    Runs in a daemon thread; all Tk calls stay in this thread — no cross-thread
-    Tcl operations, which avoids Tcl_AsyncDelete crashes.
-    """
-    import tkinter as tk
-
-    # Signal any existing overlay for this node to close (thread-safe: just sets an Event)
-    with _overlay_lock:
-        old_event = _active_overlays.pop(node_id, None)
-    if old_event is not None:
-        old_event.set()
-
-    stop_event = threading.Event()
-    with _overlay_lock:
-        _active_overlays[node_id] = stop_event
-
-    try:
-        screen_w = ctypes.windll.user32.GetSystemMetrics(0)
-        screen_h = ctypes.windll.user32.GetSystemMetrics(1)
-
-        root = tk.Tk()
-        root.overrideredirect(True)
-        root.attributes("-topmost", True)
-        root.geometry(f"{screen_w}x{screen_h}+0+0")
-        root.configure(bg=_TRANSP_KEY)
-        root.attributes("-transparentcolor", _TRANSP_KEY)
-
-        canvas = tk.Canvas(root, bg=_TRANSP_KEY, highlightthickness=0)
-        canvas.pack(fill="both", expand=True)
-
-        half_w, half_h = max(tmpl_w // 2, 1), max(tmpl_h // 2, 1)
-        for loc in locations:
-            cx, cy = loc["x"], loc["y"]
-            x1, y1 = cx - half_w, cy - half_h
-            x2, y2 = cx + half_w, cy + half_h
-            canvas.create_rectangle(x1, y1, x2, y2,
-                                    outline=_COLOR_MATCH, width=3, fill="")
-            canvas.create_line(cx - 8, cy, cx + 8, cy, fill=_COLOR_MATCH, width=2)
-            canvas.create_line(cx, cy - 8, cx, cy + 8, fill=_COLOR_MATCH, width=2)
-
-        # -transparentcolor sets WS_EX_LAYERED; add WS_EX_TRANSPARENT for click-through
-        root.update()
-        hwnd = root.winfo_id()
-        GWL_EXSTYLE       = -20
-        WS_EX_TRANSPARENT = 0x00000020
-        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE,
-                                            style | WS_EX_TRANSPARENT)
-
-        # Fixed duration: schedule stop_event.set() inside the mainloop (same thread)
-        if duration_s is not None:
-            root.after(int(duration_s * 1000), stop_event.set)
-
-        # Poll stop_event every 50 ms; destroy from within this thread only
-        def _poll_stop():
-            if stop_event.is_set():
-                root.destroy()
-                return
-            root.after(50, _poll_stop)
-
-        root.after(50, _poll_stop)
-        root.mainloop()
-    except Exception:
-        pass
-    finally:
-        with _overlay_lock:
-            if _active_overlays.get(node_id) is stop_event:
-                _active_overlays.pop(node_id, None)
+    """Queue a draw command to the dedicated overlay thread (non-blocking)."""
+    _ensure_overlay_thread()
+    _overlay_queue.put({
+        "action": "show",
+        "node_id": node_id,
+        "locations": locations,
+        "tmpl_w": tmpl_w,
+        "tmpl_h": tmpl_h,
+        "duration_s": duration_s,
+    })
 
 
 def _show_point_overlay(
@@ -1186,11 +1205,7 @@ class CommandHandler:
                         None if overlay_mode == "until_next"
                         else float(params.get("overlay_duration") or CV_OVERLAY_DURATION_S)
                     )
-                    threading.Thread(
-                        target=_show_match_overlay,
-                        args=(node_id, locs, tmpl_w, tmpl_h, duration),
-                        daemon=True,
-                    ).start()
+                    _show_match_overlay(node_id, locs, tmpl_w, tmpl_h, duration)
                 return True, result, None
             except Exception as e:
                 return False, {}, str(e)
