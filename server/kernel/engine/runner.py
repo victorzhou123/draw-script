@@ -96,8 +96,11 @@ async def run_branch(
         next_nodes = ctx.graph.get_next_nodes(current.id, result.branch)
 
         # When fan-out includes a loop node, check the counter first.
-        # If the loop is not yet exhausted, route only to the loop node.
-        # If the loop count is satisfied, skip the loop node and route to the others.
+        # - Count not yet reached: route only to the loop node (continue looping).
+        # - Count satisfied + loop has an exit edge: route to the loop node so it
+        #   returns branch="exit" and the runner follows the exit edge naturally.
+        # - Count satisfied + no exit edge: clean up counter and route to the
+        #   other downstream nodes instead.
         if len(next_nodes) > 1:
             loop_nodes = [n for n in next_nodes if n.node_type == "loop"]
             if loop_nodes:
@@ -108,8 +111,11 @@ async def run_branch(
                 except (TypeError, ValueError):
                     max_count = 1
                 if ctx.loop_counters.get(loop_node.id, 0) >= max_count:
-                    ctx.loop_counters.pop(loop_node.id, None)
-                    next_nodes = [n for n in next_nodes if n.node_type != "loop"]
+                    if ctx.graph.get_next_nodes(loop_node.id, "exit"):
+                        next_nodes = [loop_node]
+                    else:
+                        ctx.loop_counters.pop(loop_node.id, None)
+                        next_nodes = [n for n in next_nodes if n.node_type != "loop"]
                 else:
                     next_nodes = [loop_node]
 
