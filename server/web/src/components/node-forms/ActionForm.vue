@@ -26,6 +26,7 @@
         <a-radio-group v-model:value="scrollPositionMode" size="small" button-style="solid" @change="onScrollPositionModeChange">
           <a-radio-button value="current">当前鼠标位置</a-radio-button>
           <a-radio-button value="fixed">指定坐标</a-radio-button>
+          <a-radio-button value="marker">标记</a-radio-button>
         </a-radio-group>
       </a-form-item>
       <template v-if="scrollPositionMode === 'fixed'">
@@ -35,6 +36,19 @@
         <a-form-item label="Y">
           <a-input-number v-model:value="d.params.y" :style="{ width: '100%' }" placeholder="0" @change="update()" />
         </a-form-item>
+      </template>
+      <template v-else-if="scrollPositionMode === 'marker'">
+        <a-form-item label="选择标记">
+          <a-select v-model:value="scrollMarkerName" :style="{ width: '100%' }" placeholder="选择标记点" allow-clear @change="onScrollMarkerSelect">
+            <a-select-option v-for="m in ctx.availableMarkers.value" :key="m.name" :value="m.name">
+              <span class="marker-menu-type" :class="`type-${m.type}`">{{ m.type === 'point' ? '点' : '框' }}</span>
+              {{ m.name }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:-6px">
+          当前项目暂无标记，请先在项目中添加标记
+        </div>
       </template>
     </template>
 
@@ -205,7 +219,8 @@ const holdMsSource = ref<'fixed' | 'context'>('fixed')
 const holdMsContextVar = ref<string | undefined>(undefined)
 const isRecordingKey = ref(false)
 const pendingModifierOnly = ref(false)
-const scrollPositionMode = ref<'current' | 'fixed'>('current')
+const scrollPositionMode = ref<'current' | 'fixed' | 'marker'>('current')
+const scrollMarkerName = ref<string | null>(null)
 
 const KEY_MAP: Record<string, string> = {
   ' ': 'space', Enter: 'enter', Backspace: 'backspace', Delete: 'delete',
@@ -264,7 +279,19 @@ watch(d, (data) => {
   }
   isRecordingKey.value = false
   if (data.action_type === 'mouse_scroll') {
-    scrollPositionMode.value = (params.x != null && params.x !== '') ? 'fixed' : 'current'
+    const xStr = String(params.x || '')
+    const tplM = xStr.match(/^\{\{markers\.([^.}]+)/)
+    if (xStr.startsWith('$markers.') || tplM) {
+      scrollPositionMode.value = 'marker'
+      const m = tplM ?? xStr.match(/^\$markers\.([^.]+)/)
+      scrollMarkerName.value = m ? m[1] : null
+    } else if (params.x != null && params.x !== '') {
+      scrollPositionMode.value = 'fixed'
+      scrollMarkerName.value = null
+    } else {
+      scrollPositionMode.value = 'current'
+      scrollMarkerName.value = null
+    }
     if (!data.params.direction) data.params.direction = 'down'
     if (data.params.amount == null) data.params.amount = 3
   }
@@ -276,15 +303,32 @@ function onActionTypeChange() {
   if (d.value.action_type === 'mouse_scroll') {
     if (!d.value.params.direction) d.value.params.direction = 'down'
     if (d.value.params.amount == null) d.value.params.amount = 3
-    scrollPositionMode.value = (d.value.params.x != null && d.value.params.x !== '') ? 'fixed' : 'current'
+    scrollPositionMode.value = 'current'
+    scrollMarkerName.value = null
+    d.value.params.x = undefined
+    d.value.params.y = undefined
   }
   update()
 }
 
 function onScrollPositionModeChange() {
-  if (scrollPositionMode.value === 'current') {
-    d.value.params.x = undefined
-    d.value.params.y = undefined
+  d.value.params.x = undefined
+  d.value.params.y = undefined
+  scrollMarkerName.value = null
+  update()
+}
+
+function onScrollMarkerSelect(name: string | undefined) {
+  if (!name) { scrollMarkerName.value = null; d.value.params.x = undefined; d.value.params.y = undefined; update(); return }
+  const marker = ctx.availableMarkers.value.find((m: any) => m.name === name)
+  if (!marker) return
+  scrollMarkerName.value = marker.name
+  if (marker.type === 'point') {
+    d.value.params.x = `{{markers.${marker.name}.x}}`
+    d.value.params.y = `{{markers.${marker.name}.y}}`
+  } else {
+    d.value.params.x = `{{markers.${marker.name}.cx}}`
+    d.value.params.y = `{{markers.${marker.name}.cy}}`
   }
   update()
 }
