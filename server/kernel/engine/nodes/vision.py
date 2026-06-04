@@ -174,14 +174,22 @@ class VisionNodeHandler(BaseNodeHandler):
                 else:
                     found_value = data.get("found_value", "") or ""
                     not_found_value = data.get("not_found_value", "None") or "None"
-                    if found_value or not_found_value not in ("", "None"):
-                        self.ctx.variables[result_var] = found_value if found else (None if not_found_value == "None" else not_found_value)
-                    else:
-                        if found and location:
+                    # found 和 not_found 分支独立处理，避免旧逻辑的耦合问题：
+                    # 旧逻辑用 `if found_value or not_found_value not in ("", "None")` 统一判断，
+                    # 导致只要 not_found_value 有自定义值（如 "0"），found=True 时就会写入
+                    # found_value（空字符串），而不是实际坐标，坐标被静默覆盖。
+                    if found:
+                        if found_value:
+                            # 用户显式配置了找到时的静态值，优先使用
+                            self.ctx.variables[result_var] = found_value
+                        elif location:
                             x, y = int(location.get("x", 0)), int(location.get("y", 0))
                             self.ctx.variables[result_var] = f"{x},{y}"
                         else:
                             self.ctx.variables[result_var] = None
+                    else:
+                        # not_found_value 仅在未找到时生效，与 found 分支完全独立
+                        self.ctx.variables[result_var] = None if not_found_value == "None" else not_found_value
 
             self.ctx.variables["last_vision_result"] = output
             return NodeResult(success=True, output=output)
