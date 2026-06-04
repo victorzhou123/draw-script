@@ -4,9 +4,21 @@
       <span class="sidebar-title">脚本列表</span>
       <a-button type="primary" size="small" @click="onNew">+ 新建</a-button>
     </div>
+    <div class="filter-row">
+      <a-select
+        v-model:value="filterProjectId"
+        size="small"
+        style="width: 100%"
+        placeholder="全部项目组"
+        allow-clear
+      >
+        <a-select-option value="__none__">未分配项目组</a-select-option>
+        <a-select-option v-for="p in projectStore.projects" :key="p.id" :value="p.id">{{ p.name }}</a-select-option>
+      </a-select>
+    </div>
     <a-spin :spinning="scriptStore.loading">
       <div
-        v-for="script in scriptStore.scripts"
+        v-for="script in filteredScripts"
         :key="script.id"
         class="script-item"
         :class="{ active: scriptStore.currentScript?.id === script.id }"
@@ -287,7 +299,18 @@ const clientStore  = useClientStore()
 // ── list ──────────────────────────────────────────────────────────────────────
 
 import { onMounted } from 'vue'
-onMounted(() => scriptStore.fetchScripts())
+onMounted(() => {
+  scriptStore.fetchScripts()
+  projectStore.fetchProjects()
+})
+
+const filterProjectId = ref<string | null>(null)
+
+const filteredScripts = computed(() => {
+  if (!filterProjectId.value) return scriptStore.scripts
+  if (filterProjectId.value === '__none__') return scriptStore.scripts.filter(s => !s.project_id)
+  return scriptStore.scripts.filter(s => s.project_id === filterProjectId.value)
+})
 
 async function onNew() {
   const name = prompt('脚本名称:')
@@ -566,6 +589,8 @@ async function copyCurl() {
   padding: 4px 0;
 }
 .sidebar-title { font-weight: 600; font-size: 14px; color: #d0d0d0; }
+
+.filter-row { margin-bottom: 8px; }
 
 /* card */
 .script-item {

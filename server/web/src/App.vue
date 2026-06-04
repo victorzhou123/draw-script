@@ -44,6 +44,7 @@
             @edge-selected="onEdgeSelected"
             @selection-cleared="selectedNode = null"
             @graph-changed="triggerAutoSave"
+            @node-context-menu="onNodeContextMenu"
           />
         </a-layout-content>
 
@@ -61,6 +62,20 @@
       </a-layout>
     </a-layout>
 
+    <!-- Node right-click context menu -->
+    <div
+      v-if="ctxMenu.visible"
+      class="node-ctx-menu"
+      :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+    >
+      <div
+        v-if="ctxMenu.data?.type === 'script' && ctxMenu.data?.script_id"
+        class="ctx-menu-item"
+        @click="ctxMenuOpen"
+      >打开</div>
+      <div v-else class="ctx-menu-item ctx-menu-disabled">打开（未绑定脚本）</div>
+    </div>
+
     <ProjectGroupDrawer :open="projectGroupDrawerOpen" @close="projectGroupDrawerOpen = false" />
     <ClientsDrawer :open="clientsDrawerOpen" @close="clientsDrawerOpen = false" />
     <AIModelsDrawer :open="aiModelsDrawerOpen" @close="aiModelsDrawerOpen = false" />
@@ -70,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { theme } from 'ant-design-vue'
 import { FileAddOutlined } from '@ant-design/icons-vue'
 import GraphEditor from './components/GraphEditor.vue'
@@ -121,7 +136,11 @@ function triggerAutoSave() {
   }, 800)
 }
 
-onMounted(() => uiWS.connect())
+onMounted(() => {
+  uiWS.connect()
+  document.addEventListener('click', closeCtxMenu)
+  document.addEventListener('contextmenu', closeCtxMenu)
+})
 
 async function onScriptSelected(id: string) {
   const script = await scriptStore.selectScript(id)
@@ -148,6 +167,26 @@ function onNodeSelected(node: { id: string; data: any }) {
 
 function onEdgeSelected() {
   selectedNode.value = null
+}
+
+const ctxMenu = reactive({ visible: false, x: 0, y: 0, data: null as any })
+
+function onNodeContextMenu(payload: { id: string; data: any; clientX: number; clientY: number }) {
+  if (payload.data?.type !== 'script') return
+  ctxMenu.data = payload.data
+  ctxMenu.x = payload.clientX
+  ctxMenu.y = payload.clientY
+  ctxMenu.visible = true
+}
+
+function closeCtxMenu() { ctxMenu.visible = false }
+
+async function ctxMenuOpen() {
+  closeCtxMenu()
+  if (ctxMenu.data?.script_id) {
+    await onScriptSelected(ctxMenu.data.script_id)
+    leftTabKey.value = 'scripts'
+  }
 }
 
 function onNodeDataUpdate(nodeId: string, data: any) {
@@ -181,6 +220,29 @@ html, body, #app { height: 100%; background: #141414; }
   overflow: hidden;
   background: #1a1a1a;
 }
+
+/* Node context menu */
+.node-ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 120px;
+  background: #252525;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 4px 0;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.ctx-menu-item {
+  padding: 7px 16px;
+  font-size: 13px;
+  color: #d0d0d0;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.ctx-menu-item:hover { background: #1890ff22; color: #4dabf7; }
+.ctx-menu-disabled { color: #555 !important; cursor: default; }
+.ctx-menu-disabled:hover { background: none !important; }
 
 /* Empty canvas */
 .empty-canvas {

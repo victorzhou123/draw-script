@@ -7,6 +7,26 @@ from engine.node_registry import NodeRegistry
 logger = logging.getLogger(__name__)
 
 MAX_VISITS = 1000
+MIN_HIGHLIGHT_SECS = 0.5
+
+
+def _schedule_done(ctx, node_id: str, status: str, node_start: float) -> None:
+    """Fire-and-forget: broadcast execution_progress after the node has been
+    visually highlighted for at least MIN_HIGHLIGHT_SECS."""
+    loop = asyncio.get_running_loop()
+    delay = max(0.0, MIN_HIGHLIGHT_SECS - (loop.time() - node_start))
+
+    async def _emit() -> None:
+        if delay > 0:
+            await asyncio.sleep(delay)
+        await ctx.ui_manager.broadcast_event("execution_progress", {
+            "execution_id": ctx.execution_id,
+            "client_id": ctx.client_id,
+            "node_id": node_id,
+            "status": status,
+        })
+
+    asyncio.create_task(_emit())
 
 
 async def run_branch(
@@ -29,6 +49,7 @@ async def run_branch(
         if visited_count[current.id] > MAX_VISITS:
             return "Infinite loop detected"
 
+        node_start = asyncio.get_running_loop().time()
         await ctx.ui_manager.broadcast_event("execution_progress", {
             "execution_id": ctx.execution_id,
             "client_id": ctx.client_id,
@@ -54,20 +75,10 @@ async def run_branch(
             result = await handler_cls(ctx).execute()
         except Exception as e:
             logger.exception(f"Node {current.id} ({current.node_type}) failed: {e}")
-            await ctx.ui_manager.broadcast_event("execution_progress", {
-                "execution_id": ctx.execution_id,
-                "client_id": ctx.client_id,
-                "node_id": current.id,
-                "status": "error",
-            })
+            _schedule_done(ctx, current.id, "error", node_start)
             return str(e)
 
-        await ctx.ui_manager.broadcast_event("execution_progress", {
-            "execution_id": ctx.execution_id,
-            "client_id": ctx.client_id,
-            "node_id": current.id,
-            "status": "done" if result.success else "error",
-        })
+        _schedule_done(ctx, current.id, "done" if result.success else "error", node_start)
 
         if not result.success and result.error:
             err_entry = f"  ERROR: {result.error}"
@@ -97,12 +108,23 @@ async def run_branch(
         if len(next_nodes) <= 1:
             current = next_nodes[0] if next_nodes else None
         else:
-            # Fan-out: run branches in parallel; return early if any branch hits end
+            # Fan-out: branches share the same variables dict so any branch's writes
+            # are immediately visible to all others and to the End node, regardless of
+            # which branch arrives at Wait last. log and script_call_stack remain
+            # per-branch; visited_count is copied so loop counters stay independent.
+            branch_ctxs = []
+            for _ in next_nodes:
+                bctx = copy.copy(ctx)
+                bctx.log = list(ctx.log)
+                bctx.script_call_stack = list(ctx.script_call_stack)
+                branch_ctxs.append(bctx)
+
             branch_tasks = [
-                asyncio.create_task(run_branch(copy.copy(ctx), node, visited_count, script_name))
-                for node in next_nodes
+                asyncio.create_task(run_branch(bctx, node, dict(visited_count), script_name))
+                for bctx, node in zip(branch_ctxs, next_nodes)
             ]
-            return await _wait_for_branches(ctx, branch_tasks)
+            error = await _wait_for_branches(ctx, branch_tasks)
+            return error
 
     return None
 

@@ -59,7 +59,7 @@ class UIWebSocket {
         // Per-client tracking is done in runOnClient; no store update needed here
         break
       case 'execution_progress':
-        executionStore.onProgress(msg.node_id as string, msg.status as string)
+        executionStore.onProgress(msg.node_id as string, msg.status as string, msg.client_id as string)
         break
       case 'execution_log':
         executionStore.addLog(msg.message as string, msg.client_id as string | undefined)

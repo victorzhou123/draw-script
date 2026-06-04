@@ -58,7 +58,7 @@ async def update_script(script_id: str, body: ScriptUpdate, db: AsyncSession = D
     script = await db.get(Script, script_id)
     if not script:
         raise HTTPException(404, "Script not found")
-    for field, value in body.model_dump(exclude_none=True).items():
+    for field, value in body.model_dump(exclude_unset=True).items():
         setattr(script, field, value)
     script.updated_at = datetime.now(timezone.utc)
     await db.commit()

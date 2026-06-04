@@ -112,7 +112,8 @@
       <template v-if="keySource === 'fixed'">
         <a-form-item label="按键 / 快捷键">
           <div class="key-capture" :class="{ recording: isRecordingKey }" tabindex="0"
-            @focus="isRecordingKey = true" @blur="isRecordingKey = false" @keydown.prevent="onCaptureKeyDown">
+            @focus="isRecordingKey = true; pendingModifierOnly = false" @blur="isRecordingKey = false; pendingModifierOnly = false"
+            @keydown.prevent="onCaptureKeyDown" @keyup.prevent="onCaptureKeyUp">
             <span v-if="isRecordingKey" class="key-hint">请按下按键…</span>
             <span v-else-if="d.params.keys" class="key-value">{{ d.params.keys }}</span>
             <span v-else class="key-placeholder">点击后按下按键</span>
@@ -155,6 +156,7 @@ const textContextVar = ref<string | undefined>(undefined)
 const keySource = ref<'fixed' | 'context'>('fixed')
 const keyContextVar = ref<string | undefined>(undefined)
 const isRecordingKey = ref(false)
+const pendingModifierOnly = ref(false)
 
 const KEY_MAP: Record<string, string> = {
   ' ': 'space', Enter: 'enter', Backspace: 'backspace', Delete: 'delete',
@@ -259,10 +261,25 @@ function onCaptureKeyDown(e: KeyboardEvent) {
   if (e.shiftKey) mods.push('shift')
   if (e.metaKey) mods.push('win')
   const mainKey = KEY_MAP[e.key] ?? (e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase())
-  if (['ctrl', 'alt', 'shift', 'win'].includes(mainKey)) return
+  if (['ctrl', 'alt', 'shift', 'win'].includes(mainKey)) {
+    pendingModifierOnly.value = true
+    return
+  }
+  pendingModifierOnly.value = false
   d.value.params.keys = [...mods, mainKey].join('+')
   update()
   isRecordingKey.value = false
+}
+
+function onCaptureKeyUp(e: KeyboardEvent) {
+  if (!isRecordingKey.value || !pendingModifierOnly.value) return
+  const mainKey = KEY_MAP[e.key] ?? e.key.toLowerCase()
+  if (['ctrl', 'alt', 'shift', 'win'].includes(mainKey)) {
+    d.value.params.keys = mainKey
+    update()
+    isRecordingKey.value = false
+    pendingModifierOnly.value = false
+  }
 }
 
 function clearKey() { d.value.params.keys = ''; update() }

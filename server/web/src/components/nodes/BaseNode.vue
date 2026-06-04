@@ -44,7 +44,7 @@ const displayLabel = computed(() => customLabel.value || props.label)
 
 const isActive = computed(() => {
   const node = getNode?.()
-  return node && executionStore.activeNodeId === node.id
+  return node && executionStore.activeNodeIds.has(node.id)
 })
 </script>
 

@@ -39,14 +39,11 @@ class ScriptNodeHandler(BaseNodeHandler):
         input_mappings: list = self.ctx.node.data.get("input_mappings") or []
         output_mappings: list = self.ctx.node.data.get("output_mappings") or []
 
-        if input_mappings:
-            child_vars = {}
-            for m in input_mappings:
-                src, dst = m.get("from", "").strip(), m.get("to", "").strip()
-                if src and dst and src in self.ctx.variables:
-                    child_vars[dst] = self.ctx.variables[src]
-        else:
-            child_vars = dict(self.ctx.variables)
+        child_vars = {}
+        for m in input_mappings:
+            src, dst = m.get("from", "").strip(), m.get("to", "").strip()
+            if src and dst and src in self.ctx.variables:
+                child_vars[dst] = self.ctx.variables[src]
 
         from engine.context import ExecutionContext
         sub_ctx = ExecutionContext(
@@ -84,12 +81,9 @@ class ScriptNodeHandler(BaseNodeHandler):
 
         result = sub_ctx._result_box[0] if sub_ctx._result_box else sub_ctx.completion_result
         if result is not None:
-            if output_mappings:
-                for m in output_mappings:
-                    src, dst = m.get("from", "").strip(), m.get("to", "").strip()
-                    if src and dst and src in result:
-                        self.ctx.variables[dst] = result[src]
-            else:
-                self.ctx.variables.update(result)
+            for m in output_mappings:
+                src, dst = m.get("from", "").strip(), m.get("to", "").strip()
+                if src and dst and src in result:
+                    self.ctx.variables[dst] = result[src]
 
         return NodeResult(success=True, output=result)

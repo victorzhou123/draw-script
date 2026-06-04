@@ -46,6 +46,12 @@ class ConditionNodeHandler(BaseNodeHandler):
     def _resolve_value(self, value):
         if isinstance(value, str) and value.startswith("{{") and value.endswith("}}"):
             return self._get_var(value[2:-2].strip())
+        if isinstance(value, str):
+            import json
+            try:
+                return json.loads(value)
+            except (ValueError, TypeError):
+                pass
         return value
 
     def _get_var(self, path: str):

@@ -52,7 +52,7 @@
       <a-form-item label="期望值">
         <a-auto-complete v-model:value="d.params.value"
           :options="ctx.contextFields.value.map((f:any) => ({ value: '{{' + f.name + '}}', label: f.name }))"
-          placeholder="字面量或 {{context变量}}" allow-clear @change="update()" />
+          placeholder="500 / 3.14 / &quot;text&quot; / {{变量}}" allow-clear @change="update()" />
       </a-form-item>
     </template>
   </div>

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { api } from '@/services/api'
 
 export type ExecutionStatus = 'idle' | 'running' | 'completed' | 'stopped' | 'error'
@@ -20,8 +20,10 @@ export const useExecutionStore = defineStore('execution', () => {
   // Watch node snapshots: nodeId → clientId → snapshot
   const watchSnapshots = ref<Record<string, Record<string, Record<string, unknown>>>>({})
 
-  // Currently highlighted node in graph editor
-  const activeNodeId = ref<string | null>(null)
+  // nodeId → Set of clientIds currently executing that node
+  const activeNodeClients = ref(new Map<string, Set<string>>())
+  // Derived set of active node IDs for consumers (BaseNode, GraphEditor)
+  const activeNodeIds = computed(() => new Set(activeNodeClients.value.keys()))
 
   function isRunning(clientId: string): boolean {
     return clientExecutions.value[clientId]?.status === 'running'
@@ -75,8 +77,19 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   // WS event handlers
-  function onProgress(nodeId: string, nodeStatus: string) {
-    activeNodeId.value = nodeStatus === 'running' ? nodeId : null
+  function onProgress(nodeId: string, nodeStatus: string, clientId: string) {
+    const next = new Map(activeNodeClients.value)
+    if (nodeStatus === 'running') {
+      if (!next.has(nodeId)) next.set(nodeId, new Set())
+      next.get(nodeId)!.add(clientId)
+    } else {
+      const clients = next.get(nodeId)
+      if (clients) {
+        clients.delete(clientId)
+        if (clients.size === 0) next.delete(nodeId)
+      }
+    }
+    activeNodeClients.value = next
   }
 
   function onFinished(executionId: string, clientId: string, finishStatus: string, error: string | null) {
@@ -91,12 +104,18 @@ export const useExecutionStore = defineStore('execution', () => {
         }
       }
     }
-    activeNodeId.value = null
+    // Remove finished client from all active nodes
+    const next = new Map(activeNodeClients.value)
+    for (const [nodeId, clients] of next) {
+      clients.delete(clientId)
+      if (clients.size === 0) next.delete(nodeId)
+    }
+    activeNodeClients.value = next
     if (error) addLog(`[ERROR] ${error}`, clientId)
   }
 
   return {
-    clientExecutions, clientLogs, activeNodeId, watchSnapshots,
+    clientExecutions, clientLogs, activeNodeIds, activeNodeClients, watchSnapshots,
     isRunning, anyRunning,
     runOnClient, stopOnClient, runOnProject, stopOnProject,
     logsFor, addLog, clearLogs, onProgress, onFinished, onWatchSnapshot,
