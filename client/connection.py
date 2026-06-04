@@ -72,10 +72,11 @@ class DrawScriptAgent:
     async def _heartbeat_loop(self) -> None:
         while True:
             await asyncio.sleep(5)
+            status = self._handler.status if self._handler else "idle"
             await self._send({
                 "type": "heartbeat",
                 "client_id": self.client_id,
-                "status": "idle",
+                "status": status,
             })
 
     async def _send(self, msg: dict[str, Any]) -> None:

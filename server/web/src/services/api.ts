@@ -170,6 +170,11 @@ export const api = {
     form.append('file', file)
     return http.post<Template>(`/projects/${projectId}/templates`, form).then(r => r.data)
   },
+  renameTemplate: (projectId: string, templateId: string, name: string) => {
+    const form = new FormData()
+    form.append('name', name)
+    return http.patch<Template>(`/projects/${projectId}/templates/${templateId}`, form).then(r => r.data)
+  },
   deleteTemplate: (projectId: string, templateId: string) =>
     http.delete(`/projects/${projectId}/templates/${templateId}`).then(r => r.data),
   templateImageUrl: (projectId: string, templateId: string) =>

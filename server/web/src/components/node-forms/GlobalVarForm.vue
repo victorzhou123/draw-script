@@ -103,7 +103,9 @@
         </template>
         <template v-else>
           <span class="var-name">{{ v.name }}</span>
-          <span class="var-val" :title="displayValue(v.value)">{{ displayValue(v.value) }}</span>
+          <a-tooltip :title="displayValue(v.value)" placement="topLeft" :overlay-inner-style="{ maxWidth: '320px', wordBreak: 'break-all', fontFamily: 'monospace', fontSize: '11px' }">
+            <span class="var-val">{{ displayValue(v.value) }}</span>
+          </a-tooltip>
           <a-button type="text" size="small" class="icon-btn" @click="startEdit(v)">✏</a-button>
           <a-button type="text" size="small" danger class="icon-btn" @click="deleteVar(v.name)">✕</a-button>
         </template>
@@ -203,8 +205,7 @@ const newValue = ref('')
 
 function displayValue(val: any): string {
   if (val === null || val === undefined) return 'null'
-  const s = typeof val === 'string' ? val : JSON.stringify(val)
-  return s.length > 40 ? s.slice(0, 38) + '…' : s
+  return typeof val === 'string' ? val : JSON.stringify(val)
 }
 
 function startEdit(v: { name: string; value: any }) {

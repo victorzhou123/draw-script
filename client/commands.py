@@ -900,15 +900,26 @@ class CommandHandler:
             "compute_node":       self.handle_compute_node,
         }
         self._stop_flag = False
+        self._active_tasks = 0
+
+    @property
+    def status(self) -> str:
+        return "busy" if self._active_tasks > 0 else "idle"
 
     async def dispatch(self, msg: dict) -> None:
         msg_type = msg.get("type")
         handler  = self._handlers.get(msg_type)
         if handler:
+            busy_types = {"execute_node", "compute_node", "capture_screenshot"}
+            if msg_type in busy_types:
+                self._active_tasks += 1
             try:
                 await handler(msg)
             except Exception as e:
                 logger.exception(f"Error handling '{msg_type}': {e}")
+            finally:
+                if msg_type in busy_types:
+                    self._active_tasks -= 1
         else:
             logger.debug(f"Unknown message type: {msg_type}")
 
@@ -1275,5 +1286,5 @@ class CommandHandler:
         _dismiss_all_overlays()
 
     async def handle_get_status(self, msg: dict) -> None:
-        await self._send({"type": "status_response", "status": "idle",
+        await self._send({"type": "status_response", "status": self.status,
                           "stop_flag": self._stop_flag})

@@ -314,6 +314,22 @@ async def upload_template(
     return template
 
 
+@router.patch("/{project_id}/templates/{template_id}", response_model=TemplateResponse)
+async def rename_template(
+    project_id: str,
+    template_id: str,
+    name: str = Form(...),
+    db: AsyncSession = Depends(get_session),
+):
+    template = await db.get(Template, template_id)
+    if not template or template.project_id != project_id:
+        raise HTTPException(404, "Template not found")
+    template.name = name
+    await db.commit()
+    await db.refresh(template)
+    return template
+
+
 @router.delete("/{project_id}/templates/{template_id}")
 async def delete_template(project_id: str, template_id: str, db: AsyncSession = Depends(get_session)):
     template = await db.get(Template, template_id)

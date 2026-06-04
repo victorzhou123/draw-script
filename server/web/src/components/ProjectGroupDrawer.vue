@@ -283,7 +283,22 @@
                 <div v-if="currentTemplates.length === 0" class="empty-hint">暂无模板，输入名称后上传图片</div>
                 <div v-for="t in currentTemplates" :key="t.id" class="template-row">
                   <img :src="templateImageUrl(t.id)" class="template-thumb" />
-                  <span class="member-name">{{ t.name }}</span>
+                  <template v-if="renamingTemplateId === t.id">
+                    <a-input
+                      v-model:value="renameTemplateValue"
+                      size="small"
+                      style="flex:1"
+                      @press-enter="confirmTemplateRename(t.id)"
+                      @blur="confirmTemplateRename(t.id)"
+                      autofocus
+                    />
+                  </template>
+                  <template v-else>
+                    <span class="member-name">{{ t.name }}</span>
+                    <a-button type="text" size="small" class="icon-btn" @click="startTemplateRename(t)">
+                      <EditOutlined />
+                    </a-button>
+                  </template>
                   <a-popconfirm title="删除此模板？" @confirm="removeTemplate(t.id)">
                     <a-button type="text" size="small" class="icon-btn danger-btn"><DeleteOutlined /></a-button>
                   </a-popconfirm>
@@ -440,6 +455,8 @@ const addScriptId = ref<string | null>(null)
 // Templates tab
 const newTemplateName = ref('')
 const uploadingTemplate = ref(false)
+const renamingTemplateId = ref<string | null>(null)
+const renameTemplateValue = ref('')
 
 // ── Computed ──────────────────────────────────────────────────────────
 
@@ -743,6 +760,23 @@ async function handleTemplateUpload(file: File) {
     message.error('上传失败')
   } finally {
     uploadingTemplate.value = false
+  }
+}
+
+function startTemplateRename(t: { id: string; name: string }) {
+  renamingTemplateId.value = t.id
+  renameTemplateValue.value = t.name
+}
+
+async function confirmTemplateRename(templateId: string) {
+  if (!selectedId.value || !renameTemplateValue.value.trim()) return
+  try {
+    await projectStore.renameTemplate(selectedId.value, templateId, renameTemplateValue.value.trim())
+    message.success('模板已重命名')
+  } catch {
+    message.error('重命名失败')
+  } finally {
+    renamingTemplateId.value = null
   }
 }
 
