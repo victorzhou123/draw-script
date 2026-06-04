@@ -65,6 +65,30 @@ class TemplateResponse(BaseModel):
         from_attributes = True
 
 
+# ── GlobalVariable ───────────────────────────────────────────────────────────
+
+class GlobalVariableResponse(BaseModel):
+    id: str
+    project_id: str
+    name: str
+    # value is decoded from JSON so the API returns the real Python type
+    value: Any
+    updated_at: datetime
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def parse_value(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                return v
+        return v
+
+    class Config:
+        from_attributes = True
+
+
 # ── Script ───────────────────────────────────────────────────────────────────
 
 class ScriptCreate(BaseModel):

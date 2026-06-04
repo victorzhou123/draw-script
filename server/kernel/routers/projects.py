@@ -10,8 +10,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from database import Marker, MarkerCapture, Project, ProjectClient, Script, Template, get_session
+from database import GlobalVariable, Marker, MarkerCapture, Project, ProjectClient, Script, Template, get_session
 from schemas import (
+    GlobalVariableResponse,
     MarkerCreate, MarkerResponse,
     ProjectCreate, ProjectResponse, ProjectUpdate,
     SendMarkersRequest, TemplateResponse,
@@ -368,4 +369,35 @@ async def remove_client_from_project(project_id: str, client_id: str, db: AsyncS
     if pc:
         await db.delete(pc)
         await db.commit()
+    return {"ok": True}
+
+
+# ── Global Variables ──────────────────────────────────────────────────────────
+
+@router.get("/{project_id}/global-vars", response_model=list[GlobalVariableResponse])
+async def list_global_vars(project_id: str, db: AsyncSession = Depends(get_session)):
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await db.execute(
+        select(GlobalVariable)
+        .where(GlobalVariable.project_id == project_id)
+        .order_by(GlobalVariable.name)
+    )
+    return result.scalars().all()
+
+
+@router.delete("/{project_id}/global-vars/{var_name}")
+async def delete_global_var(project_id: str, var_name: str, db: AsyncSession = Depends(get_session)):
+    result = await db.execute(
+        select(GlobalVariable).where(
+            GlobalVariable.project_id == project_id,
+            GlobalVariable.name == var_name,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        raise HTTPException(404, "Global variable not found")
+    await db.delete(row)
+    await db.commit()
     return {"ok": True}

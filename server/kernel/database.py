@@ -132,6 +132,18 @@ class AIModelConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class GlobalVariable(Base):
+    __tablename__ = "global_variables"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id: Mapped[str] = mapped_column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    # Variable name, unique within a project.
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    # JSON-encoded value so any Python type (str/int/list/dict) round-trips losslessly.
+    value: Mapped[str] = mapped_column(Text, default="null")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

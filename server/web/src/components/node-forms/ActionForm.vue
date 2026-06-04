@@ -133,9 +133,29 @@
         </a-form-item>
         <div v-if="!ctx.contextFields.value.length" class="hint-text" style="margin-top:-6px">当前节点上游暂无 context 变量</div>
       </template>
-      <a-form-item label="长按时长 (ms)">
-        <a-input-number v-model:value="d.params.hold_ms" :min="0" :style="{ width: '100%' }" placeholder="0 = 普通按键，>0 = 长按" @change="update()" />
+      <a-form-item label="按键时长来源">
+        <a-radio-group v-model:value="holdMsSource" size="small" button-style="solid" @change="onHoldMsSourceChange">
+          <a-radio-button value="fixed">固定时长</a-radio-button>
+          <a-radio-button value="context">Context</a-radio-button>
+        </a-radio-group>
       </a-form-item>
+      <template v-if="holdMsSource === 'fixed'">
+        <a-form-item label="长按时长 (ms)">
+          <a-input-number v-model:value="d.params.hold_ms" :min="0" :style="{ width: '100%' }" placeholder="0 = 普通按键，>0 = 长按" @change="update()" />
+        </a-form-item>
+      </template>
+      <template v-else>
+        <a-form-item label="Context 变量">
+          <a-select v-model:value="holdMsContextVar" :style="{ width: '100%' }" placeholder="选择变量" allow-clear @change="onHoldMsContextVarSelect">
+            <a-select-option v-for="f in ctx.contextFields.value" :key="f.name" :value="f.name">
+              <span class="ctx-dot" :class="f.certain ? 'certain' : 'conditional'" />
+              {{ f.name }}
+              <span v-if="!f.certain" class="ctx-warn">⚠ 条件分支</span>
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <div v-if="!ctx.contextFields.value.length" class="hint-text" style="margin-top:-6px">当前节点上游暂无 context 变量</div>
+      </template>
     </template>
   </div>
 </template>
@@ -155,6 +175,8 @@ const textSource = ref<'manual' | 'context'>('manual')
 const textContextVar = ref<string | undefined>(undefined)
 const keySource = ref<'fixed' | 'context'>('fixed')
 const keyContextVar = ref<string | undefined>(undefined)
+const holdMsSource = ref<'fixed' | 'context'>('fixed')
+const holdMsContextVar = ref<string | undefined>(undefined)
 const isRecordingKey = ref(false)
 const pendingModifierOnly = ref(false)
 
@@ -203,6 +225,15 @@ watch(d, (data) => {
   } else {
     keySource.value = 'fixed'
     keyContextVar.value = undefined
+  }
+  const holdMsVal = params.hold_ms !== undefined && params.hold_ms !== null ? String(params.hold_ms) : ''
+  const tplHoldMsM = holdMsVal.match(/^\{\{([^}]+)\}\}$/)
+  if (holdMsVal.startsWith('$') || tplHoldMsM) {
+    holdMsSource.value = 'context'
+    holdMsContextVar.value = tplHoldMsM ? tplHoldMsM[1].trim() : holdMsVal.slice(1)
+  } else {
+    holdMsSource.value = 'fixed'
+    holdMsContextVar.value = undefined
   }
   isRecordingKey.value = false
 }, { immediate: true })
@@ -291,6 +322,18 @@ function onKeySourceChange() {
 function onKeyContextVarSelect(varName: string | undefined) {
   keyContextVar.value = varName
   d.value.params.keys = varName ? `{{${varName}}}` : ''
+  update()
+}
+
+function onHoldMsSourceChange() {
+  holdMsContextVar.value = undefined
+  d.value.params.hold_ms = undefined
+  update()
+}
+
+function onHoldMsContextVarSelect(varName: string | undefined) {
+  holdMsContextVar.value = varName
+  d.value.params.hold_ms = varName ? `{{${varName}}}` : undefined
   update()
 }
 </script>

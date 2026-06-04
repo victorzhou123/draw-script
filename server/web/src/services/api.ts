@@ -80,6 +80,14 @@ export interface Template {
   created_at: string
 }
 
+export interface GlobalVariable {
+  id: string
+  project_id: string
+  name: string
+  value: any
+  updated_at: string
+}
+
 export interface AIModel {
   id: string
   type: 'local' | 'third_party'
@@ -166,6 +174,12 @@ export const api = {
     http.delete(`/projects/${projectId}/templates/${templateId}`).then(r => r.data),
   templateImageUrl: (projectId: string, templateId: string) =>
     `/api/projects/${projectId}/templates/${templateId}/image`,
+
+  // Global Variables
+  getGlobalVars: (projectId: string) =>
+    http.get<GlobalVariable[]>(`/projects/${projectId}/global-vars`).then(r => r.data),
+  deleteGlobalVar: (projectId: string, varName: string) =>
+    http.delete(`/projects/${projectId}/global-vars/${encodeURIComponent(varName)}`).then(r => r.data),
 
   // Syntax check
   syntaxCheck: (code: string) =>

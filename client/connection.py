@@ -26,17 +26,19 @@ class DrawScriptAgent:
         while True:
             try:
                 await self._connect_and_run()
-                self._reconnect_delay = 2.0
             except Exception as e:
-                logger.warning(f"Connection failed: {e}. Reconnecting in {self._reconnect_delay:.0f}s...")
-                await asyncio.sleep(self._reconnect_delay)
-                self._reconnect_delay = min(self._reconnect_delay * 2, self._max_delay)
+                logger.warning(f"Connection error: {e}")
+            delay = self._reconnect_delay
+            logger.info(f"Reconnecting in {delay:.0f}s...")
+            await asyncio.sleep(delay)
+            self._reconnect_delay = min(self._reconnect_delay * 2, self._max_delay)
 
     async def _connect_and_run(self) -> None:
         logger.info(f"Connecting to {self.server_url} as {self.client_id}...")
         async with websockets.connect(self.server_url) as ws:
             self._ws = ws
             self._handler = CommandHandler(self._send)
+            self._reconnect_delay = 2.0  # reset backoff once connection is established
             logger.info("Connected.")
 
             await self._send({

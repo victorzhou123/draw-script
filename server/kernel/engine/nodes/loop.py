@@ -13,7 +13,11 @@ class LoopNodeHandler(BaseNodeHandler):
     async def execute(self) -> NodeResult:
         data = self.ctx.node.data
         params = data.get("params", {})
-        max_count = int(params.get("count", 1))
+        raw_count = self._interpolate(params.get("count", 1))
+        try:
+            max_count = int(raw_count)
+        except (TypeError, ValueError):
+            max_count = 1
         loop_node_id = self.ctx.node.id
 
         body_starts = self.ctx.graph.get_next_nodes(loop_node_id, "loop")
@@ -30,6 +34,13 @@ class LoopNodeHandler(BaseNodeHandler):
             current = body_starts[0]
             visited: dict[str, int] = {}
             dead_end = False
+            # Tracks whether this iteration ended via an in-body fan-out (parallel branches).
+            # Needed to distinguish two cases that both leave current=None after the while loop:
+            #   1. fan-out: all parallel branches finished normally → continue to next iteration
+            #   2. condition exit: a condition node routed to a node outside the loop body,
+            #      the while loop kept running those external nodes, and finally current became
+            #      None — this must break the for-loop, not trigger another iteration.
+            fan_out_done = False
 
             while current and current.id != loop_node_id and not self.ctx.stop_event.is_set():
                 visited[current.id] = visited.get(current.id, 0) + 1
@@ -104,6 +115,7 @@ class LoopNodeHandler(BaseNodeHandler):
                         if err:
                             return NodeResult(success=False, error=err)
                     current = None  # fan-out consumed the rest of this iteration
+                    fan_out_done = True  # mark so the post-loop check knows this None is expected
                 elif body_next:
                     current = body_next[0]
                 else:
@@ -112,6 +124,12 @@ class LoopNodeHandler(BaseNodeHandler):
                     dead_end = True
 
             if dead_end:
+                break
+            # If current is None and no fan-out ran, it means a node inside the body (typically
+            # a condition node) routed execution to a path that exits the loop entirely.
+            # Without this check the for-loop would silently start the next iteration, causing
+            # the loop to re-execute after the script had already moved past it.
+            if current is None and not fan_out_done:
                 break
 
         return NodeResult(success=True, branch="exit")

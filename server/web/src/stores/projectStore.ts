@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, type Marker, type Project, type Template } from '@/services/api'
+import { api, type GlobalVariable, type Marker, type Project, type Template } from '@/services/api'
 
 export const useProjectStore = defineStore('project', () => {
   const projects = ref<Project[]>([])
   const markers = ref<Record<string, Marker[]>>({})
   const templates = ref<Record<string, Template[]>>({})
+  const globalVars = ref<Record<string, GlobalVariable[]>>({})
   const loading = ref(false)
 
   async function fetchProjects() {
@@ -70,16 +71,28 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
+  async function fetchGlobalVars(projectId: string) {
+    globalVars.value[projectId] = await api.getGlobalVars(projectId)
+  }
+
+  async function deleteGlobalVar(projectId: string, varName: string) {
+    await api.deleteGlobalVar(projectId, varName)
+    if (globalVars.value[projectId]) {
+      globalVars.value[projectId] = globalVars.value[projectId].filter(v => v.name !== varName)
+    }
+  }
+
   function getProjectName(id: string | null): string {
     if (!id) return ''
     return projects.value.find(p => p.id === id)?.name ?? ''
   }
 
   return {
-    projects, markers, templates, loading,
+    projects, markers, templates, globalVars, loading,
     fetchProjects, createProject, deleteProject,
     fetchMarkers, createMarker, deleteMarker, sendMarkers,
     fetchTemplates, uploadTemplate, deleteTemplate,
+    fetchGlobalVars, deleteGlobalVar,
     getProjectName,
   }
 })

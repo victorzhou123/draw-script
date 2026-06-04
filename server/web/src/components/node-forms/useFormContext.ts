@@ -13,6 +13,7 @@ export interface FormContext {
   availableTemplates: ComputedRef<any[]>
   aiModels: ComputedRef<any[]>
   otherScripts: ComputedRef<any[]>
+  availableGlobalVars: ComputedRef<string[]>
   emitUpdate: () => void
 }
 
