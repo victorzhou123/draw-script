@@ -1,7 +1,7 @@
 <template>
   <div>
     <a-form-item label="操作类型">
-      <a-select v-model:value="d.action_type" @change="update()">
+      <a-select v-model:value="d.action_type" @change="onActionTypeChange">
         <a-select-option value="mouse_click">鼠标点击</a-select-option>
         <a-select-option value="mouse_double_click">鼠标双击</a-select-option>
         <a-select-option value="mouse_move">鼠标移动</a-select-option>
@@ -11,6 +11,32 @@
         <a-select-option value="mouse_scroll">滚轮</a-select-option>
       </a-select>
     </a-form-item>
+
+    <template v-if="d.action_type === 'mouse_scroll'">
+      <a-form-item label="滚动方向">
+        <a-radio-group v-model:value="d.params.direction" button-style="solid" size="small" @change="update()">
+          <a-radio-button value="up">向上</a-radio-button>
+          <a-radio-button value="down">向下</a-radio-button>
+        </a-radio-group>
+      </a-form-item>
+      <a-form-item label="滚动步数">
+        <a-input-number v-model:value="d.params.amount" :min="1" :max="100" :style="{ width: '100%' }" placeholder="3" @change="update()" />
+      </a-form-item>
+      <a-form-item label="滚动位置">
+        <a-radio-group v-model:value="scrollPositionMode" size="small" button-style="solid" @change="onScrollPositionModeChange">
+          <a-radio-button value="current">当前鼠标位置</a-radio-button>
+          <a-radio-button value="fixed">指定坐标</a-radio-button>
+        </a-radio-group>
+      </a-form-item>
+      <template v-if="scrollPositionMode === 'fixed'">
+        <a-form-item label="X">
+          <a-input-number v-model:value="d.params.x" :style="{ width: '100%' }" placeholder="0" @change="update()" />
+        </a-form-item>
+        <a-form-item label="Y">
+          <a-input-number v-model:value="d.params.y" :style="{ width: '100%' }" placeholder="0" @change="update()" />
+        </a-form-item>
+      </template>
+    </template>
 
     <template v-if="['mouse_click','mouse_double_click','mouse_move'].includes(d.action_type)">
       <a-form-item label="坐标来源">
@@ -179,6 +205,7 @@ const holdMsSource = ref<'fixed' | 'context'>('fixed')
 const holdMsContextVar = ref<string | undefined>(undefined)
 const isRecordingKey = ref(false)
 const pendingModifierOnly = ref(false)
+const scrollPositionMode = ref<'current' | 'fixed'>('current')
 
 const KEY_MAP: Record<string, string> = {
   ' ': 'space', Enter: 'enter', Backspace: 'backspace', Delete: 'delete',
@@ -236,9 +263,31 @@ watch(d, (data) => {
     holdMsContextVar.value = undefined
   }
   isRecordingKey.value = false
+  if (data.action_type === 'mouse_scroll') {
+    scrollPositionMode.value = (params.x != null && params.x !== '') ? 'fixed' : 'current'
+    if (!data.params.direction) data.params.direction = 'down'
+    if (data.params.amount == null) data.params.amount = 3
+  }
 }, { immediate: true })
 
 function update() { ctx.emitUpdate() }
+
+function onActionTypeChange() {
+  if (d.value.action_type === 'mouse_scroll') {
+    if (!d.value.params.direction) d.value.params.direction = 'down'
+    if (d.value.params.amount == null) d.value.params.amount = 3
+    scrollPositionMode.value = (d.value.params.x != null && d.value.params.x !== '') ? 'fixed' : 'current'
+  }
+  update()
+}
+
+function onScrollPositionModeChange() {
+  if (scrollPositionMode.value === 'current') {
+    d.value.params.x = undefined
+    d.value.params.y = undefined
+  }
+  update()
+}
 
 function onCoordSourceChange() {
   if (coordSource.value === 'fixed') {

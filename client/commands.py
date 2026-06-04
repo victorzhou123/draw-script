@@ -1077,8 +1077,17 @@ class CommandHandler:
             return True, {"key": key}, None
 
         if action_type == "mouse_scroll":
-            x, y = _int(params.get("x"), 0), _int(params.get("y"), 0)
-            await _run_blocking(pyautogui.scroll, _int(params.get("clicks"), 3), x, y)
+            if "direction" in params:
+                amount = _int(params.get("amount"), 3)
+                clicks = amount if params["direction"] == "up" else -amount
+            else:
+                clicks = _int(params.get("clicks"), 3)  # backward compat
+            x = params.get("x")
+            y = params.get("y")
+            if x is not None and y is not None:
+                await _run_blocking(pyautogui.scroll, clicks, _int(x), _int(y))
+            else:
+                await _run_blocking(pyautogui.scroll, clicks)
             return True, {}, None
 
         return False, {}, f"Unknown action_type: {action_type}"
