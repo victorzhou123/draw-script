@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import os
+import threading
 from typing import Callable
 
 logger = logging.getLogger(__name__)
@@ -223,25 +224,66 @@ _COLOR_FILL  = "#1a6aff"
 _COLOR_MATCH = "#00ff41"   # CV result highlight colour
 _TRANSP_KEY  = "#010203"   # near-black used as window transparency key
 
-CV_OVERLAY_DURATION_S = 2.0  # seconds to display CV match highlights
+CV_OVERLAY_DURATION_S = 2.0  # fallback seconds when overlay_mode == "fixed"
+
+# node_id -> active Tk root; protected by _overlay_lock
+_active_overlays: dict[str, object] = {}
+_overlay_lock = threading.Lock()
+
+
+def _cleanup_overlay(node_id: str, root) -> None:
+    """Remove *root* from the registry and destroy it (called from its own mainloop)."""
+    with _overlay_lock:
+        if _active_overlays.get(node_id) is root:
+            _active_overlays.pop(node_id, None)
+    try:
+        root.destroy()
+    except Exception:
+        pass
+
+
+def _dismiss_all_overlays() -> None:
+    """Destroy every active overlay (called on script stop)."""
+    with _overlay_lock:
+        roots = list(_active_overlays.values())
+        _active_overlays.clear()
+    for root in roots:
+        try:
+            root.after(0, root.destroy)
+        except Exception:
+            pass
 
 
 def _show_match_overlay(
+    node_id: str,
     locations: list[dict], tmpl_w: int, tmpl_h: int,
-    duration_s: float = CV_OVERLAY_DURATION_S,
+    duration_s: float | None = CV_OVERLAY_DURATION_S,
 ) -> None:
     """Click-through overlay that highlights template match locations.
 
-    Intended to run in a daemon thread; auto-destroys after *duration_s* seconds.
-    All exceptions are swallowed — the overlay is purely cosmetic.
+    duration_s=None keeps the overlay alive until the next call for the same node.
+    Runs in a daemon thread; all exceptions are swallowed — purely cosmetic.
     """
     import tkinter as tk
 
+    # Replace any existing overlay for this node
+    with _overlay_lock:
+        old = _active_overlays.pop(node_id, None)
+    if old is not None:
+        try:
+            old.after(0, old.destroy)
+        except Exception:
+            pass
+
+    root = None
     try:
         screen_w = ctypes.windll.user32.GetSystemMetrics(0)
         screen_h = ctypes.windll.user32.GetSystemMetrics(1)
 
         root = tk.Tk()
+        with _overlay_lock:
+            _active_overlays[node_id] = root
+
         root.overrideredirect(True)
         root.attributes("-topmost", True)
         root.geometry(f"{screen_w}x{screen_h}+0+0")
@@ -270,10 +312,18 @@ def _show_match_overlay(
         ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE,
                                             style | WS_EX_TRANSPARENT)
 
-        root.after(int(duration_s * 1000), root.destroy)
+        if duration_s is not None:
+            root.after(int(duration_s * 1000),
+                       lambda: _cleanup_overlay(node_id, root))
+
         root.mainloop()
     except Exception:
         pass
+    finally:
+        if root is not None:
+            with _overlay_lock:
+                if _active_overlays.get(node_id) is root:
+                    _active_overlays.pop(node_id, None)
 
 
 def _show_point_overlay(
@@ -932,14 +982,15 @@ class CommandHandler:
         node_type     = msg.get("node_type")
         params        = dict(msg.get("params", {}))
         project_id    = msg.get("project_id", "")
-        request_id    = msg.get("request_id") or msg.get("node_id")
+        node_id       = msg.get("node_id", "")
+        request_id    = msg.get("request_id") or node_id
         server_markers = msg.get("_markers")  # DB coordinates from server (authoritative)
         try:
             if project_id or server_markers:
                 params = _resolve_marker_params(params, project_id, server_markers)
             if node_type in ("template_match", "ocr", "ai_vision", "color_detect"):
                 success, output, error = await self._execute_vision(
-                    node_type, params, project_id, server_markers
+                    node_type, params, project_id, server_markers, node_id
                 )
             else:
                 success, output, error = await self._execute_action(node_type, params)
@@ -1024,6 +1075,7 @@ class CommandHandler:
     async def _execute_vision(
         self, vision_type: str, params: dict, project_id: str,
         server_markers: dict | None = None,
+        node_id: str = "",
     ) -> tuple[bool, dict, str | None]:
         import pyautogui
 
@@ -1137,11 +1189,14 @@ class CommandHandler:
                     locs = result.get("locations") or (
                         [result["location"]] if result.get("location") else []
                     )
-                    duration = float(params.get("overlay_duration") or CV_OVERLAY_DURATION_S)
-                    import threading
+                    overlay_mode = params.get("overlay_mode", "fixed")
+                    duration = (
+                        None if overlay_mode == "until_next"
+                        else float(params.get("overlay_duration") or CV_OVERLAY_DURATION_S)
+                    )
                     threading.Thread(
                         target=_show_match_overlay,
-                        args=(locs, tmpl_w, tmpl_h, duration),
+                        args=(node_id, locs, tmpl_w, tmpl_h, duration),
                         daemon=True,
                     ).start()
                 return True, result, None
@@ -1201,6 +1256,7 @@ class CommandHandler:
     async def handle_stop(self, msg: dict) -> None:
         logger.info(f"Stop signal received: {msg.get('reason')}")
         self._stop_flag = True
+        _dismiss_all_overlays()
 
     async def handle_get_status(self, msg: dict) -> None:
         await self._send({"type": "status_response", "status": "idle",

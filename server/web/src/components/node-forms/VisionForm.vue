@@ -65,15 +65,23 @@
         <a-switch v-model:checked="d.params.show_overlay" @change="update()" />
         <span class="hint-text" style="margin-left:8px">识别成功后在客户端屏幕高亮匹配位置</span>
       </a-form-item>
-      <a-form-item v-if="d.params.show_overlay" label="标记时长(秒)">
-        <a-input-number
-          v-model:value="d.params.overlay_duration"
-          :min="0.5" :max="10" :step="0.5"
-          :style="{ width: '120px' }"
-          placeholder="2"
-          @change="update()"
-        />
-      </a-form-item>
+      <template v-if="d.params.show_overlay">
+        <a-form-item label="显示时长">
+          <a-radio-group v-model:value="d.params.overlay_mode" size="small" button-style="solid" @change="update()">
+            <a-radio-button value="fixed">固定秒数</a-radio-button>
+            <a-radio-button value="until_next">下次执行刷新</a-radio-button>
+          </a-radio-group>
+        </a-form-item>
+        <a-form-item v-if="d.params.overlay_mode !== 'until_next'" label="时长(秒)">
+          <a-input-number
+            v-model:value="d.params.overlay_duration"
+            :min="0.5" :max="10" :step="0.5"
+            :style="{ width: '120px' }"
+            placeholder="2"
+            @change="update()"
+          />
+        </a-form-item>
+      </template>
     </template>
 
     <!-- OCR -->
@@ -224,6 +232,7 @@ watch(d, (data) => {
   aiImageSource.value = String(data.params?.context_image_var || '') ? 'context' : 'screenshot'
   ocrImageSource.value = String(data.params?.ocr_context_image_var || '') ? 'context' : 'screenshot'
   if (!data.params.mode) { data.params.mode = 'single'; ctx.emitUpdate() }
+  if (data.params.show_overlay && !data.params.overlay_mode) { data.params.overlay_mode = 'fixed'; ctx.emitUpdate() }
 }, { immediate: true })
 
 function update() { ctx.emitUpdate() }
