@@ -88,7 +88,7 @@
                   :disabled="executionStore.isRunning(c.id)"
                 />
                 <a-button
-                  v-if="!executionStore.isRunning(c.id)"
+                  v-if="!isClientBusy(c)"
                   size="small" type="primary"
                   :disabled="!clientScriptSelections[c.id] || !clientStore.connectedIds.has(c.id)"
                   :loading="runningClients.has(c.id)"
@@ -178,12 +178,13 @@ const filteredClients = computed(() =>
 )
 const filteredConnected = computed(() => filteredClients.value.filter(c => clientStore.connectedIds.has(c.id)))
 const batchScripts = computed(() => filterProjectId.value ? scriptStore.scripts.filter(s => s.project_id === filterProjectId.value) : [])
-const anyProjectRunning = computed(() => filteredConnected.value.some(c => executionStore.isRunning(c.id)))
+const anyProjectRunning = computed(() => filteredConnected.value.some(c => isClientBusy(c)))
 
 function clientScripts(c: Client) {
   return scriptStore.scripts.filter(s => s.project_id && c.project_ids.includes(s.project_id))
 }
-function runtimeStatus(c: Client) { return executionStore.isRunning(c.id) ? 'running' : c.status }
+function isClientBusy(c: Client) { return executionStore.isRunning(c.id) || c.status === 'busy' }
+function runtimeStatus(c: Client) { return isClientBusy(c) ? 'running' : c.status }
 function statusLabel(s: string) { return { idle: '空闲', running: '运行中', disconnected: '离线', timeout: '超时' }[s] ?? s }
 function clientName(cid: string) { return clientStore.clients.find(c => c.id === cid)?.name ?? cid }
 function toggleClient(id: string) { selectedClientId.value = selectedClientId.value === id ? null : id }

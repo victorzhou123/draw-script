@@ -40,8 +40,12 @@ export const useExecutionStore = defineStore('execution', () => {
 
   async function stopOnClient(clientId: string): Promise<void> {
     const ce = clientExecutions.value[clientId]
-    if (!ce || ce.status !== 'running') return
-    await api.stopScript(ce.scriptId, ce.id)
+    if (ce && ce.status === 'running') {
+      await api.stopScript(ce.scriptId, ce.id)
+    } else {
+      // Execution started outside this session — stop by client_id
+      await api.stopClient(clientId)
+    }
   }
 
   async function runOnProject(scriptId: string, clientIds: string[]): Promise<void> {

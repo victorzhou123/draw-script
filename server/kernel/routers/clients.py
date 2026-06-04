@@ -1,12 +1,13 @@
 import asyncio
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from database import Client, ProjectClient, get_session
+from database import Client, Execution, ProjectClient, get_session
+from dependencies import get_engine
 from schemas import ClientResponse
 from ws_manager import client_ws_manager
 
@@ -48,6 +49,24 @@ async def get_client(client_id: str, db: AsyncSession = Depends(get_session)):
     connected_ids = set(client_ws_manager.get_connected_ids())
     rows = await _build_client_response([client], connected_ids, db)
     return rows[0]
+
+
+@router.post("/{client_id}/stop")
+async def stop_client_execution(client_id: str, request: Request, db: AsyncSession = Depends(get_session)):
+    """Stop the currently running execution on a client (by client_id, no execution_id needed)."""
+    result = await db.execute(
+        select(Execution)
+        .where(Execution.client_id == client_id, Execution.status == "running")
+        .order_by(Execution.started_at.desc())
+        .limit(1)
+    )
+    execution = result.scalar_one_or_none()
+    if not execution:
+        return {"ok": True, "stopped": False, "reason": "no running execution"}
+    engine = get_engine(request)
+    if engine:
+        await engine.stop_execution(execution.id)
+    return {"ok": True, "stopped": True, "execution_id": execution.id}
 
 
 @router.post("/{client_id}/screenshot")

@@ -127,6 +127,8 @@ export const api = {
 
   // Clients
   getClients: () => http.get<Client[]>('/clients').then(r => r.data),
+  stopClient: (clientId: string) =>
+    http.post(`/clients/${clientId}/stop`).then(r => r.data),
   addClientToProject: (projectId: string, clientId: string) =>
     http.post(`/projects/${projectId}/clients/${clientId}`).then(r => r.data),
   removeClientFromProject: (projectId: string, clientId: string) =>
