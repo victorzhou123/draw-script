@@ -2,6 +2,7 @@ import asyncio
 import copy
 import logging
 
+from engine.base_handler import interpolate_value
 from engine.node_registry import NodeRegistry
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,11 @@ async def run_branch(
             loop_nodes = [n for n in next_nodes if n.node_type == "loop"]
             if loop_nodes:
                 loop_node = loop_nodes[0]
-                max_count = int(loop_node.data.get("params", {}).get("count", 1))
+                raw_count = interpolate_value(ctx.variables, loop_node.data.get("params", {}).get("count", 1))
+                try:
+                    max_count = int(raw_count)
+                except (TypeError, ValueError):
+                    max_count = 1
                 if visited_count.get(loop_node.id, 0) < max_count:
                     next_nodes = [loop_node]
                 else:
