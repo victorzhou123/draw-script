@@ -18,7 +18,7 @@ def _write_config(
     server_ip: str, server_port: str, client_id: str, client_name: str,
     dll_dirs: list[str],
 ) -> None:
-    dll_lines = "\n".join(f'  "{d}",' for d in dll_dirs)
+    dll_lines = "\n".join('  "{}",'.format(d.replace("\\", "/")) for d in dll_dirs)
     content = (
         f'[server]\n'
         f'url = "ws://{server_ip}:{server_port}/ws/client"\n'
