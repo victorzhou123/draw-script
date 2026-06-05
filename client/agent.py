@@ -76,14 +76,21 @@ def _register_dll_dirs(dll_dirs: list[str]) -> None:
         else:
             logger.warning(f"[CUDA] DLL 目录不存在，跳过: {d}")
 
-    # Evict cv2 and its submodule so the next import re-runs __init__.py now
-    # that CUDA DLLs are registered. Must clear both keys: cv2 (the package)
-    # and cv2.cv2 (the native extension submodule), otherwise __init__.py
-    # reuses the cached broken submodule and skips reloading cv2.pyd.
-    cv2_keys = [k for k in sys.modules if k == "cv2" or k.startswith("cv2.")]
-    logger.info(f"[CUDA] 清除 sys.modules 中的 cv2 缓存: {cv2_keys}")
-    for k in cv2_keys:
-        sys.modules.pop(k, None)
+    # The cudawarped rolling wheel has no __init__.py, so cv2/ is treated as a
+    # namespace package and cv2.pyd is never loaded automatically. Insert the
+    # cv2 package directory into sys.path[0] so "import cv2" finds cv2.pyd
+    # directly instead of the namespace package.
+    import site
+    for sp in site.getsitepackages():
+        cv2_dir = os.path.join(sp, "cv2")
+        if os.path.isfile(os.path.join(cv2_dir, "cv2.pyd")):
+            cv2_keys = [k for k in sys.modules if k == "cv2" or k.startswith("cv2.")]
+            for k in cv2_keys:
+                sys.modules.pop(k, None)
+            if cv2_dir not in sys.path:
+                sys.path.insert(0, cv2_dir)
+            logger.info(f"[CUDA] cv2.pyd sys.path 已注入: {cv2_dir}")
+            break
 
 
 def setup_first_run() -> None:
