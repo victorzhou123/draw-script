@@ -2,6 +2,9 @@ websockets>=12.0
 pyautogui>=0.9.54
 Pillow>=10.0.0
 psutil>=5.9.0
-opencv-python>=4.8.0
-numpy>=1.24.0
+# opencv-python is intentionally excluded — install the CUDA-enabled build manually:
+#   pip install opencv_contrib_python_rolling-4.8.0.20230804-cp36-abi3-win_amd64.whl
+#   pip install "numpy<2"
+# Do NOT add opencv-python here; pip will overwrite the CUDA wheel with a CPU-only build.
+numpy<2
 pyperclip>=1.8.0
