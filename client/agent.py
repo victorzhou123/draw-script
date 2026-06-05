@@ -161,17 +161,13 @@ def _check_cuda() -> None:
     """Probe CUDA availability at startup and print a clear status line."""
     try:
         import cv2
-        logger.info(f"[CUDA] cv2 loaded from: {cv2.__file__}")
-        logger.info(f"[CUDA] cv2 version: {getattr(cv2, '__version__', 'N/A')}")
-        logger.info(f"[CUDA] cv2.cuda exists: {hasattr(cv2, 'cuda')}")
         count = cv2.cuda.getCudaEnabledDeviceCount()
         if count > 0:
-            name = cv2.cuda.DeviceInfo(0).name()
-            logger.info(f"[CUDA] 可用 — 检测到 {count} 个 GPU，首选设备: {name}")
+            logger.info(f"[CUDA] 可用 — 检测到 {count} 个 CUDA GPU (OpenCV {cv2.__version__})")
         else:
             logger.warning("[CUDA] 不可用 — 未检测到 CUDA 设备，GPU加速开关将自动回退CPU")
     except AttributeError as e:
-        logger.warning(f"[CUDA] 不可用 — AttributeError: {e}")
+        logger.warning(f"[CUDA] 不可用 — 当前 OpenCV 未编译 CUDA 支持（缺少 cv2.cuda 模块），GPU加速开关将自动回退CPU")
     except Exception as e:
         logger.warning(f"[CUDA] 检测失败: {type(e).__name__}: {e}，GPU加速开关将自动回退CPU")
 
