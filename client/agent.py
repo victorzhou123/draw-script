@@ -76,10 +76,14 @@ def _register_dll_dirs(dll_dirs: list[str]) -> None:
         else:
             logger.warning(f"[CUDA] DLL 目录不存在，跳过: {d}")
 
-    # cv2 may have been imported earlier (before DLL registration) and cached as
-    # a broken module. Evict it so the next import goes through the package's
-    # __init__.py again — now that CUDA DLLs are registered, cv2.pyd will load.
-    sys.modules.pop("cv2", None)
+    # Evict cv2 and its submodule so the next import re-runs __init__.py now
+    # that CUDA DLLs are registered. Must clear both keys: cv2 (the package)
+    # and cv2.cv2 (the native extension submodule), otherwise __init__.py
+    # reuses the cached broken submodule and skips reloading cv2.pyd.
+    cv2_keys = [k for k in sys.modules if k == "cv2" or k.startswith("cv2.")]
+    logger.info(f"[CUDA] 清除 sys.modules 中的 cv2 缓存: {cv2_keys}")
+    for k in cv2_keys:
+        sys.modules.pop(k, None)
 
 
 def setup_first_run() -> None:
@@ -150,16 +154,19 @@ def _check_cuda() -> None:
     """Probe CUDA availability at startup and print a clear status line."""
     try:
         import cv2
+        logger.info(f"[CUDA] cv2 loaded from: {cv2.__file__}")
+        logger.info(f"[CUDA] cv2 version: {getattr(cv2, '__version__', 'N/A')}")
+        logger.info(f"[CUDA] cv2.cuda exists: {hasattr(cv2, 'cuda')}")
         count = cv2.cuda.getCudaEnabledDeviceCount()
         if count > 0:
             name = cv2.cuda.DeviceInfo(0).name()
             logger.info(f"[CUDA] 可用 — 检测到 {count} 个 GPU，首选设备: {name}")
         else:
             logger.warning("[CUDA] 不可用 — 未检测到 CUDA 设备，GPU加速开关将自动回退CPU")
-    except AttributeError:
-        logger.warning("[CUDA] 不可用 — 当前 OpenCV 未编译 CUDA 支持（缺少 cv2.cuda 模块），GPU加速开关将自动回退CPU")
+    except AttributeError as e:
+        logger.warning(f"[CUDA] 不可用 — AttributeError: {e}")
     except Exception as e:
-        logger.warning(f"[CUDA] 检测失败: {e}，GPU加速开关将自动回退CPU")
+        logger.warning(f"[CUDA] 检测失败: {type(e).__name__}: {e}，GPU加速开关将自动回退CPU")
 
 
 async def main() -> None:
