@@ -56,7 +56,12 @@ def _detect_dll_dirs() -> list[str]:
 
 
 def _register_dll_dirs(dll_dirs: list[str]) -> None:
-    """Call os.add_dll_directory() for each configured path (Windows only)."""
+    """Register CUDA/cuDNN DLL directories and fix cv2.pyd discovery on Windows.
+
+    Python's import system finds the cv2/ package directory before cv2.pyd,
+    so we insert the cv2 package dir into sys.path and clear any cached module
+    so the native extension is loaded directly.
+    """
     if sys.platform != "win32":
         return
     for d in dll_dirs:
@@ -65,6 +70,19 @@ def _register_dll_dirs(dll_dirs: list[str]) -> None:
             logger.debug(f"DLL 目录已注册: {d}")
         else:
             logger.warning(f"DLL 目录不存在，跳过: {d}")
+
+    # Find the cv2 package directory and prepend it to sys.path so that
+    # Python resolves cv2.pyd (native module) instead of cv2/ (the package).
+    import site
+    for sp in site.getsitepackages():
+        cv2_dir = os.path.join(sp, "cv2")
+        cv2_pyd = os.path.join(cv2_dir, "cv2.pyd")
+        if os.path.isfile(cv2_pyd):
+            if cv2_dir not in sys.path:
+                sys.path.insert(0, cv2_dir)
+            sys.modules.pop("cv2", None)
+            logger.debug(f"cv2.pyd 路径已注入: {cv2_dir}")
+            break
 
 
 def setup_first_run() -> None:
