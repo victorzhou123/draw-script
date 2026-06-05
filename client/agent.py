@@ -79,12 +79,30 @@ def load_config() -> dict:
         return tomllib.load(f)
 
 
+def _check_cuda() -> None:
+    """Probe CUDA availability at startup and print a clear status line."""
+    try:
+        import cv2
+        count = cv2.cuda.getCudaEnabledDeviceCount()
+        if count > 0:
+            name = cv2.cuda.DeviceInfo(0).name()
+            logger.info(f"[CUDA] 可用 — 检测到 {count} 个 GPU，首选设备: {name}")
+        else:
+            logger.warning("[CUDA] 不可用 — 未检测到 CUDA 设备，GPU加速开关将自动回退CPU")
+    except AttributeError:
+        logger.warning("[CUDA] 不可用 — 当前 OpenCV 未编译 CUDA 支持（缺少 cv2.cuda 模块），GPU加速开关将自动回退CPU")
+    except Exception as e:
+        logger.warning(f"[CUDA] 检测失败: {e}，GPU加速开关将自动回退CPU")
+
+
 async def main() -> None:
     from connection import DrawScriptAgent
 
     config = load_config()
     server_url = config["server"]["url"]
     client_cfg = config["client"]
+
+    _check_cuda()
 
     agent = DrawScriptAgent(
         server_url=server_url,
