@@ -1194,10 +1194,8 @@ class CommandHandler:
                         gpu_res = cuda_matcher.match(gpu_sc, gpu_tmpl)
                         res = gpu_res.download()
                         cuda_ok = True
-                        logger.info("[GPU] 模板匹配使用 CUDA GPU 完成")
                     except Exception as _cuda_exc:
                         cuda_error = str(_cuda_exc)
-                        logger.warning(f"[GPU] CUDA 失败，回退 CPU: {cuda_error}")
 
                 if not cuda_ok:
                     res = cv2.matchTemplate(sc_img, tmpl_img, cv2.TM_CCOEFF_NORMED)
