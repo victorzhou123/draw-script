@@ -2,6 +2,7 @@ import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,7 @@ async def _build_client_response(clients, connected_ids: set, db: AsyncSession) 
             "last_seen": c.last_seen,
             "status": c.status if c.id in connected_ids else "disconnected",
             "project_ids": pc_map.get(c.id, []),
+            "gpu_enabled": bool(c.gpu_enabled),
         }
         for c in clients
     ]
@@ -96,3 +98,18 @@ async def capture_client_screenshot(client_id: str):
     except asyncio.TimeoutError:
         client_ws_manager.pending_requests.pop(request_id, None)
         raise HTTPException(408, "Screenshot request timed out")
+
+
+class GpuUpdateRequest(BaseModel):
+    gpu_enabled: bool
+
+
+@router.patch("/{client_id}/gpu")
+async def update_client_gpu(client_id: str, body: GpuUpdateRequest, db: AsyncSession = Depends(get_session)):
+    """Toggle GPU acceleration for a client's template matching."""
+    client = await db.get(Client, client_id)
+    if not client:
+        raise HTTPException(404, "Client not found")
+    client.gpu_enabled = body.gpu_enabled
+    await db.commit()
+    return {"ok": True, "gpu_enabled": client.gpu_enabled}

@@ -18,6 +18,7 @@ class ExecutionContext:
     ui_manager: "UIWSManager"
     session_factory: "async_sessionmaker"
     project_id: str | None = None
+    gpu_enabled: bool = False
     variables: dict[str, Any] = field(default_factory=dict)
     stop_event: asyncio.Event = field(default_factory=asyncio.Event)
     script_call_stack: list[str] = field(default_factory=list)

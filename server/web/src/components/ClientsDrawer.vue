@@ -104,6 +104,21 @@
               <div v-else-if="clientScripts(c).length === 0" class="warn-hint">需在项目组中关联含脚本后方可运行</div>
             </div>
 
+            <!-- GPU 加速 -->
+            <div class="detail-section">
+              <span class="detail-label">GPU 加速</span>
+              <div class="gpu-row">
+                <a-switch
+                  :checked="c.gpu_enabled"
+                  size="small"
+                  :loading="gpuUpdating.has(c.id)"
+                  @change="(val: boolean) => toggleGpu(c.id, val)"
+                />
+                <span class="gpu-label">{{ c.gpu_enabled ? 'CUDA 加速' : 'CPU 模式' }}</span>
+                <span class="gpu-hint">仅影响模板匹配，需客户端安装 opencv-python-cuda</span>
+              </div>
+            </div>
+
             <!-- 可用脚本 -->
             <div class="detail-section">
               <span class="detail-label">可用脚本</span>
@@ -167,6 +182,7 @@ const selectedClientId = ref<string | null>(null)
 const clientScriptSelections = ref<Record<string, string>>({})
 const runningClients = ref(new Set<string>())
 const stoppingClients = ref(new Set<string>())
+const gpuUpdating = ref(new Set<string>())
 const batchScriptId = ref<string | null>(null)
 const batchRunning = ref(false)
 const logBoxEl = ref<HTMLElement>()
@@ -202,6 +218,12 @@ async function stopClient(clientId: string) {
   stoppingClients.value.add(clientId)
   try { await executionStore.stopOnClient(clientId) }
   finally { stoppingClients.value.delete(clientId) }
+}
+async function toggleGpu(clientId: string, enabled: boolean) {
+  gpuUpdating.value.add(clientId)
+  try { await clientStore.updateGpu(clientId, enabled) }
+  catch (e: any) { message.error(e.response?.data?.detail || 'GPU 设置失败') }
+  finally { gpuUpdating.value.delete(clientId) }
 }
 async function runOnProject() {
   if (!batchScriptId.value) return
@@ -271,6 +293,9 @@ watch(
 .detail-section { display: flex; flex-direction: column; gap: 6px; }
 .detail-label { font-size: 10px; color: #444; text-transform: uppercase; letter-spacing: 0.8px; }
 .run-row { display: flex; gap: 6px; align-items: center; }
+.gpu-row { display: flex; align-items: center; gap: 8px; }
+.gpu-label { font-size: 12px; color: #888; }
+.gpu-hint { font-size: 11px; color: #3a3a3a; margin-left: auto; }
 .warn-hint { font-size: 11px; color: #4a4a4a; }
 .scripts-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .script-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: #555; background: #222; border: 1px solid #2a2a2a; border-radius: 3px; padding: 2px 6px; }

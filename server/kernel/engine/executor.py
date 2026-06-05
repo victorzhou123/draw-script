@@ -74,6 +74,13 @@ class ExecutionEngine:
                                          completion_event=completion_event)
             return
 
+        gpu_enabled = False
+        async with self.session_factory() as db:
+            from database import Client
+            client_row = await db.get(Client, client_id)
+            if client_row:
+                gpu_enabled = bool(client_row.gpu_enabled)
+
         await self.ui_manager.broadcast_event("execution_started", {
             "execution_id": execution_id,
             "client_id": client_id,
@@ -97,6 +104,7 @@ class ExecutionEngine:
             ui_manager=self.ui_manager,
             session_factory=self.session_factory,
             project_id=project_id,
+            gpu_enabled=gpu_enabled,
             variables=dict(initial_variables) if initial_variables else {},
             stop_event=stop_event,
             log=log,

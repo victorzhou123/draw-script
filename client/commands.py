@@ -1159,6 +1159,7 @@ class CommandHandler:
 
             threshold = float(params.get("threshold", 0.8))
             match_mode = params.get("mode") or "single"
+            use_gpu = bool(params.get("use_gpu", False))
             region_offset = (mx, my)
 
             def _do_match():
@@ -1177,8 +1178,25 @@ class CommandHandler:
                 if sc_img is None or tmpl_img is None:
                     return {"found": False, "confidence": 0.0, "location": None, "error": "Failed to decode images"}
 
-                res = cv2.matchTemplate(sc_img, tmpl_img, cv2.TM_CCOEFF_NORMED)
                 th, tw = tmpl_img.shape[:2]
+
+                # Try CUDA path; fall back to CPU if unavailable
+                cuda_ok = False
+                if use_gpu:
+                    try:
+                        cuda_matcher = cv2.cuda.createTemplateMatching(cv2.CV_8UC3, cv2.TM_CCOEFF_NORMED)
+                        gpu_sc = cv2.cuda_GpuMat()
+                        gpu_tmpl = cv2.cuda_GpuMat()
+                        gpu_sc.upload(sc_img)
+                        gpu_tmpl.upload(tmpl_img)
+                        gpu_res = cuda_matcher.match(gpu_sc, gpu_tmpl)
+                        res = gpu_res.download()
+                        cuda_ok = True
+                    except Exception:
+                        cuda_ok = False
+
+                if not cuda_ok:
+                    res = cv2.matchTemplate(sc_img, tmpl_img, cv2.TM_CCOEFF_NORMED)
 
                 if match_mode == "all_matches":
                     ys, xs = np.where(res >= threshold)
@@ -1199,7 +1217,8 @@ class CommandHandler:
                         })
                     max_conf = float(res[candidates[0][1], candidates[0][0]]) if candidates else 0.0
                     return {"found": len(locations) > 0, "confidence": max_conf,
-                            "locations": locations, "_tmpl_w": tw, "_tmpl_h": th}
+                            "locations": locations, "_tmpl_w": tw, "_tmpl_h": th,
+                            "_cuda": cuda_ok}
 
                 _, max_val, _, max_loc = cv2.minMaxLoc(res)
                 found = float(max_val) >= threshold
@@ -1209,13 +1228,16 @@ class CommandHandler:
                     "found": found,
                     "confidence": float(max_val),
                     "location": {"x": cx, "y": cy} if found else None,
-                    "_tmpl_w": tw, "_tmpl_h": th,
+                    "_tmpl_w": tw, "_tmpl_h": th, "_cuda": cuda_ok,
                 }
 
             try:
                 result = await _run_blocking(_do_match)
                 tmpl_w = result.pop("_tmpl_w", 0)
                 tmpl_h = result.pop("_tmpl_h", 0)
+                cuda_used = result.pop("_cuda", False)
+                if use_gpu:
+                    logger.info(f"Template match: {'CUDA' if cuda_used else 'CPU fallback'}")
                 if result.get("found") and params.get("show_overlay"):
                     locs = result.get("locations") or (
                         [result["location"]] if result.get("location") else []

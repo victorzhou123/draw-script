@@ -130,6 +130,7 @@ class ClientResponse(BaseModel):
     last_seen: datetime
     status: str
     project_ids: list[str] = []
+    gpu_enabled: bool = False
 
     class Config:
         from_attributes = True

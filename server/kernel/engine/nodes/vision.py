@@ -144,7 +144,7 @@ class VisionNodeHandler(BaseNodeHandler):
             "request_id": request_id,
             "node_type": vision_type,
             "project_id": self.ctx.project_id,
-            "params": params,
+            "params": {**params, "use_gpu": self.ctx.gpu_enabled},
             "_markers": marker_data,
         })
 

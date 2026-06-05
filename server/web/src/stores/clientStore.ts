@@ -32,6 +32,7 @@ export const useClientStore = defineStore('client', () => {
         status: 'idle',
         last_seen: new Date().toISOString(),
         project_ids: [],
+        gpu_enabled: false,
       })
     }
   }
@@ -67,6 +68,12 @@ export const useClientStore = defineStore('client', () => {
     if (c) c.project_ids = c.project_ids.filter(id => id !== projectId)
   }
 
+  async function updateGpu(clientId: string, gpuEnabled: boolean) {
+    await api.updateClientGpu(clientId, gpuEnabled)
+    const c = clients.value.find(c => c.id === clientId)
+    if (c) c.gpu_enabled = gpuEnabled
+  }
+
   return {
     clients,
     connectedIds,
@@ -79,5 +86,6 @@ export const useClientStore = defineStore('client', () => {
     onClientStatus,
     addToProject,
     removeFromProject,
+    updateGpu,
   }
 })

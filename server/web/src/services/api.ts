@@ -22,6 +22,7 @@ export interface Client {
   last_seen: string
   status: string
   project_ids: string[]
+  gpu_enabled: boolean
 }
 
 export interface Execution {
@@ -129,6 +130,8 @@ export const api = {
   getClients: () => http.get<Client[]>('/clients').then(r => r.data),
   stopClient: (clientId: string) =>
     http.post(`/clients/${clientId}/stop`).then(r => r.data),
+  updateClientGpu: (clientId: string, gpuEnabled: boolean) =>
+    http.patch(`/clients/${clientId}/gpu`, { gpu_enabled: gpuEnabled }).then(r => r.data),
   addClientToProject: (projectId: string, clientId: string) =>
     http.post(`/projects/${projectId}/clients/${clientId}`).then(r => r.data),
   removeClientFromProject: (projectId: string, clientId: string) =>

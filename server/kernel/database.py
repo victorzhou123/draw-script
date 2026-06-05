@@ -92,6 +92,7 @@ class Client(Base):
     platform: Mapped[str] = mapped_column(String, default="unknown")
     last_seen: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     status: Mapped[str] = mapped_column(String, default="idle")
+    gpu_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Execution(Base):
@@ -166,6 +167,11 @@ async def init_db() -> None:
                 await conn.execute(text(f"ALTER TABLE markers ADD COLUMN {col} {coltype}"))
             except Exception:
                 pass
+        # clients columns
+        try:
+            await conn.execute(text("ALTER TABLE clients ADD COLUMN gpu_enabled INTEGER DEFAULT 0"))
+        except Exception:
+            pass
         # marker_captures columns
         for col, coltype in [
             ("window_w", "INTEGER"), ("window_h", "INTEGER"),
