@@ -1182,6 +1182,7 @@ class CommandHandler:
 
                 # Try CUDA path; fall back to CPU if unavailable
                 cuda_ok = False
+                cuda_error: str | None = None
                 if use_gpu:
                     try:
                         cuda_matcher = cv2.cuda.createTemplateMatching(cv2.CV_8UC3, cv2.TM_CCOEFF_NORMED)
@@ -1192,8 +1193,8 @@ class CommandHandler:
                         gpu_res = cuda_matcher.match(gpu_sc, gpu_tmpl)
                         res = gpu_res.download()
                         cuda_ok = True
-                    except Exception:
-                        cuda_ok = False
+                    except Exception as _cuda_exc:
+                        cuda_error = str(_cuda_exc)
 
                 if not cuda_ok:
                     res = cv2.matchTemplate(sc_img, tmpl_img, cv2.TM_CCOEFF_NORMED)
@@ -1218,7 +1219,7 @@ class CommandHandler:
                     max_conf = float(res[candidates[0][1], candidates[0][0]]) if candidates else 0.0
                     return {"found": len(locations) > 0, "confidence": max_conf,
                             "locations": locations, "_tmpl_w": tw, "_tmpl_h": th,
-                            "_cuda": cuda_ok}
+                            "_cuda": cuda_ok, "_cuda_error": cuda_error}
 
                 _, max_val, _, max_loc = cv2.minMaxLoc(res)
                 found = float(max_val) >= threshold
@@ -1228,7 +1229,7 @@ class CommandHandler:
                     "found": found,
                     "confidence": float(max_val),
                     "location": {"x": cx, "y": cy} if found else None,
-                    "_tmpl_w": tw, "_tmpl_h": th, "_cuda": cuda_ok,
+                    "_tmpl_w": tw, "_tmpl_h": th, "_cuda": cuda_ok, "_cuda_error": cuda_error,
                 }
 
             try:
@@ -1236,8 +1237,12 @@ class CommandHandler:
                 tmpl_w = result.pop("_tmpl_w", 0)
                 tmpl_h = result.pop("_tmpl_h", 0)
                 cuda_used = result.pop("_cuda", False)
+                # cuda_error stays in result so the server can log it
                 if use_gpu:
-                    logger.info(f"Template match: {'CUDA' if cuda_used else 'CPU fallback'}")
+                    if cuda_used:
+                        logger.info("Template match: CUDA")
+                    else:
+                        logger.warning(f"Template match: GPU requested but CUDA failed, using CPU. reason={result.get('cuda_error')}")
                 if result.get("found") and params.get("show_overlay"):
                     locs = result.get("locations") or (
                         [result["location"]] if result.get("location") else []

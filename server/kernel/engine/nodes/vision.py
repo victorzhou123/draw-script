@@ -191,6 +191,9 @@ class VisionNodeHandler(BaseNodeHandler):
                         # not_found_value 仅在未找到时生效，与 found 分支完全独立
                         self.ctx.variables[result_var] = None if not_found_value == "None" else not_found_value
 
+            cuda_error = output.pop("cuda_error", None)
+            if cuda_error:
+                await self._log(f"[Vision] ⚠ GPU加速失败，已回退CPU: {cuda_error}")
             self.ctx.variables["last_vision_result"] = output
             return NodeResult(success=True, output=output)
 
