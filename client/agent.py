@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.toml")
 
+# Keep references alive so RemoveDllDirectory is never called by GC.
+_dll_dir_handles: list = []
+
 
 def _write_config(
     server_ip: str, server_port: str, client_id: str, client_name: str,
@@ -66,7 +69,8 @@ def _register_dll_dirs(dll_dirs: list[str]) -> None:
         return
     for d in dll_dirs:
         if os.path.isdir(d):
-            os.add_dll_directory(d)
+            # Store the handle — if discarded, RemoveDllDirectory is called by GC.
+            _dll_dir_handles.append(os.add_dll_directory(d))
             logger.info(f"[CUDA] DLL 目录已注册: {d}")
         else:
             logger.warning(f"[CUDA] DLL 目录不存在，跳过: {d}")
