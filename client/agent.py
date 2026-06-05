@@ -76,6 +76,11 @@ def _register_dll_dirs(dll_dirs: list[str]) -> None:
         else:
             logger.warning(f"[CUDA] DLL 目录不存在，跳过: {d}")
 
+    # cv2 may have been imported earlier (before DLL registration) and cached as
+    # a broken module. Evict it so the next import goes through the package's
+    # __init__.py again — now that CUDA DLLs are registered, cv2.pyd will load.
+    sys.modules.pop("cv2", None)
+
 
 def setup_first_run() -> None:
     print("=" * 50)
