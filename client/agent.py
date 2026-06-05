@@ -59,37 +59,22 @@ def _detect_dll_dirs() -> list[str]:
 
 
 def _register_dll_dirs(dll_dirs: list[str]) -> None:
-    """Register CUDA/cuDNN DLL directories and fix cv2.pyd discovery on Windows.
+    """Register CUDA/cuDNN DLL directories so cv2.pyd can load its dependencies.
 
-    Python's import system finds the cv2/ package directory before cv2.pyd,
-    so we insert the cv2 package dir into sys.path and clear any cached module
-    so the native extension is loaded directly.
+    Only os.add_dll_directory is used — no sys.path injection. sys.path injection
+    loads cv2.pyd as a bare top-level module, which prevents OpenCV from running
+    PyImport_AddModule("cv2.cuda") correctly. Letting cv2 load via its own
+    namespace package (__init__.py → from .cv2 import *) keeps the package
+    structure intact and makes cv2.cuda accessible.
     """
     if sys.platform != "win32":
         return
     for d in dll_dirs:
         if os.path.isdir(d):
-            # Store the handle — if discarded, RemoveDllDirectory is called by GC.
             _dll_dir_handles.append(os.add_dll_directory(d))
             logger.info(f"[CUDA] DLL 目录已注册: {d}")
         else:
             logger.warning(f"[CUDA] DLL 目录不存在，跳过: {d}")
-
-    # Inject cv2.pyd into sys.path so Python resolves the native extension
-    # instead of the cv2/ namespace package. Only runs when dll_dirs is set.
-    import site
-    injected = False
-    for sp in site.getsitepackages():
-        cv2_dir = os.path.join(sp, "cv2")
-        if os.path.isfile(os.path.join(cv2_dir, "cv2.pyd")):
-            if cv2_dir not in sys.path:
-                sys.path.insert(0, cv2_dir)
-            sys.modules.pop("cv2", None)
-            logger.info(f"[CUDA] cv2.pyd 路径已注入: {cv2_dir}")
-            injected = True
-            break
-    if not injected:
-        logger.warning("[CUDA] 未找到 cv2.pyd，sys.path 注入跳过")
 
 
 def setup_first_run() -> None:
