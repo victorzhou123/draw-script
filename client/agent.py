@@ -10,20 +10,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Register CUDA and cuDNN DLL directories on Windows so cv2 can find them
-# at import time, regardless of whether they are in the system PATH.
-if sys.platform == "win32":
-    import glob
-    _cuda_dirs = glob.glob(r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v*\bin")
-    for _d in sorted(_cuda_dirs, reverse=True):
-        os.add_dll_directory(_d)
-    _cudnn_dirs = glob.glob(
-        os.path.join(os.path.dirname(sys.executable), r"Lib\site-packages\nvidia\cudnn\bin")
-    )
-    for _d in _cudnn_dirs:
-        if os.path.isdir(_d):
-            os.add_dll_directory(_d)
-
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.toml")
 
 
