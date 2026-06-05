@@ -71,19 +71,6 @@ def _register_dll_dirs(dll_dirs: list[str]) -> None:
         else:
             logger.warning(f"DLL 目录不存在，跳过: {d}")
 
-    # Find the cv2 package directory and prepend it to sys.path so that
-    # Python resolves cv2.pyd (native module) instead of cv2/ (the package).
-    import site
-    for sp in site.getsitepackages():
-        cv2_dir = os.path.join(sp, "cv2")
-        cv2_pyd = os.path.join(cv2_dir, "cv2.pyd")
-        if os.path.isfile(cv2_pyd):
-            if cv2_dir not in sys.path:
-                sys.path.insert(0, cv2_dir)
-            sys.modules.pop("cv2", None)
-            logger.debug(f"cv2.pyd 路径已注入: {cv2_dir}")
-            break
-
 
 def setup_first_run() -> None:
     print("=" * 50)
@@ -172,11 +159,12 @@ async def main() -> None:
     server_url = config["server"]["url"]
     client_cfg = config["client"]
 
-    # Register CUDA/cuDNN DLL dirs before importing cv2 (Python 3.8+ requirement)
+    # Only initialize CUDA if the user has explicitly configured dll_dirs.
+    # Clients without gpu_enabled never need CUDA setup.
     dll_dirs = config.get("cuda", {}).get("dll_dirs", [])
-    _register_dll_dirs(dll_dirs)
-
-    _check_cuda()
+    if dll_dirs:
+        _register_dll_dirs(dll_dirs)
+        _check_cuda()
 
     agent = DrawScriptAgent(
         server_url=server_url,

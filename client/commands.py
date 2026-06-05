@@ -14,6 +14,26 @@ logger = logging.getLogger(__name__)
 
 MARKERS_FILE = os.path.join(os.path.dirname(__file__), "markers.json")
 
+_cuda_env_ready = False
+
+
+def _ensure_cuda_env() -> None:
+    """Inject cv2.pyd into sys.path so the CUDA-enabled native module is loaded.
+    Only called when use_gpu=True; never runs for CPU-only clients.
+    """
+    global _cuda_env_ready
+    if _cuda_env_ready:
+        return
+    import sys, site
+    for sp in site.getsitepackages():
+        cv2_dir = os.path.join(sp, "cv2")
+        if os.path.isfile(os.path.join(cv2_dir, "cv2.pyd")):
+            if cv2_dir not in sys.path:
+                sys.path.insert(0, cv2_dir)
+            sys.modules.pop("cv2", None)
+            break
+    _cuda_env_ready = True
+
 # DPI awareness so tkinter coordinates match pyautogui on high-DPI screens
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)
@@ -1184,6 +1204,7 @@ class CommandHandler:
                 cuda_ok = False
                 cuda_error: str | None = None
                 if use_gpu:
+                    _ensure_cuda_env()
                     try:
                         cuda_matcher = cv2.cuda.createTemplateMatching(cv2.CV_8UC3, cv2.TM_CCOEFF_NORMED)
                         gpu_sc = cv2.cuda_GpuMat()
