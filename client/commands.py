@@ -432,8 +432,8 @@ def _show_point_overlay(
                 new_screen = pyautogui.screenshot()
                 new_dark = ImageEnhance.Brightness(new_screen).enhance(0.4)
                 new_photo = ImageTk.PhotoImage(new_dark)
-                photo_ref[0] = new_photo
                 cv.itemconfig(bg_item, image=new_photo)
+                photo_ref[0] = new_photo
                 root.deiconify()
                 root.lift()
                 root.focus_force()
@@ -624,8 +624,8 @@ def _show_box_overlay(
                 new_screen = pyautogui.screenshot()
                 new_dark = ImageEnhance.Brightness(new_screen).enhance(0.4)
                 new_photo = ImageTk.PhotoImage(new_dark)
-                photo_ref[0] = new_photo
                 cv.itemconfig(bg_item, image=new_photo)
+                photo_ref[0] = new_photo
                 root.deiconify()
                 root.lift()
                 root.focus_force()
