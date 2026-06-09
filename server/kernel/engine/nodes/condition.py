@@ -6,23 +6,24 @@ from engine.node_registry import NodeRegistry
 class ConditionNodeHandler(BaseNodeHandler):
     async def execute(self) -> NodeResult:
         data = self.ctx.node.data
-        condition_type = data.get("condition_type", "vision_found")
-        params = data.get("params", {})
 
-        result = self._evaluate(condition_type, params)
+        if "conditions" in data:
+            operator = data.get("operator", "and")
+            conditions = data.get("conditions", [])
+            if not conditions:
+                result = False
+            elif operator == "and":
+                result = all(self._evaluate(c.get("condition_type", ""), c.get("params", {})) for c in conditions)
+            else:
+                result = any(self._evaluate(c.get("condition_type", ""), c.get("params", {})) for c in conditions)
+        else:
+            # Backward compat: old single-condition format
+            result = self._evaluate(data.get("condition_type", ""), data.get("params", {}))
+
         return NodeResult(success=True, branch="true" if result else "false", output={"result": result})
 
     def _evaluate(self, condition_type: str, params: dict) -> bool:
         variables = self.ctx.variables
-
-        if condition_type == "vision_found":
-            vision_result = variables.get("last_vision_result", {})
-            return bool(vision_result.get("found", False))
-
-        if condition_type == "vision_text_contains":
-            vision_result = variables.get("last_vision_result", {})
-            text = vision_result.get("text", "") or ""
-            return params.get("value", "").lower() in text.lower()
 
         if condition_type == "variable_compare":
             var_path = params.get("variable", "")
@@ -31,15 +32,22 @@ class ConditionNodeHandler(BaseNodeHandler):
             actual = self._get_var(var_path)
             return self._compare(actual, operator, expected)
 
-        if condition_type == "http_status":
-            response = variables.get("last_http_response", {})
-            status = response.get("status_code", 0)
-            return self._compare(status, params.get("operator", "=="), int(params.get("value", 200)))
-
         if condition_type == "boolean_check":
             var_path = params.get("variable", "")
             val = self._get_var(var_path) if var_path else None
             return bool(val)
+
+        # Legacy types kept for backward compat with saved scripts
+        if condition_type == "vision_found":
+            return bool(variables.get("last_vision_result", {}).get("found", False))
+
+        if condition_type == "vision_text_contains":
+            text = (variables.get("last_vision_result", {}).get("text", "") or "")
+            return params.get("value", "").lower() in text.lower()
+
+        if condition_type == "http_status":
+            status = variables.get("last_http_response", {}).get("status_code", 0)
+            return self._compare(status, params.get("operator", "=="), int(params.get("value", 200)))
 
         return False
 

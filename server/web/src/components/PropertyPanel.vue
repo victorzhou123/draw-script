@@ -168,7 +168,9 @@ watch(() => props.selectedNode, (node) => {
     action_type: node.data.action_type || 'mouse_click',
     vision_type: node.data.vision_type || 'template_match',
     result_var: node.data.result_var || '',
-    condition_type: node.data.condition_type || 'vision_found',
+    condition_type: node.data.condition_type || '',
+    operator: node.data.operator || 'and',
+    conditions: node.data.conditions || [],
     params: node.data.params || {},
     range_marker: node.data.range_marker || '',
     found_value: node.data.found_value ?? '',
@@ -184,6 +186,18 @@ watch(() => props.selectedNode, (node) => {
     input_mappings: node.data.input_mappings || [],
     output_mappings: node.data.output_mappings || [],
   }))
+  // Normalize condition node: migrate old single-condition to new multi-condition format
+  if (d.type === 'condition') {
+    if (!Array.isArray(d.conditions) || d.conditions.length === 0) {
+      const oldType = d.condition_type
+      if (oldType === 'variable_compare' || oldType === 'boolean_check') {
+        d.conditions = [{ condition_type: oldType, params: d.params || {} }]
+      } else {
+        d.conditions = []
+      }
+    }
+    d.operator = d.operator || 'and'
+  }
   // Normalize watch node: ensure fields is always an array
   if (d.type === 'watch') {
     if (!Array.isArray(d.params.fields)) d.params.fields = []

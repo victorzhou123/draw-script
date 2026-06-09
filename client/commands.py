@@ -1,3 +1,4 @@
+import atexit
 import asyncio
 import base64
 import ctypes
@@ -90,7 +91,8 @@ def _find_window(title_pattern: str, process_name: str) -> dict | None:
 
 
 def _activate_window(hwnd: int) -> None:
-    ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
+    if ctypes.windll.user32.IsIconic(hwnd):
+        ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE only when minimized
     ctypes.windll.user32.SetForegroundWindow(hwnd)
 
 
@@ -239,14 +241,27 @@ def _ensure_overlay_thread() -> None:
     global _overlay_thread
     with _overlay_thread_lock:
         if _overlay_thread is None or not _overlay_thread.is_alive():
-            t = threading.Thread(target=_overlay_mainloop, daemon=True)
+            t = threading.Thread(target=_overlay_mainloop, daemon=False)
             t.start()
             _overlay_thread = t
 
 
+def _shutdown_overlay_thread() -> None:
+    with _overlay_thread_lock:
+        t = _overlay_thread
+    if t and t.is_alive():
+        _overlay_queue.put({"action": "quit"})
+        t.join(timeout=3.0)
+
+
+atexit.register(_shutdown_overlay_thread)
+
+
 def _overlay_mainloop() -> None:
-    """Dedicated tkinter thread.  Creates one Toplevel once and updates it in place,
-    avoiding repeated window creation that causes screen flicker and Tcl_AsyncDelete."""
+    """Single Tk thread: handles CV match overlay and interactive capture modals.
+    All Tkinter operations live here so there is exactly one Tcl interpreter in one
+    thread, preventing Tcl_AsyncDelete errors on process exit.
+    """
     import tkinter as tk
     try:
         root = tk.Tk()
@@ -307,6 +322,16 @@ def _overlay_mainloop() -> None:
                               cmd["tmpl_h"], cmd.get("duration_s"))
                     elif cmd["action"] == "dismiss":
                         _clear()
+                    elif cmd["action"] == "modal":
+                        try:
+                            fn = _run_point_modal if cmd["kind"] == "point" else _run_box_modal
+                            res = fn(root, **cmd["kwargs"])
+                        except Exception:
+                            res = ("cancel", None)
+                        cmd["_result"].put(res)
+                    elif cmd["action"] == "quit":
+                        root.quit()
+                        return
             except _queue.Empty:
                 pass
             root.after(50, _process_queue)
@@ -338,15 +363,12 @@ def _show_match_overlay(
     })
 
 
-def _show_point_overlay(
+def _run_point_modal(
+    root,
     name: str, win_x: int = 0, win_y: int = 0,
     prev: dict | None = None, idx: int = 0, total: int = 0,
 ) -> tuple[str, tuple[int, int] | None]:
-    """Full-screen point capture overlay.
-    Returns (action, (abs_x, abs_y)):
-      action = 'next' | 'prev' | 'cancel'
-    Redo is handled internally (R re-enters capture mode).
-    """
+    """Point capture UI, runs inside the dedicated Tk thread on a Toplevel."""
     import tkinter as tk
     from PIL import ImageEnhance, ImageTk
     import pyautogui
@@ -358,13 +380,13 @@ def _show_point_overlay(
     result = [("cancel", None)]
     captured = [None]
 
-    root = tk.Tk()
-    root.overrideredirect(True)
-    root.attributes("-topmost", True)
-    root.geometry(f"{sw}x{sh}+0+0")
-    root.focus_force()
+    top = tk.Toplevel(root)
+    top.withdraw()
+    top.overrideredirect(True)
+    top.attributes("-topmost", True)
+    top.geometry(f"{sw}x{sh}+0+0")
 
-    cv = tk.Canvas(root, cursor="crosshair", highlightthickness=0, bg="#000")
+    cv = tk.Canvas(top, cursor="crosshair", highlightthickness=0, bg="#000")
     cv.pack(fill="both", expand=True)
 
     bg_photo = ImageTk.PhotoImage(dark_img)
@@ -395,9 +417,9 @@ def _show_point_overlay(
     cv.create_rectangle(0, fy, sw, sh, fill="#111", outline="", tags="footer")
     ok_lbl  = cv.create_text(20, fy + 16, text="", fill=_COLOR_OK,
                               font=_FONT_MONO, anchor="nw", tags="footer")
-    nav_lbl = cv.create_text(sw // 2, fy + 16, text=_NAV_HINT,
-                              fill="#888", font=("Microsoft YaHei UI", 11),
-                              anchor="n", tags="footer")
+    cv.create_text(sw // 2, fy + 16, text=_NAV_HINT,
+                   fill="#888", font=("Microsoft YaHei UI", 11),
+                   anchor="n", tags="footer")
     confirm_dot = cv.create_oval(0, 0, 0, 0, outline=_COLOR_OK, fill="", width=2,
                                   tags="footer")
     cv.itemconfig("footer", state="hidden")
@@ -415,8 +437,8 @@ def _show_point_overlay(
                        fill=_COLOR_PREV, font=("Consolas", 9), anchor="nw")
 
     def _pause():
-        root.withdraw()
-        resume_win = tk.Toplevel()
+        top.withdraw()
+        resume_win = tk.Toplevel(root)
         resume_win.attributes("-topmost", True)
         resume_win.overrideredirect(True)
         ww, wh = 300, 72
@@ -434,10 +456,10 @@ def _show_point_overlay(
                 new_photo = ImageTk.PhotoImage(new_dark)
                 cv.itemconfig(bg_item, image=new_photo)
                 photo_ref[0] = new_photo
-                root.deiconify()
-                root.lift()
-                root.focus_force()
-            root.after(80, _refresh)
+                top.deiconify()
+                top.lift()
+                top.focus_force()
+            top.after(80, _refresh)
         tk.Button(
             resume_win, text="继续标注 ▶", command=_resume,
             bg="#1d6b3e", fg="white", font=("Microsoft YaHei UI", 10, "bold"),
@@ -458,7 +480,7 @@ def _show_point_overlay(
         cv.bind("<Motion>",   _on_motion)
         cv.bind("<Button-1>", _on_click)
         for seq in ("<Return>", "<Down>", "<Up>", "r", "R"):
-            root.unbind(seq)
+            top.unbind(seq)
 
     def _enter_confirm(x, y):
         cv.configure(cursor="")
@@ -475,15 +497,15 @@ def _show_point_overlay(
         cv.itemconfig(header_lbl, text=f"{progress}标记 [{name}]  (点)  —  确认或导航  |  P 暂停")
         cv.unbind("<Motion>")
         cv.unbind("<Button-1>")
-        root.bind("<Return>", lambda e: _done("next"))
-        root.bind("<Down>",   lambda e: _done("next"))
-        root.bind("<Up>",     lambda e: _done("prev"))
-        root.bind("r",        lambda e: _enter_capture())
-        root.bind("R",        lambda e: _enter_capture())
+        top.bind("<Return>", lambda e: _done("next"))
+        top.bind("<Down>",   lambda e: _done("next"))
+        top.bind("<Up>",     lambda e: _done("prev"))
+        top.bind("r",        lambda e: _enter_capture())
+        top.bind("R",        lambda e: _enter_capture())
 
     def _done(action):
         result[0] = (action, captured[0])
-        root.destroy()
+        top.destroy()
 
     def _on_motion(event):
         x, y = event.x, event.y
@@ -509,12 +531,11 @@ def _show_point_overlay(
         _enter_confirm(event.x, event.y)
 
     cv.tag_bind("pause_btn", "<Button-1>", lambda e: _pause())
-    root.bind("p", lambda e: _pause())
-    root.bind("P", lambda e: _pause())
-    root.bind("<Escape>", lambda e: (result.__setitem__(0, ("cancel", None)), root.destroy()))
+    top.bind("p", lambda e: _pause())
+    top.bind("P", lambda e: _pause())
+    top.bind("<Escape>", lambda e: (result.__setitem__(0, ("cancel", None)), top.destroy()))
 
     if prev:
-        # Start in confirm mode showing the existing annotation
         abs_x, abs_y = prev["x"] + win_x, prev["y"] + win_y
         captured[0] = (abs_x, abs_y)
         _enter_confirm(abs_x, abs_y)
@@ -523,17 +544,34 @@ def _show_point_overlay(
     else:
         _enter_capture()
 
-    root.mainloop()
+    top.deiconify()
+    top.focus_force()
+    root.wait_window(top)
     return result[0]
 
 
-def _show_box_overlay(
+def _show_point_overlay(
+    name: str, win_x: int = 0, win_y: int = 0,
+    prev: dict | None = None, idx: int = 0, total: int = 0,
+) -> tuple[str, tuple[int, int] | None]:
+    _ensure_overlay_thread()
+    result_q: _queue.Queue = _queue.Queue()
+    _overlay_queue.put({
+        "action": "modal",
+        "kind": "point",
+        "kwargs": {"name": name, "win_x": win_x, "win_y": win_y,
+                   "prev": prev, "idx": idx, "total": total},
+        "_result": result_q,
+    })
+    return result_q.get()
+
+
+def _run_box_modal(
+    root,
     name: str, win_x: int = 0, win_y: int = 0,
     prev: dict | None = None, idx: int = 0, total: int = 0,
 ) -> tuple[str, dict | None]:
-    """Full-screen box capture overlay (drag to select).
-    Returns (action, {x,y,w,h} absolute) or ('cancel', None).
-    """
+    """Box capture UI, runs inside the dedicated Tk thread on a Toplevel."""
     import tkinter as tk
     from PIL import ImageEnhance, ImageTk
     import pyautogui
@@ -547,13 +585,13 @@ def _show_box_overlay(
     box    = [None]       # {x,y,w,h} absolute
     state  = ["idle"]     # idle | dragging | confirm
 
-    root = tk.Tk()
-    root.overrideredirect(True)
-    root.attributes("-topmost", True)
-    root.geometry(f"{sw}x{sh}+0+0")
-    root.focus_force()
+    top = tk.Toplevel(root)
+    top.withdraw()
+    top.overrideredirect(True)
+    top.attributes("-topmost", True)
+    top.geometry(f"{sw}x{sh}+0+0")
 
-    cv = tk.Canvas(root, cursor="crosshair", highlightthickness=0, bg="#000")
+    cv = tk.Canvas(top, cursor="crosshair", highlightthickness=0, bg="#000")
     cv.pack(fill="both", expand=True)
 
     bg_photo = ImageTk.PhotoImage(dark_img)
@@ -586,9 +624,9 @@ def _show_box_overlay(
     cv.create_rectangle(0, fy, sw, sh, fill="#111", outline="", tags="footer")
     ok_lbl  = cv.create_text(20, fy+16, text="", fill=_COLOR_OK,
                               font=_FONT_MONO, anchor="nw", tags="footer")
-    nav_lbl = cv.create_text(sw//2, fy+16, text=_NAV_HINT,
-                              fill="#888", font=("Microsoft YaHei UI", 11),
-                              anchor="n", tags="footer")
+    cv.create_text(sw//2, fy+16, text=_NAV_HINT,
+                   fill="#888", font=("Microsoft YaHei UI", 11),
+                   anchor="n", tags="footer")
     cv.itemconfig("footer", state="hidden")
 
     # ── Pause button (top right of header) ──
@@ -607,8 +645,8 @@ def _show_box_overlay(
                            fill=_COLOR_PREV, font=("Consolas",9), anchor="nw")
 
     def _pause():
-        root.withdraw()
-        resume_win = tk.Toplevel()
+        top.withdraw()
+        resume_win = tk.Toplevel(root)
         resume_win.attributes("-topmost", True)
         resume_win.overrideredirect(True)
         ww, wh = 300, 72
@@ -626,10 +664,10 @@ def _show_box_overlay(
                 new_photo = ImageTk.PhotoImage(new_dark)
                 cv.itemconfig(bg_item, image=new_photo)
                 photo_ref[0] = new_photo
-                root.deiconify()
-                root.lift()
-                root.focus_force()
-            root.after(80, _refresh)
+                top.deiconify()
+                top.lift()
+                top.focus_force()
+            top.after(80, _refresh)
         tk.Button(
             resume_win, text="继续标注 ▶", command=_resume,
             bg="#1d6b3e", fg="white", font=("Microsoft YaHei UI", 10, "bold"),
@@ -650,7 +688,7 @@ def _show_box_overlay(
         cv.itemconfig(header_lbl,
             text=f"{progress}标记 [{name}]  (框)  —  按住左键拖拽选框  |  P 暂停  |  ESC 取消")
         for seq in ("<Return>","<Down>","<Up>","r","R"):
-            root.unbind(seq)
+            top.unbind(seq)
 
     def _enter_confirm():
         state[0] = "confirm"
@@ -669,15 +707,15 @@ def _show_box_overlay(
             txt = f"已记录  ({bx},{by})  {bw}×{bh}"
         cv.itemconfig(ok_lbl, text=txt)
         cv.itemconfig(header_lbl, text=f"{progress}标记 [{name}]  (框)  —  确认或导航  |  P 暂停")
-        root.bind("<Return>", lambda e: _done("next"))
-        root.bind("<Down>",   lambda e: _done("next"))
-        root.bind("<Up>",     lambda e: _done("prev"))
-        root.bind("r",        lambda e: _enter_idle())
-        root.bind("R",        lambda e: _enter_idle())
+        top.bind("<Return>", lambda e: _done("next"))
+        top.bind("<Down>",   lambda e: _done("next"))
+        top.bind("<Up>",     lambda e: _done("prev"))
+        top.bind("r",        lambda e: _enter_idle())
+        top.bind("R",        lambda e: _enter_idle())
 
     def _done(action):
         result[0] = (action, box[0])
-        root.destroy()
+        top.destroy()
 
     def _on_motion(event):
         if state[0] == "idle":
@@ -726,12 +764,11 @@ def _show_box_overlay(
     cv.bind("<B1-Motion>",       _on_drag)
     cv.bind("<ButtonRelease-1>", _on_release)
     cv.tag_bind("pause_btn", "<Button-1>", lambda e: _pause())
-    root.bind("p", lambda e: _pause())
-    root.bind("P", lambda e: _pause())
-    root.bind("<Escape>", lambda e: (result.__setitem__(0, ("cancel", None)), root.destroy()))
+    top.bind("p", lambda e: _pause())
+    top.bind("P", lambda e: _pause())
+    top.bind("<Escape>", lambda e: (result.__setitem__(0, ("cancel", None)), top.destroy()))
 
     if prev and prev.get("w") and prev.get("h"):
-        # Start in confirm mode showing the existing box annotation
         abs_x, abs_y = prev["x"] + win_x, prev["y"] + win_y
         box[0] = {"x": abs_x, "y": abs_y, "w": prev["w"], "h": prev["h"]}
         _enter_confirm()
@@ -740,8 +777,26 @@ def _show_box_overlay(
     else:
         _enter_idle()
 
-    root.mainloop()
+    top.deiconify()
+    top.focus_force()
+    root.wait_window(top)
     return result[0]
+
+
+def _show_box_overlay(
+    name: str, win_x: int = 0, win_y: int = 0,
+    prev: dict | None = None, idx: int = 0, total: int = 0,
+) -> tuple[str, dict | None]:
+    _ensure_overlay_thread()
+    result_q: _queue.Queue = _queue.Queue()
+    _overlay_queue.put({
+        "action": "modal",
+        "kind": "box",
+        "kwargs": {"name": name, "win_x": win_x, "win_y": win_y,
+                   "prev": prev, "idx": idx, "total": total},
+        "_result": result_q,
+    })
+    return result_q.get()
 
 
 # ── Per-marker capture (wraps overlay) ───────────────────────────────────────
