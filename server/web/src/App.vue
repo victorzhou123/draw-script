@@ -52,6 +52,7 @@
         <transition name="slide-right">
           <div v-if="selectedNode" class="right-sider">
             <PropertyPanel
+              ref="propertyPanel"
               :selected-node="selectedNode"
               :graph-cells="graphCells"
               @update="onNodeDataUpdate"
@@ -92,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { theme, message } from 'ant-design-vue'
 import { FileAddOutlined } from '@ant-design/icons-vue'
 import { api } from './services/api'
@@ -119,6 +120,7 @@ const projectStore = useProjectStore()
 const clientStore = useClientStore()
 const executionStore = useExecutionStore()
 const graphEditor = ref<InstanceType<typeof GraphEditor>>()
+const propertyPanel = ref<InstanceType<typeof PropertyPanel>>()
 const selectedNode = ref<{ id: string; data: any } | null>(null)
 const graphCells = ref<any[]>([])
 const clientsDrawerOpen = ref(false)
@@ -242,14 +244,24 @@ async function onDebugRunTo(nodeId: string) {
 
 async function ctxMenuDebugExecute() {
   const nodeId = ctxMenu.nodeId
+  const nodeData = ctxMenu.data
   closeCtxMenu()
-  if (nodeId) await onDebugExecute(nodeId)
+  if (!nodeId) return
+  selectedNode.value = { id: nodeId, data: nodeData }
+  await nextTick()
+  propertyPanel.value?.setActiveTab('debug')
+  await onDebugExecute(nodeId)
 }
 
 async function ctxMenuDebugRunTo() {
   const nodeId = ctxMenu.nodeId
+  const nodeData = ctxMenu.data
   closeCtxMenu()
-  if (nodeId) await onDebugRunTo(nodeId)
+  if (!nodeId) return
+  selectedNode.value = { id: nodeId, data: nodeData }
+  await nextTick()
+  propertyPanel.value?.setActiveTab('debug')
+  await onDebugRunTo(nodeId)
 }
 
 function onNodeDataUpdate(nodeId: string, data: any) {

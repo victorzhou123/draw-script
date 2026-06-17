@@ -342,6 +342,8 @@ watch(() => props.selectedNode, (node) => {
 function emitUpdate() {
   emit('update', editingNodeId.value, JSON.parse(JSON.stringify(localData.value)))
 }
+
+defineExpose({ setActiveTab: (tab: 'props' | 'debug') => { activeTab.value = tab } })
 </script>
 
 <style scoped>
