@@ -74,7 +74,6 @@ class VisionNodeHandler(BaseNodeHandler):
                     from cv.vision_engine import VisionEngine
                     vision_result = await VisionEngine().analyze("ocr", img_bytes, params, None)
                     await self._log(f"[Vision] OCR完成(context图): text={truncate_for_log(vision_result.text)!r}")
-                    self.ctx.variables["last_vision_result"] = vision_result.__dict__
                     if result_var:
                         value_type = data.get("value_type") or "str"
                         try:
@@ -113,8 +112,6 @@ class VisionNodeHandler(BaseNodeHandler):
                     from cv.vision_engine import VisionEngine
                     vision_result = await VisionEngine().analyze(vision_type, img_bytes, params, model_config)
                     await self._log(f"[Vision] AI分析完成(context图): found={vision_result.found}, text={truncate_for_log(vision_result.text)!r}")
-                    self.ctx.variables["last_vision_result"] = vision_result.__dict__
-
                     if result_var:
                         value_type = data.get("value_type") or "str"
                         if vision_result.found and vision_result.location:
@@ -208,7 +205,6 @@ class VisionNodeHandler(BaseNodeHandler):
             cuda_error = output.pop("cuda_error", None)
             if cuda_error:
                 await self._log(f"[Vision] ⚠ GPU加速失败，已回退CPU: {cuda_error}", level="error")
-            self.ctx.variables["last_vision_result"] = output
             return NodeResult(success=True, output=output)
 
         # OCR / AI vision / color detect: client returns cropped screenshot
@@ -239,8 +235,6 @@ class VisionNodeHandler(BaseNodeHandler):
             from cv.vision_engine import VisionEngine
             vision_result = await VisionEngine().analyze(vision_type, screenshot_bytes, params, model_config)
             await self._log(f"[Vision] 分析完成: found={vision_result.found}, text={truncate_for_log(vision_result.text)!r}, location={vision_result.location}")
-            self.ctx.variables["last_vision_result"] = vision_result.__dict__
-
             if result_var:
                 if vision_type == "color_detect":
                     result_type = params.get("result_type", "coordinate")

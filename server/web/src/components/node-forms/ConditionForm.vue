@@ -25,7 +25,7 @@
           <a-auto-complete
             v-model:value="cond.params.variable"
             :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))"
-            placeholder="例如: last_vision_result.found"
+            placeholder="例如: my_var"
             allow-clear
             @change="update()"
           >
@@ -43,7 +43,7 @@
           <a-auto-complete
             v-model:value="cond.params.variable"
             :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))"
-            placeholder="例如: last_http_response.status_code"
+            placeholder="例如: my_var"
             allow-clear
             @change="update()"
           >

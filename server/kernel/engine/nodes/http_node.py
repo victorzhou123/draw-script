@@ -77,7 +77,6 @@ class HttpNodeHandler(BaseNodeHandler):
             except Exception:
                 pass
 
-            self.ctx.variables["last_http_response"] = result
             return NodeResult(success=response.is_success, output=result)
         except Exception as e:
             return NodeResult(success=False, error=str(e))

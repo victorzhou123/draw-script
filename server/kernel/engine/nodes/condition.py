@@ -42,19 +42,6 @@ class ConditionNodeHandler(BaseNodeHandler):
             val = self._get_var(var_path) if var_path else None
             return bool(val)
 
-        # Legacy types kept for backward compat with saved scripts
-        if condition_type == "vision_found":
-            return bool(variables.get("last_vision_result", {}).get("found", False))
-
-        if condition_type == "vision_text_contains":
-            text = (variables.get("last_vision_result", {}).get("text", "") or "")
-            return params.get("value", "").lower() in text.lower()
-
-        if condition_type == "http_status":
-            status = variables.get("last_http_response", {}).get("status_code", 0)
-            expected = coerce_typed(params.get("value", 200), "int")
-            return self._compare(status, params.get("operator", "=="), expected)
-
         return False
 
     def _resolve_value(self, value, value_type: str):
