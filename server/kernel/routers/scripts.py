@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import Execution, Script, get_session
 from dependencies import get_engine
-from schemas import ExecutionResponse, RunScriptRequest, ScriptCreate, ScriptResponse, ScriptUpdate
+from schemas import DebugNodeRequest, ExecutionResponse, RunScriptRequest, ScriptCreate, ScriptResponse, ScriptUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/scripts", tags=["scripts"])
@@ -152,6 +152,56 @@ async def stop_script(script_id: str, execution_id: str, request: Request, db: A
     engine = get_engine(request)
     if engine:
         await engine.stop_execution(execution_id)
+    return {"ok": True}
+
+
+@router.post("/{script_id}/debug/execute-node")
+async def debug_execute_node(
+    script_id: str,
+    body: DebugNodeRequest,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+):
+    script = await db.get(Script, script_id)
+    if not script:
+        raise HTTPException(404, "Script not found")
+
+    from ws_manager import client_ws_manager
+    if not client_ws_manager.is_connected(body.client_id):
+        raise HTTPException(400, f"Client {body.client_id} is not connected")
+
+    engine = get_engine(request)
+    if engine:
+        background_tasks.add_task(
+            engine.debug_execute_node,
+            script_id, body.client_id, body.flow_json, body.node_id, script.project_id,
+        )
+    return {"ok": True}
+
+
+@router.post("/{script_id}/debug/run-to-node")
+async def debug_run_to_node(
+    script_id: str,
+    body: DebugNodeRequest,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+):
+    script = await db.get(Script, script_id)
+    if not script:
+        raise HTTPException(404, "Script not found")
+
+    from ws_manager import client_ws_manager
+    if not client_ws_manager.is_connected(body.client_id):
+        raise HTTPException(400, f"Client {body.client_id} is not connected")
+
+    engine = get_engine(request)
+    if engine:
+        background_tasks.add_task(
+            engine.debug_run_to_node,
+            script_id, body.client_id, body.flow_json, body.node_id, script.project_id,
+        )
     return {"ok": True}
 
 

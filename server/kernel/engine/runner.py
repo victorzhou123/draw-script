@@ -10,6 +10,29 @@ logger = logging.getLogger(__name__)
 MAX_VISITS = 1000
 
 
+def _safe_vars(v, depth: int = 0):
+    if depth > 4:
+        return "…"
+    if v is None or isinstance(v, (bool, int, float, str)):
+        return v
+    if isinstance(v, dict):
+        return {str(k): _safe_vars(vv, depth + 1) for k, vv in list(v.items())[:100]}
+    if isinstance(v, (list, tuple)):
+        return [_safe_vars(i, depth + 1) for i in list(v)[:100]]
+    return repr(v)
+
+
+async def _broadcast_context(ctx, node_id: str, phase: str) -> None:
+    """Broadcast a snapshot of ctx.variables before/after a node executes."""
+    await ctx.ui_manager.broadcast_event("execution_context", {
+        "execution_id": ctx.execution_id,
+        "client_id": ctx.client_id,
+        "node_id": node_id,
+        "phase": phase,
+        "variables": _safe_vars(ctx.variables),
+    })
+
+
 async def _broadcast_log(ctx, node_id: str, level: str, message: str) -> None:
     """Append to the execution log and broadcast it tagged with node_id + level
     ("action" for normal node-activity descriptions, "error" for failures), so
@@ -42,6 +65,7 @@ async def run_branch(
     visited_count: dict[str, int],
     script_name: str,
     stop_node_ids: set[str] | None = None,
+    stop_after_node_id: str | None = None,
 ) -> str | None:
     """Run a flow branch starting from start_node. Returns error string or None.
 
@@ -64,6 +88,7 @@ async def run_branch(
         label_suffix = f' "{node_label}"' if node_label else ""
         log_entry = f"{script_prefix}[{current.node_type}] {current.id}{label_suffix}"
         await _broadcast_log(ctx, current.id, "action", log_entry)
+        await _broadcast_context(ctx, current.id, "before")
 
         try:
             handler_cls = NodeRegistry.get_handler(current.node_type)
@@ -72,14 +97,19 @@ async def run_branch(
             logger.exception(f"Node {current.id} ({current.node_type}) failed: {e}")
             await _broadcast_log(ctx, current.id, "error", f"  ERROR: {e}")
             await _broadcast_progress(ctx, current.id, None, "error")
+            await _broadcast_context(ctx, current.id, "after")
             return str(e)
 
         await _broadcast_progress(ctx, current.id, None, "done" if result.success else "error")
+        await _broadcast_context(ctx, current.id, "after")
 
         if not result.success and result.error:
             await _broadcast_log(ctx, current.id, "error", f"  ERROR: {result.error}")
 
         if result.stop_branch:
+            return None
+
+        if stop_after_node_id and current.id == stop_after_node_id:
             return None
 
         next_nodes = ctx.graph.get_next_nodes(current.id, result.branch)
@@ -122,7 +152,8 @@ async def run_branch(
                 branch_ctxs.append(bctx)
 
             branch_tasks = [
-                asyncio.create_task(run_branch(bctx, node, dict(visited_count), script_name))
+                asyncio.create_task(run_branch(bctx, node, dict(visited_count), script_name,
+                                               stop_after_node_id=stop_after_node_id))
                 for bctx, node in zip(branch_ctxs, next_nodes)
             ]
             error = await _wait_for_branches(ctx, branch_tasks)

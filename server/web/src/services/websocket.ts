@@ -93,6 +93,15 @@ class UIWebSocket {
           msg.error as string | null,
         )
         break
+      case 'execution_context':
+        if (isBoundClient(msg.client_id as string | undefined) && msg.node_id) {
+          executionStore.onNodeContext(
+            msg.node_id as string,
+            msg.phase as string,
+            msg.variables as Record<string, any>,
+          )
+        }
+        break
       case 'watch_snapshot':
         executionStore.onWatchSnapshot(
           msg.node_id as string,

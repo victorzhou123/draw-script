@@ -32,6 +32,9 @@ export const useExecutionStore = defineStore('execution', () => {
   const nodeActions = ref<Record<string, string[]>>({})
   // nodeId → error/log lines (level=error)
   const nodeLogs = ref<Record<string, string[]>>({})
+  // nodeId → ctx.variables snapshot before/after execution
+  const nodeContextBefore = ref<Record<string, Record<string, any>>>({})
+  const nodeContextAfter = ref<Record<string, Record<string, any>>>({})
 
   function isRunning(clientId: string): boolean {
     return clientExecutions.value[clientId]?.status === 'running'
@@ -92,6 +95,8 @@ export const useExecutionStore = defineStore('execution', () => {
     nodeStatus.value = {}
     nodeActions.value = {}
     nodeLogs.value = {}
+    nodeContextBefore.value = {}
+    nodeContextAfter.value = {}
   }
 
   function onNodeProgress(nodeId: string, status: string) {
@@ -112,6 +117,22 @@ export const useExecutionStore = defineStore('execution', () => {
 
   function nodeLogsFor(nodeId: string): string[] {
     return nodeLogs.value[nodeId] ?? []
+  }
+
+  function onNodeContext(nodeId: string, phase: string, variables: Record<string, any>) {
+    if (phase === 'before') {
+      nodeContextBefore.value = { ...nodeContextBefore.value, [nodeId]: variables }
+    } else {
+      nodeContextAfter.value = { ...nodeContextAfter.value, [nodeId]: variables }
+    }
+  }
+
+  function nodeContextBeforeFor(nodeId: string): Record<string, any> | null {
+    return nodeContextBefore.value[nodeId] ?? null
+  }
+
+  function nodeContextAfterFor(nodeId: string): Record<string, any> | null {
+    return nodeContextAfter.value[nodeId] ?? null
   }
 
   // WS event handlers
@@ -154,10 +175,11 @@ export const useExecutionStore = defineStore('execution', () => {
 
   return {
     clientExecutions, clientLogs, activeNodeIds, activeNodeClients, watchSnapshots,
-    nodeStatus, nodeActions, nodeLogs,
+    nodeStatus, nodeActions, nodeLogs, nodeContextBefore, nodeContextAfter,
     isRunning, anyRunning,
     runOnClient, stopOnClient, runOnProject, stopOnProject,
     logsFor, addLog, clearLogs, onProgress, onFinished, onWatchSnapshot,
     clearNodeStatus, onNodeProgress, onNodeLog, nodeActionsFor, nodeLogsFor,
+    onNodeContext, nodeContextBeforeFor, nodeContextAfterFor,
   }
 })

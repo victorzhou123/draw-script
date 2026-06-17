@@ -56,6 +56,8 @@
               :graph-cells="graphCells"
               @update="onNodeDataUpdate"
               @close="selectedNode = null"
+              @debug-execute="onDebugExecute"
+              @debug-run-to="onDebugRunTo"
             />
           </div>
         </transition>
@@ -68,12 +70,17 @@
       class="node-ctx-menu"
       :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
     >
-      <div
-        v-if="ctxMenu.data?.type === 'script' && ctxMenu.data?.script_id"
-        class="ctx-menu-item"
-        @click="ctxMenuOpen"
-      >打开</div>
-      <div v-else class="ctx-menu-item ctx-menu-disabled">打开（未绑定脚本）</div>
+      <div class="ctx-menu-item" @click="ctxMenuDebugExecute">执行</div>
+      <div class="ctx-menu-item" @click="ctxMenuDebugRunTo">执行到此</div>
+      <template v-if="ctxMenu.data?.type === 'script'">
+        <div class="ctx-menu-divider" />
+        <div
+          v-if="ctxMenu.data?.script_id"
+          class="ctx-menu-item"
+          @click="ctxMenuOpen"
+        >打开</div>
+        <div v-else class="ctx-menu-item ctx-menu-disabled">打开（未绑定脚本）</div>
+      </template>
     </div>
 
     <ProjectGroupDrawer :open="projectGroupDrawerOpen" @close="projectGroupDrawerOpen = false" />
@@ -86,8 +93,9 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { theme } from 'ant-design-vue'
+import { theme, message } from 'ant-design-vue'
 import { FileAddOutlined } from '@ant-design/icons-vue'
+import { api } from './services/api'
 import GraphEditor from './components/GraphEditor.vue'
 import NodePalette from './components/NodePalette.vue'
 import PropertyPanel from './components/PropertyPanel.vue'
@@ -172,10 +180,10 @@ function onEdgeSelected() {
   selectedNode.value = null
 }
 
-const ctxMenu = reactive({ visible: false, x: 0, y: 0, data: null as any })
+const ctxMenu = reactive({ visible: false, x: 0, y: 0, nodeId: '' as string, data: null as any })
 
 function onNodeContextMenu(payload: { id: string; data: any; clientX: number; clientY: number }) {
-  if (payload.data?.type !== 'script') return
+  ctxMenu.nodeId = payload.id
   ctxMenu.data = payload.data
   ctxMenu.x = payload.clientX
   ctxMenu.y = payload.clientY
@@ -190,6 +198,56 @@ async function ctxMenuOpen() {
     await onScriptSelected(ctxMenu.data.script_id)
     leftTabKey.value = 'scripts'
   }
+}
+
+async function onDebugExecute(nodeId: string) {
+  const script = scriptStore.currentScript
+  if (!script?.default_client_id) {
+    message.warning('请先为脚本绑定客户端后再调试')
+    return
+  }
+  const clientId = script.default_client_id
+  if (!clientStore.connectedIds.has(clientId)) {
+    message.error('绑定的客户端未连接')
+    return
+  }
+  try {
+    const flowJson = graphEditor.value?.getJSON()
+    await api.debugExecuteNode(script.id, nodeId, clientId, flowJson)
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '执行失败')
+  }
+}
+
+async function onDebugRunTo(nodeId: string) {
+  const script = scriptStore.currentScript
+  if (!script?.default_client_id) {
+    message.warning('请先为脚本绑定客户端后再调试')
+    return
+  }
+  const clientId = script.default_client_id
+  if (!clientStore.connectedIds.has(clientId)) {
+    message.error('绑定的客户端未连接')
+    return
+  }
+  try {
+    const flowJson = graphEditor.value?.getJSON()
+    await api.debugRunToNode(script.id, nodeId, clientId, flowJson)
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail || '执行失败')
+  }
+}
+
+async function ctxMenuDebugExecute() {
+  const nodeId = ctxMenu.nodeId
+  closeCtxMenu()
+  if (nodeId) await onDebugExecute(nodeId)
+}
+
+async function ctxMenuDebugRunTo() {
+  const nodeId = ctxMenu.nodeId
+  closeCtxMenu()
+  if (nodeId) await onDebugRunTo(nodeId)
 }
 
 function onNodeDataUpdate(nodeId: string, data: any) {
@@ -246,6 +304,7 @@ html, body, #app { height: 100%; background: #141414; }
 .ctx-menu-item:hover { background: #1890ff22; color: #4dabf7; }
 .ctx-menu-disabled { color: #555 !important; cursor: default; }
 .ctx-menu-disabled:hover { background: none !important; }
+.ctx-menu-divider { height: 1px; background: #3a3a3a; margin: 3px 0; }
 
 /* Empty canvas */
 .empty-canvas {

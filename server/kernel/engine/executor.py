@@ -1,11 +1,13 @@
 import asyncio
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from engine.context import ExecutionContext
 from engine.flow_graph import FlowGraph, FlowNode
-from engine.runner import run_branch
+from engine.node_registry import NodeRegistry
+from engine.runner import run_branch, _broadcast_log, _broadcast_progress, _broadcast_context
 
 logger = logging.getLogger(__name__)
 
@@ -170,3 +172,129 @@ class ExecutionEngine:
         })
         logger.info(f"Execution {execution_id} finished: {status}")
         logger.debug(f"Execution {execution_id} result: {result_json}")
+
+    async def debug_execute_node(
+        self,
+        script_id: str,
+        client_id: str,
+        flow_json: dict[str, Any],
+        node_id: str,
+        project_id: str | None = None,
+    ) -> None:
+        execution_id = f"debug-{uuid.uuid4().hex[:8]}"
+        graph = FlowGraph.from_x6_json(flow_json)
+        target = graph.nodes.get(node_id)
+
+        gpu_enabled = False
+        async with self.session_factory() as db:
+            from database import Client
+            client_row = await db.get(Client, client_id)
+            if client_row:
+                gpu_enabled = bool(client_row.gpu_enabled)
+
+        await self.ui_manager.broadcast_event("execution_started", {
+            "execution_id": execution_id,
+            "script_id": script_id,
+            "client_id": client_id,
+        })
+
+        if not target:
+            await self.ui_manager.broadcast_event("execution_finished", {
+                "execution_id": execution_id,
+                "client_id": client_id,
+                "status": "error",
+                "error": f"Node {node_id} not found",
+            })
+            return
+
+        ctx = ExecutionContext(
+            execution_id=execution_id,
+            client_id=client_id,
+            node=target,
+            graph=graph,
+            ws_manager=self.ws_manager,
+            ui_manager=self.ui_manager,
+            session_factory=self.session_factory,
+            project_id=project_id,
+            gpu_enabled=gpu_enabled,
+            variables={},
+        )
+
+        await _broadcast_progress(ctx, node_id, target.node_type, "running")
+        await _broadcast_context(ctx, node_id, "before")
+        try:
+            handler_cls = NodeRegistry.get_handler(target.node_type)
+            result = await handler_cls(ctx).execute()
+            await _broadcast_progress(ctx, node_id, None, "done" if result.success else "error")
+            await _broadcast_context(ctx, node_id, "after")
+            if not result.success and result.error:
+                await _broadcast_log(ctx, node_id, "error", f"  ERROR: {result.error}")
+        except Exception as e:
+            logger.exception(f"Debug execute node {node_id} failed: {e}")
+            await _broadcast_log(ctx, node_id, "error", f"  ERROR: {e}")
+            await _broadcast_progress(ctx, node_id, None, "error")
+            await _broadcast_context(ctx, node_id, "after")
+
+        await self.ui_manager.broadcast_event("execution_finished", {
+            "execution_id": execution_id,
+            "client_id": client_id,
+            "status": "completed",
+            "error": None,
+        })
+
+    async def debug_run_to_node(
+        self,
+        script_id: str,
+        client_id: str,
+        flow_json: dict[str, Any],
+        node_id: str,
+        project_id: str | None = None,
+    ) -> None:
+        execution_id = f"debug-{uuid.uuid4().hex[:8]}"
+        graph = FlowGraph.from_x6_json(flow_json)
+        start_node = graph.get_start_node()
+
+        gpu_enabled = False
+        async with self.session_factory() as db:
+            from database import Client
+            client_row = await db.get(Client, client_id)
+            if client_row:
+                gpu_enabled = bool(client_row.gpu_enabled)
+
+        await self.ui_manager.broadcast_event("execution_started", {
+            "execution_id": execution_id,
+            "script_id": script_id,
+            "client_id": client_id,
+        })
+
+        if not start_node:
+            await self.ui_manager.broadcast_event("execution_finished", {
+                "execution_id": execution_id,
+                "client_id": client_id,
+                "status": "error",
+                "error": "No start node found",
+            })
+            return
+
+        ctx = ExecutionContext(
+            execution_id=execution_id,
+            client_id=client_id,
+            node=start_node,
+            graph=graph,
+            ws_manager=self.ws_manager,
+            ui_manager=self.ui_manager,
+            session_factory=self.session_factory,
+            project_id=project_id,
+            gpu_enabled=gpu_enabled,
+            variables={},
+        )
+
+        error = await run_branch(ctx, start_node, {}, "", stop_after_node_id=node_id)
+
+        status = "error" if error else "completed"
+        await self.ui_manager.broadcast_event("execution_finished", {
+            "execution_id": execution_id,
+            "client_id": client_id,
+            "status": status,
+            "error": error,
+        })

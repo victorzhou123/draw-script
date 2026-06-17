@@ -43,8 +43,63 @@
           </template>
         </a-tab-pane>
 
-        <a-tab-pane key="status" tab="状态">
-          <div class="section-title" style="margin-top:0">节点动作</div>
+        <a-tab-pane key="debug" tab="调试">
+          <div class="section-title" style="margin-top:0">调试</div>
+          <div class="debug-actions">
+            <a-button size="small" class="debug-btn" @click="emit('debugExecute', editingNodeId)">执行</a-button>
+            <a-button size="small" class="debug-btn" @click="emit('debugRunTo', editingNodeId)">执行到此</a-button>
+          </div>
+
+          <a-divider style="margin: 14px 0 10px; border-color: #2a2a2a;" />
+
+          <div class="section-title">Context</div>
+          <template v-if="!ctxBefore && !ctxAfter">
+            <div class="empty-hint">暂无记录（运行一次后显示）</div>
+          </template>
+          <template v-else>
+            <!-- 执行前 -->
+            <div class="ctx-phase-label">执行前</div>
+            <template v-if="ctxBefore && Object.keys(ctxBefore).length > 0">
+              <div class="ctx-kv-list">
+                <div v-for="[k, v] in Object.entries(ctxBefore)" :key="k" class="ctx-kv-entry">
+                  <div class="ctx-kv-row">
+                    <span class="ctx-kv-key" :title="k">{{ k }}</span>
+                    <span v-if="!isComplex(v)" class="ctx-kv-val" :class="valTypeClass(v)">{{ formatPrimitive(v) }}</span>
+                    <span v-else class="ctx-kv-val ctx-obj-val" @click="toggleCtxKey('before', k)">
+                      <span :class="valTypeClass(v)">{{ formatSummary(v) }}</span>
+                      <span class="ctx-chevron">{{ expandedCtxKeys.has('before:' + k) ? '▼' : '▶' }}</span>
+                    </span>
+                  </div>
+                  <pre v-if="isComplex(v) && expandedCtxKeys.has('before:' + k)" class="ctx-expanded-json">{{ JSON.stringify(v, null, 2) }}</pre>
+                </div>
+              </div>
+            </template>
+            <div v-else class="empty-hint" style="padding-left:4px">（空）</div>
+
+            <!-- 执行后 -->
+            <div class="ctx-phase-label" style="margin-top:10px">执行后</div>
+            <template v-if="ctxAfter && Object.keys(ctxAfter).length > 0">
+              <div class="ctx-kv-list">
+                <div v-for="[k, v] in Object.entries(ctxAfter)" :key="k" class="ctx-kv-entry">
+                  <div class="ctx-kv-row">
+                    <span class="ctx-kv-key" :title="k">{{ k }}</span>
+                    <span v-if="!isComplex(v)" class="ctx-kv-val" :class="valTypeClass(v)">{{ formatPrimitive(v) }}</span>
+                    <span v-else class="ctx-kv-val ctx-obj-val" @click="toggleCtxKey('after', k)">
+                      <span :class="valTypeClass(v)">{{ formatSummary(v) }}</span>
+                      <span class="ctx-chevron">{{ expandedCtxKeys.has('after:' + k) ? '▼' : '▶' }}</span>
+                    </span>
+                  </div>
+                  <pre v-if="isComplex(v) && expandedCtxKeys.has('after:' + k)" class="ctx-expanded-json">{{ JSON.stringify(v, null, 2) }}</pre>
+                </div>
+              </div>
+            </template>
+            <div v-else-if="!ctxAfter" class="empty-hint" style="padding-left:4px">（运行中…）</div>
+            <div v-else class="empty-hint" style="padding-left:4px">（空）</div>
+          </template>
+
+          <a-divider style="margin: 14px 0 10px; border-color: #2a2a2a;" />
+
+          <div class="section-title">节点动作</div>
           <div v-if="nodeActions.length === 0" class="empty-hint">暂无记录（运行一次脚本后会显示这个节点做了什么）</div>
           <div v-else class="log-list">
             <div v-for="(line, idx) in nodeActions" :key="idx" class="log-line action-line">{{ line }}</div>
@@ -101,11 +156,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update', nodeId: string, data: any): void
   (e: 'close'): void
+  (e: 'debugExecute', nodeId: string): void
+  (e: 'debugRunTo', nodeId: string): void
 }>()
 
 const localData = ref<any>({})
 const editingNodeId = ref<string>('')
-const activeTab = ref<'props' | 'status'>('props')
+const activeTab = ref<'props' | 'debug'>('props')
 
 const projectStore = useProjectStore()
 const scriptStore = useScriptStore()
@@ -114,6 +171,42 @@ const executionStore = useExecutionStore()
 
 const nodeActions = computed(() => executionStore.nodeActionsFor(editingNodeId.value))
 const nodeLogs = computed(() => executionStore.nodeLogsFor(editingNodeId.value))
+const ctxBefore = computed(() => executionStore.nodeContextBeforeFor(editingNodeId.value))
+const ctxAfter = computed(() => executionStore.nodeContextAfterFor(editingNodeId.value))
+
+const expandedCtxKeys = ref(new Set<string>())
+
+function toggleCtxKey(phase: string, key: string) {
+  const k = `${phase}:${key}`
+  const next = new Set(expandedCtxKeys.value)
+  if (next.has(k)) next.delete(k)
+  else next.add(k)
+  expandedCtxKeys.value = next
+}
+
+function isComplex(v: any): boolean {
+  return v !== null && typeof v === 'object'
+}
+
+function formatPrimitive(v: any): string {
+  if (v === null || v === undefined) return 'null'
+  if (typeof v === 'string') return `"${v}"`
+  return String(v)
+}
+
+function valTypeClass(v: any): string {
+  if (v === null || v === undefined) return 'ctx-null'
+  if (typeof v === 'string') return 'ctx-string'
+  if (typeof v === 'number') return 'ctx-number'
+  if (typeof v === 'boolean') return 'ctx-bool'
+  return 'ctx-obj'
+}
+
+function formatSummary(v: any): string {
+  if (Array.isArray(v)) return `[ ${v.length} 项 ]`
+  if (typeof v === 'object' && v !== null) return `{ ${Object.keys(v).length} 个键 }`
+  return String(v)
+}
 
 const contextFields = computed(() => {
   const id = props.selectedNode?.id
@@ -189,6 +282,7 @@ watch(() => props.selectedNode, (node) => {
   if (!node) return
   editingNodeId.value = node.id
   activeTab.value = 'props'
+  expandedCtxKeys.value = new Set()
   const d = JSON.parse(JSON.stringify({
     label: node.data.label || '',
     type: node.data.type || '',
@@ -298,4 +392,49 @@ function emitUpdate() {
 .evo-field-tag { font-size: 11px; font-family: 'Consolas', monospace; padding: 1px 7px; border-radius: 10px; }
 .evo-field-tag.certain { background: #162312; color: #52c41a; border: 1px solid #274916; }
 .evo-field-tag.conditional { background: #2b2111; color: #faad14; border: 1px solid #3f2e00; }
+.debug-actions { display: flex; gap: 8px; margin-bottom: 4px; }
+.debug-btn { background: #252525 !important; border-color: #3a3a3a !important; color: #aaa !important; font-size: 12px !important; }
+.debug-btn:hover { border-color: #1890ff !important; color: #4dabf7 !important; }
+
+/* Context section */
+.ctx-phase-label {
+  font-size: 10px; font-weight: 600; color: #3a3a3a;
+  text-transform: uppercase; letter-spacing: 0.6px;
+  margin: 6px 0 4px; padding-bottom: 3px;
+  border-bottom: 1px solid #252525;
+}
+.ctx-kv-list { display: flex; flex-direction: column; gap: 1px; }
+.ctx-kv-entry { display: flex; flex-direction: column; }
+.ctx-kv-row {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 2px 0; min-height: 20px;
+}
+.ctx-kv-key {
+  font-size: 11px; font-family: 'Consolas', monospace;
+  color: #666; flex-shrink: 0;
+  min-width: 50px; max-width: 110px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ctx-kv-val {
+  font-size: 11px; font-family: 'Consolas', monospace;
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ctx-obj-val { cursor: pointer; display: flex; align-items: center; gap: 4px; }
+.ctx-obj-val:hover { opacity: 0.8; }
+.ctx-chevron { font-size: 9px; color: #555; flex-shrink: 0; }
+.ctx-string  { color: #5cdbd3; }
+.ctx-number  { color: #69c0ff; }
+.ctx-bool    { color: #ffd666; }
+.ctx-null    { color: #555; }
+.ctx-obj     { color: #d3adf7; }
+.ctx-expanded-json {
+  font-size: 10px; font-family: 'Consolas', monospace;
+  color: #888; background: #141414;
+  border-radius: 4px; padding: 6px 8px;
+  margin: 2px 0 4px 8px;
+  max-height: 120px; overflow: auto;
+  white-space: pre; border: 1px solid #252525;
+  line-height: 1.5;
+}
 </style>

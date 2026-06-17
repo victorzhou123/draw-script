@@ -126,6 +126,10 @@ export const api = {
     http.post(`/scripts/${id}/stop`, null, { params: { execution_id } }).then(r => r.data),
   getExecutions: (id: string) =>
     http.get<Execution[]>(`/scripts/${id}/executions`).then(r => r.data),
+  debugExecuteNode: (id: string, node_id: string, client_id: string, flow_json: any) =>
+    http.post(`/scripts/${id}/debug/execute-node`, { client_id, node_id, flow_json }).then(r => r.data),
+  debugRunToNode: (id: string, node_id: string, client_id: string, flow_json: any) =>
+    http.post(`/scripts/${id}/debug/run-to-node`, { client_id, node_id, flow_json }).then(r => r.data),
 
   // Clients
   getClients: () => http.get<Client[]>('/clients').then(r => r.data),
