@@ -2,32 +2,38 @@ import asyncio
 import copy
 import logging
 
-from engine.base_handler import interpolate_value
+from engine.base_handler import LoopCountError, resolve_loop_count
 from engine.node_registry import NodeRegistry
 
 logger = logging.getLogger(__name__)
 
 MAX_VISITS = 1000
-MIN_HIGHLIGHT_SECS = 0.5
 
 
-def _schedule_done(ctx, node_id: str, status: str, node_start: float) -> None:
-    """Fire-and-forget: broadcast execution_progress after the node has been
-    visually highlighted for at least MIN_HIGHLIGHT_SECS."""
-    loop = asyncio.get_running_loop()
-    delay = max(0.0, MIN_HIGHLIGHT_SECS - (loop.time() - node_start))
+async def _broadcast_log(ctx, node_id: str, level: str, message: str) -> None:
+    """Append to the execution log and broadcast it tagged with node_id + level
+    ("action" for normal node-activity descriptions, "error" for failures), so
+    the UI can split a node's status view into "节点动作" / "日志" tabs."""
+    ctx.log.append(message)
+    await ctx.ui_manager.broadcast_event("execution_log", {
+        "execution_id": ctx.execution_id,
+        "client_id": ctx.client_id,
+        "node_id": node_id,
+        "level": level,
+        "message": message,
+    })
 
-    async def _emit() -> None:
-        if delay > 0:
-            await asyncio.sleep(delay)
-        await ctx.ui_manager.broadcast_event("execution_progress", {
-            "execution_id": ctx.execution_id,
-            "client_id": ctx.client_id,
-            "node_id": node_id,
-            "status": status,
-        })
 
-    asyncio.create_task(_emit())
+async def _broadcast_progress(ctx, node_id: str, node_type: str | None, status: str) -> None:
+    payload = {
+        "execution_id": ctx.execution_id,
+        "client_id": ctx.client_id,
+        "node_id": node_id,
+        "status": status,
+    }
+    if node_type is not None:
+        payload["node_type"] = node_type
+    await ctx.ui_manager.broadcast_event("execution_progress", payload)
 
 
 async def run_branch(
@@ -50,45 +56,28 @@ async def run_branch(
         if visited_count[current.id] > MAX_VISITS:
             return "Infinite loop detected"
 
-        node_start = asyncio.get_running_loop().time()
-        await ctx.ui_manager.broadcast_event("execution_progress", {
-            "execution_id": ctx.execution_id,
-            "client_id": ctx.client_id,
-            "node_id": current.id,
-            "node_type": current.node_type,
-            "status": "running",
-        })
+        await _broadcast_progress(ctx, current.id, current.node_type, "running")
 
         ctx.node = current
         node_label = current.data.get("label", "").strip()
         script_prefix = f"[{script_name}] " if script_name else ""
         label_suffix = f' "{node_label}"' if node_label else ""
         log_entry = f"{script_prefix}[{current.node_type}] {current.id}{label_suffix}"
-        ctx.log.append(log_entry)
-        await ctx.ui_manager.broadcast_event("execution_log", {
-            "execution_id": ctx.execution_id,
-            "client_id": ctx.client_id,
-            "message": log_entry,
-        })
+        await _broadcast_log(ctx, current.id, "action", log_entry)
 
         try:
             handler_cls = NodeRegistry.get_handler(current.node_type)
             result = await handler_cls(ctx).execute()
         except Exception as e:
             logger.exception(f"Node {current.id} ({current.node_type}) failed: {e}")
-            _schedule_done(ctx, current.id, "error", node_start)
+            await _broadcast_log(ctx, current.id, "error", f"  ERROR: {e}")
+            await _broadcast_progress(ctx, current.id, None, "error")
             return str(e)
 
-        _schedule_done(ctx, current.id, "done" if result.success else "error", node_start)
+        await _broadcast_progress(ctx, current.id, None, "done" if result.success else "error")
 
         if not result.success and result.error:
-            err_entry = f"  ERROR: {result.error}"
-            ctx.log.append(err_entry)
-            await ctx.ui_manager.broadcast_event("execution_log", {
-                "execution_id": ctx.execution_id,
-                "client_id": ctx.client_id,
-                "message": err_entry,
-            })
+            await _broadcast_log(ctx, current.id, "error", f"  ERROR: {result.error}")
 
         if result.stop_branch:
             return None
@@ -105,11 +94,10 @@ async def run_branch(
             loop_nodes = [n for n in next_nodes if n.node_type == "loop"]
             if loop_nodes:
                 loop_node = loop_nodes[0]
-                raw_count = interpolate_value(ctx.variables, loop_node.data.get("params", {}).get("count", 1))
                 try:
-                    max_count = int(raw_count)
-                except (TypeError, ValueError):
-                    max_count = 1
+                    max_count = resolve_loop_count(ctx.variables, loop_node.data.get("params", {}))
+                except LoopCountError as e:
+                    return f"Loop node {loop_node.id}: {e}"
                 if ctx.loop_counters.get(loop_node.id, 1) >= max_count:
                     if ctx.graph.get_next_nodes(loop_node.id, "exit"):
                         next_nodes = [loop_node]

@@ -941,6 +941,15 @@ def _int(v, default=0):
         return default
 
 
+def _require_int(v, field_name: str) -> int:
+    """Like _int, but raises instead of silently defaulting — for coordinates
+    where a wrong-but-unnoticed value (e.g. 0,0) could click the wrong thing."""
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        raise ValueError(f"参数 '{field_name}' 不是合法整数: {v!r}")
+
+
 # ── Command handler ───────────────────────────────────────────────────────────
 
 class CommandHandler:
@@ -1085,77 +1094,80 @@ class CommandHandler:
         import pyautogui
         pyautogui.FAILSAFE = False
 
-        if action_type == "mouse_click":
-            x, y = _int(params.get("x"), 0), _int(params.get("y"), 0)
-            await _run_blocking(pyautogui.click, x, y,
-                                button=params.get("button","left"),
-                                clicks=_int(params.get("clicks"), 1))
-            return True, {"x": x, "y": y}, None
+        try:
+            if action_type == "mouse_click":
+                x, y = _require_int(params.get("x"), "x"), _require_int(params.get("y"), "y")
+                await _run_blocking(pyautogui.click, x, y,
+                                    button=params.get("button","left"),
+                                    clicks=_int(params.get("clicks"), 1))
+                return True, {"x": x, "y": y}, None
 
-        if action_type == "mouse_double_click":
-            x, y = _int(params.get("x"), 0), _int(params.get("y"), 0)
-            interval = _int(params.get("interval_ms"), 100) / 1000.0
-            button = params.get("button") or "left"
-            await _run_blocking(pyautogui.click, x, y,
-                                clicks=2,
-                                interval=interval,
-                                button=button)
-            return True, {"x": x, "y": y}, None
+            if action_type == "mouse_double_click":
+                x, y = _require_int(params.get("x"), "x"), _require_int(params.get("y"), "y")
+                interval = _int(params.get("interval_ms"), 100) / 1000.0
+                button = params.get("button") or "left"
+                await _run_blocking(pyautogui.click, x, y,
+                                    clicks=2,
+                                    interval=interval,
+                                    button=button)
+                return True, {"x": x, "y": y}, None
 
-        if action_type == "mouse_move":
-            x, y = _int(params.get("x"), 0), _int(params.get("y"), 0)
-            await _run_blocking(pyautogui.moveTo, x, y, duration=float(params.get("duration") or 0.2))
-            return True, {"x": x, "y": y}, None
+            if action_type == "mouse_move":
+                x, y = _require_int(params.get("x"), "x"), _require_int(params.get("y"), "y")
+                await _run_blocking(pyautogui.moveTo, x, y, duration=float(params.get("duration") or 0.2))
+                return True, {"x": x, "y": y}, None
 
-        if action_type == "mouse_drag":
-            x1, y1 = _int(params.get("x1"), 0), _int(params.get("y1"), 0)
-            x2, y2 = _int(params.get("x2"), 0), _int(params.get("y2"), 0)
-            await _run_blocking(pyautogui.moveTo, x1, y1)
-            await _run_blocking(pyautogui.dragTo, x2, y2,
-                                duration=float(params.get("duration") or 0.3))
-            return True, {}, None
+            if action_type == "mouse_drag":
+                x1, y1 = _require_int(params.get("x1"), "x1"), _require_int(params.get("y1"), "y1")
+                x2, y2 = _require_int(params.get("x2"), "x2"), _require_int(params.get("y2"), "y2")
+                await _run_blocking(pyautogui.moveTo, x1, y1)
+                await _run_blocking(pyautogui.dragTo, x2, y2,
+                                    duration=float(params.get("duration") or 0.3))
+                return True, {}, None
 
-        if action_type == "keyboard_type":
-            text = str(params.get("text", ""))
-            await _run_blocking(_type_text, text)
-            return True, {"length": len(text)}, None
+            if action_type == "keyboard_type":
+                text = str(params.get("text", ""))
+                await _run_blocking(_type_text, text)
+                return True, {"length": len(text)}, None
 
-        if action_type == "keyboard_hotkey":
-            keys = params.get("keys", [])
-            if isinstance(keys, str):
-                keys = keys.split("+")
-            hold_ms = _int(params.get("hold_ms"), 0)
-            if hold_ms > 0:
-                import time
-                def _hold():
-                    for key in keys:
-                        pyautogui.keyDown(key)
-                    time.sleep(hold_ms / 1000.0)
-                    for key in reversed(keys):
-                        pyautogui.keyUp(key)
-                await _run_blocking(_hold)
-            else:
-                await _run_blocking(pyautogui.hotkey, *keys)
-            return True, {"keys": keys}, None
+            if action_type == "keyboard_hotkey":
+                keys = params.get("keys", [])
+                if isinstance(keys, str):
+                    keys = keys.split("+")
+                hold_ms = _int(params.get("hold_ms"), 0)
+                if hold_ms > 0:
+                    import time
+                    def _hold():
+                        for key in keys:
+                            pyautogui.keyDown(key)
+                        time.sleep(hold_ms / 1000.0)
+                        for key in reversed(keys):
+                            pyautogui.keyUp(key)
+                    await _run_blocking(_hold)
+                else:
+                    await _run_blocking(pyautogui.hotkey, *keys)
+                return True, {"keys": keys}, None
 
-        if action_type == "keyboard_press":
-            key = params.get("key", "")
-            await _run_blocking(pyautogui.press, key, presses=_int(params.get("presses"), 1))
-            return True, {"key": key}, None
+            if action_type == "keyboard_press":
+                key = params.get("key", "")
+                await _run_blocking(pyautogui.press, key, presses=_int(params.get("presses"), 1))
+                return True, {"key": key}, None
 
-        if action_type == "mouse_scroll":
-            if "direction" in params:
-                amount = _int(params.get("amount"), 3)
-                clicks = amount if params["direction"] == "up" else -amount
-            else:
-                clicks = _int(params.get("clicks"), 3)  # backward compat
-            x = params.get("x")
-            y = params.get("y")
-            if x is not None and y is not None:
-                await _run_blocking(pyautogui.scroll, clicks, _int(x), _int(y))
-            else:
-                await _run_blocking(pyautogui.scroll, clicks)
-            return True, {}, None
+            if action_type == "mouse_scroll":
+                if "direction" in params:
+                    amount = _int(params.get("amount"), 3)
+                    clicks = amount if params["direction"] == "up" else -amount
+                else:
+                    clicks = _int(params.get("clicks"), 3)  # backward compat
+                x = params.get("x")
+                y = params.get("y")
+                if x is not None and y is not None:
+                    await _run_blocking(pyautogui.scroll, clicks, _require_int(x, "x"), _require_int(y, "y"))
+                else:
+                    await _run_blocking(pyautogui.scroll, clicks)
+                return True, {}, None
+        except ValueError as e:
+            return False, {}, str(e)
 
         return False, {}, f"Unknown action_type: {action_type}"
 

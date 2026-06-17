@@ -6,6 +6,7 @@ from sqlalchemy import select
 from database import GlobalVariable
 from engine.base_handler import BaseNodeHandler, NodeResult
 from engine.node_registry import NodeRegistry
+from engine.type_coerce import coerce_typed, TypeConversionError
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +46,12 @@ class GlobalVarNodeHandler(BaseNodeHandler):
                         return NodeResult(success=False, error=f"global_var write: context key '{source_key}' not found")
                     value = self.ctx.variables[source_key]
                 else:
-                    # literal: try to parse as JSON so numbers/bools/lists stay typed;
-                    # fall back to plain string if the input is not valid JSON.
                     raw = item.get("literal_value", "")
+                    value_type = item.get("value_type") or "str"
                     try:
-                        value = json.loads(raw)
-                    except (json.JSONDecodeError, TypeError):
-                        value = raw
+                        value = coerce_typed(raw, value_type)
+                    except TypeConversionError as e:
+                        return NodeResult(success=False, error=f"global_var write: 字面值类型转换失败（变量 '{var_name}'，声明类型 {value_type}）: {e}")
 
                 encoded = json.dumps(value, ensure_ascii=False)
                 result = await session.execute(

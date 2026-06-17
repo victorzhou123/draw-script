@@ -10,35 +10,55 @@
     <div class="panel-body">
       <div class="node-type-badge" :class="`badge-${nodeType}`">{{ nodeLabel }}</div>
 
-      <a-form layout="vertical" size="small" class="prop-form">
-        <a-form-item label="节点标签">
-          <a-input v-model:value="localData.label" @change="emitUpdate()" />
-        </a-form-item>
+      <a-tabs v-model:activeKey="activeTab" size="small">
+        <a-tab-pane key="props" tab="属性">
+          <a-form layout="vertical" size="small" class="prop-form">
+            <a-form-item label="节点标签">
+              <a-input v-model:value="localData.label" @change="emitUpdate()" />
+            </a-form-item>
 
-        <component :is="formComponent" v-if="formComponent" />
-      </a-form>
+            <component :is="formComponent" v-if="formComponent" />
+          </a-form>
 
-      <!-- Context 演变时间线 -->
-      <template v-if="evolutionSteps.length > 0">
-        <a-divider style="margin: 14px 0 10px; border-color: #2a2a2a;" />
-        <div class="section-title" style="margin-top:0">
-          Context 追踪
-          <span class="ctx-legend">
-            <span class="ctx-dot certain" />确定
-            <span class="ctx-dot conditional" style="margin-left:8px" />条件分支
-          </span>
-        </div>
-        <div class="evo-list">
-          <div v-for="step in evolutionSteps" :key="step.nodeId" class="evo-step">
-            <span class="evo-node-badge" :class="`badge-${step.nodeType}`">{{ step.nodeLabel }}</span>
-            <div class="evo-fields">
-              <span v-for="f in step.addedFields" :key="f.name" class="evo-field-tag" :class="f.certain ? 'certain' : 'conditional'">
-                {{ f.name }}
+          <!-- Context 演变时间线 -->
+          <template v-if="evolutionSteps.length > 0">
+            <a-divider style="margin: 14px 0 10px; border-color: #2a2a2a;" />
+            <div class="section-title" style="margin-top:0">
+              Context 追踪
+              <span class="ctx-legend">
+                <span class="ctx-dot certain" />确定
+                <span class="ctx-dot conditional" style="margin-left:8px" />条件分支
               </span>
             </div>
+            <div class="evo-list">
+              <div v-for="step in evolutionSteps" :key="step.nodeId" class="evo-step">
+                <span class="evo-node-badge" :class="`badge-${step.nodeType}`">{{ step.nodeLabel }}</span>
+                <div class="evo-fields">
+                  <span v-for="f in step.addedFields" :key="f.name" class="evo-field-tag" :class="f.certain ? 'certain' : 'conditional'">
+                    {{ f.name }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </template>
+        </a-tab-pane>
+
+        <a-tab-pane key="status" tab="状态">
+          <div class="section-title" style="margin-top:0">节点动作</div>
+          <div v-if="nodeActions.length === 0" class="empty-hint">暂无记录（运行一次脚本后会显示这个节点做了什么）</div>
+          <div v-else class="log-list">
+            <div v-for="(line, idx) in nodeActions" :key="idx" class="log-line action-line">{{ line }}</div>
           </div>
-        </div>
-      </template>
+
+          <a-divider style="margin: 14px 0 10px; border-color: #2a2a2a;" />
+
+          <div class="section-title">日志</div>
+          <div v-if="nodeLogs.length === 0" class="empty-hint">暂无错误/日志</div>
+          <div v-else class="log-list">
+            <div v-for="(line, idx) in nodeLogs" :key="idx" class="log-line error-line">{{ line }}</div>
+          </div>
+        </a-tab-pane>
+      </a-tabs>
     </div>
   </div>
 </template>
@@ -49,6 +69,7 @@ import { ApartmentOutlined, CloseOutlined } from '@ant-design/icons-vue'
 import { useProjectStore } from '@/stores/projectStore'
 import { useScriptStore } from '@/stores/scriptStore'
 import { useModelStore } from '@/stores/modelStore'
+import { useExecutionStore } from '@/stores/executionStore'
 import { analyzeContextAtNode, analyzeContextEvolution } from '@/utils/contextAnalysis'
 import { FORM_CTX } from './node-forms/useFormContext'
 import ActionForm from './node-forms/ActionForm.vue'
@@ -84,10 +105,15 @@ const emit = defineEmits<{
 
 const localData = ref<any>({})
 const editingNodeId = ref<string>('')
+const activeTab = ref<'props' | 'status'>('props')
 
 const projectStore = useProjectStore()
 const scriptStore = useScriptStore()
 const modelStore = useModelStore()
+const executionStore = useExecutionStore()
+
+const nodeActions = computed(() => executionStore.nodeActionsFor(editingNodeId.value))
+const nodeLogs = computed(() => executionStore.nodeLogsFor(editingNodeId.value))
 
 const contextFields = computed(() => {
   const id = props.selectedNode?.id
@@ -162,6 +188,7 @@ watch(() => localData.value.vision_type, (vt) => {
 watch(() => props.selectedNode, (node) => {
   if (!node) return
   editingNodeId.value = node.id
+  activeTab.value = 'props'
   const d = JSON.parse(JSON.stringify({
     label: node.data.label || '',
     type: node.data.type || '',
@@ -175,6 +202,9 @@ watch(() => props.selectedNode, (node) => {
     range_marker: node.data.range_marker || '',
     found_value: node.data.found_value ?? '',
     not_found_value: node.data.not_found_value ?? 'None',
+    found_value_type: node.data.found_value_type || '',
+    not_found_value_type: node.data.not_found_value_type || '',
+    value_type: node.data.value_type || '',
     fields: node.data.fields || [],
     return_fields: node.data.return_fields || [],
     known_fields: node.data.known_fields || [],
@@ -232,6 +262,14 @@ function emitUpdate() {
 .close-btn { color: #444 !important; padding: 0 4px !important; height: 22px !important; }
 .close-btn:hover { color: #888 !important; }
 .panel-body { flex: 1; overflow-y: auto; padding: 12px; }
+.empty-hint { font-size: 11px; color: #444; padding: 4px 0; }
+.log-list { display: flex; flex-direction: column; gap: 4px; }
+.log-line {
+  font-size: 11px; font-family: 'Consolas', monospace; line-height: 1.5;
+  padding: 4px 8px; border-radius: 4px; word-break: break-all; white-space: pre-wrap;
+}
+.log-line.action-line { color: #888; background: #1f1f1f; }
+.log-line.error-line  { color: #ff7875; background: #2a1215; }
 .node-type-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 4px; margin-bottom: 14px; border: 1px solid; }
 .badge-start      { color: #52c41a; border-color: #52c41a; background: #162312; }
 .badge-end        { color: #ff4d4f; border-color: #ff4d4f; background: #2a1215; }

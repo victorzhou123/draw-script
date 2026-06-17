@@ -38,6 +38,24 @@ def interpolate_value(variables: dict, value: Any) -> Any:
     return re.sub(r"\{\{([^}]+)\}\}", _replace, value)
 
 
+class LoopCountError(ValueError):
+    pass
+
+
+def resolve_loop_count(variables: dict, params: dict) -> int:
+    """Resolve a loop node's 'count' param (may be a {{var}} reference) to an int.
+
+    Raises LoopCountError instead of silently defaulting, since a wrong count
+    (e.g. "run once" instead of "run 10 times") fails the script in a way that's
+    easy to miss otherwise.
+    """
+    raw_count = interpolate_value(variables, params.get("count", 1))
+    try:
+        return int(raw_count)
+    except (TypeError, ValueError):
+        raise LoopCountError(f"循环次数配置无效: {raw_count!r}")
+
+
 @dataclass
 class NodeResult:
     success: bool = True

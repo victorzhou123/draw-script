@@ -100,12 +100,14 @@ import LogsDrawer from './components/LogsDrawer.vue'
 import HelpDrawer from './components/HelpDrawer.vue'
 import { useScriptStore } from './stores/scriptStore'
 import { useProjectStore } from './stores/projectStore'
+import { useClientStore } from './stores/clientStore'
 import { uiWS } from './services/websocket'
 
 const darkTheme = { algorithm: theme.darkAlgorithm }
 
 const scriptStore = useScriptStore()
 const projectStore = useProjectStore()
+const clientStore = useClientStore()
 const graphEditor = ref<InstanceType<typeof GraphEditor>>()
 const selectedNode = ref<{ id: string; data: any } | null>(null)
 const graphCells = ref<any[]>([])
@@ -138,6 +140,7 @@ function triggerAutoSave() {
 
 onMounted(() => {
   uiWS.connect()
+  clientStore.fetchClients()
   document.addEventListener('click', closeCtxMenu)
   document.addEventListener('contextmenu', closeCtxMenu)
 })

@@ -25,6 +25,14 @@ export const useExecutionStore = defineStore('execution', () => {
   // Derived set of active node IDs for consumers (BaseNode, GraphEditor)
   const activeNodeIds = computed(() => new Set(activeNodeClients.value.keys()))
 
+  // ── Per-node status/action/log (scoped to a script's bound client, latest run only) ──
+  // nodeId → terminal status, drives the ✓/✗ corner badge
+  const nodeStatus = ref<Record<string, 'done' | 'error'>>({})
+  // nodeId → human-readable "what this node did" lines (level=action)
+  const nodeActions = ref<Record<string, string[]>>({})
+  // nodeId → error/log lines (level=error)
+  const nodeLogs = ref<Record<string, string[]>>({})
+
   function isRunning(clientId: string): boolean {
     return clientExecutions.value[clientId]?.status === 'running'
   }
@@ -80,6 +88,32 @@ export const useExecutionStore = defineStore('execution', () => {
     watchSnapshots.value[nodeId][clientId] = snapshot
   }
 
+  function clearNodeStatus() {
+    nodeStatus.value = {}
+    nodeActions.value = {}
+    nodeLogs.value = {}
+  }
+
+  function onNodeProgress(nodeId: string, status: string) {
+    if (status === 'done' || status === 'error') {
+      nodeStatus.value[nodeId] = status
+    }
+  }
+
+  function onNodeLog(nodeId: string, level: string, message: string) {
+    const bucket = level === 'error' ? nodeLogs.value : nodeActions.value
+    if (!bucket[nodeId]) bucket[nodeId] = []
+    bucket[nodeId].push(message)
+  }
+
+  function nodeActionsFor(nodeId: string): string[] {
+    return nodeActions.value[nodeId] ?? []
+  }
+
+  function nodeLogsFor(nodeId: string): string[] {
+    return nodeLogs.value[nodeId] ?? []
+  }
+
   // WS event handlers
   function onProgress(nodeId: string, nodeStatus: string, clientId: string) {
     const next = new Map(activeNodeClients.value)
@@ -120,8 +154,10 @@ export const useExecutionStore = defineStore('execution', () => {
 
   return {
     clientExecutions, clientLogs, activeNodeIds, activeNodeClients, watchSnapshots,
+    nodeStatus, nodeActions, nodeLogs,
     isRunning, anyRunning,
     runOnClient, stopOnClient, runOnProject, stopOnProject,
     logsFor, addLog, clearLogs, onProgress, onFinished, onWatchSnapshot,
+    clearNodeStatus, onNodeProgress, onNodeLog, nodeActionsFor, nodeLogsFor,
   }
 })

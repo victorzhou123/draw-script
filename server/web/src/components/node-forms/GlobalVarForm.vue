@@ -39,11 +39,31 @@
         </div>
         <div class="item-row" v-else>
           <a-input
+            v-if="item.value_type !== 'bool'"
             v-model:value="item.literal_value"
-            placeholder='字符串或 JSON，如: 42 / true / "hello"'
+            placeholder="字面值，按右侧声明类型转换"
             class="item-full"
             @change="update()"
           />
+          <a-select
+            v-else
+            v-model:value="item.literal_value"
+            placeholder="选择 True / False"
+            allow-clear
+            class="item-full"
+            @change="update()"
+          >
+            <a-select-option value="True">True</a-select-option>
+            <a-select-option value="False">False</a-select-option>
+          </a-select>
+          <a-select
+            v-model:value="item.value_type"
+            :style="{ width: '90px' }"
+            class="item-type"
+            @change="update()"
+          >
+            <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
         </div>
         <a-divider v-if="idx < writeItems.length - 1" style="margin: 8px 0; border-color: #222;" />
       </div>
@@ -135,7 +155,10 @@ interface WriteItem {
   source_type: 'context' | 'literal'
   source_key: string
   literal_value: string
+  value_type: string
 }
+
+const VALUE_TYPES = ['str', 'int', 'float', 'bool', 'list', 'dict', 'None']
 
 interface ReadItem {
   var_name: string
@@ -168,7 +191,7 @@ const contextOptions = computed(() =>
 )
 
 function addWriteItem() {
-  d.value.params.write_items.push({ var_name: '', source_type: 'context', source_key: '', literal_value: '' })
+  d.value.params.write_items.push({ var_name: '', source_type: 'context', source_key: '', literal_value: '', value_type: 'str' })
   ctx.emitUpdate()
 }
 function removeWriteItem(idx: number) {
@@ -251,6 +274,7 @@ async function saveNew() {
 .item-row    { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
 .item-varname { flex: 1; min-width: 0; }
 .item-full   { flex: 1; min-width: 0; }
+.item-type   { flex-shrink: 0; }
 .item-flex   { flex: 1; min-width: 0; }
 .item-arrow  { color: #555; font-size: 12px; flex-shrink: 0; }
 .item-del    { flex-shrink: 0; padding: 0 4px !important; }

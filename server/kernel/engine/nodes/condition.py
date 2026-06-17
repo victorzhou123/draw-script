@@ -1,5 +1,6 @@
 from engine.base_handler import BaseNodeHandler, NodeResult
 from engine.node_registry import NodeRegistry
+from engine.type_coerce import coerce_typed, TypeConversionError
 
 
 @NodeRegistry.register("condition")
@@ -7,18 +8,21 @@ class ConditionNodeHandler(BaseNodeHandler):
     async def execute(self) -> NodeResult:
         data = self.ctx.node.data
 
-        if "conditions" in data:
-            operator = data.get("operator", "and")
-            conditions = data.get("conditions", [])
-            if not conditions:
-                result = False
-            elif operator == "and":
-                result = all(self._evaluate(c.get("condition_type", ""), c.get("params", {})) for c in conditions)
+        try:
+            if "conditions" in data:
+                operator = data.get("operator", "and")
+                conditions = data.get("conditions", [])
+                if not conditions:
+                    result = False
+                elif operator == "and":
+                    result = all(self._evaluate(c.get("condition_type", ""), c.get("params", {})) for c in conditions)
+                else:
+                    result = any(self._evaluate(c.get("condition_type", ""), c.get("params", {})) for c in conditions)
             else:
-                result = any(self._evaluate(c.get("condition_type", ""), c.get("params", {})) for c in conditions)
-        else:
-            # Backward compat: old single-condition format
-            result = self._evaluate(data.get("condition_type", ""), data.get("params", {}))
+                # Backward compat: old single-condition format
+                result = self._evaluate(data.get("condition_type", ""), data.get("params", {}))
+        except TypeConversionError as e:
+            return NodeResult(success=False, error=f"条件判断类型转换失败: {e}")
 
         return NodeResult(success=True, branch="true" if result else "false", output={"result": result})
 
@@ -28,7 +32,8 @@ class ConditionNodeHandler(BaseNodeHandler):
         if condition_type == "variable_compare":
             var_path = params.get("variable", "")
             operator = params.get("operator", "==")
-            expected = self._resolve_value(params.get("value"))
+            value_type = params.get("value_type") or "str"
+            expected = self._resolve_value(params.get("value"), value_type)
             actual = self._get_var(var_path)
             return self._compare(actual, operator, expected)
 
@@ -47,20 +52,15 @@ class ConditionNodeHandler(BaseNodeHandler):
 
         if condition_type == "http_status":
             status = variables.get("last_http_response", {}).get("status_code", 0)
-            return self._compare(status, params.get("operator", "=="), int(params.get("value", 200)))
+            expected = coerce_typed(params.get("value", 200), "int")
+            return self._compare(status, params.get("operator", "=="), expected)
 
         return False
 
-    def _resolve_value(self, value):
+    def _resolve_value(self, value, value_type: str):
         if isinstance(value, str) and value.startswith("{{") and value.endswith("}}"):
             return self._get_var(value[2:-2].strip())
-        if isinstance(value, str):
-            import json
-            try:
-                return json.loads(value)
-            except (ValueError, TypeError):
-                pass
-        return value
+        return coerce_typed(value, value_type)
 
     def _get_var(self, path: str):
         parts = path.split(".")

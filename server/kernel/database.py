@@ -71,6 +71,9 @@ class Script(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     flow_json: Mapped[str] = mapped_column(Text, default="{}")
     project_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Client this script runs on by default; drives the canvas "bound client" indicator
+    # and scopes per-node status/action/log tracking to a single client.
+    default_client_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -155,6 +158,10 @@ async def init_db() -> None:
             pass
         try:
             await conn.execute(text("ALTER TABLE executions ADD COLUMN result_json TEXT"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE scripts ADD COLUMN default_client_id TEXT"))
         except Exception:
             pass
         # Legacy: coordinate columns that were once on markers (now on marker_captures)

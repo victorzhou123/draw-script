@@ -67,12 +67,23 @@
         </a-form-item>
         <a-form-item label="期望值">
           <a-auto-complete
+            v-if="cond.params.value_type !== 'bool'"
             v-model:value="cond.params.value"
             :options="ctx.contextFields.value.map((f:any) => ({ value: '{{' + f.name + '}}', label: f.name }))"
-            placeholder='500 / 3.14 / "text" / {{变量}}'
+            placeholder="字面值，按右侧声明类型转换，或 {{变量}}"
             allow-clear
             @change="update()"
           />
+          <a-select v-else v-model:value="cond.params.value" allow-clear placeholder="选择 True / False" @change="update()">
+            <a-select-option value="True">True</a-select-option>
+            <a-select-option value="False">False</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="期望值类型">
+          <a-select v-model:value="cond.params.value_type" @change="update()">
+            <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
+          <div class="hint-text">需和变量实际存入的类型一致才能比较成功；期望值填写变量引用时此项不生效</div>
         </a-form-item>
       </template>
 
@@ -93,11 +104,13 @@ import { FORM_CTX } from './useFormContext'
 const ctx = inject(FORM_CTX)!
 const d = ctx.localData
 
+const VALUE_TYPES = ['str', 'int', 'float', 'bool', 'list', 'dict', 'None']
+
 function update() { ctx.emitUpdate() }
 
 function addCond() {
   if (!Array.isArray(d.value.conditions)) d.value.conditions = []
-  d.value.conditions.push({ condition_type: 'variable_compare', params: { operator: '==' } })
+  d.value.conditions.push({ condition_type: 'variable_compare', params: { operator: '==', value_type: 'str' } })
   update()
 }
 
@@ -107,7 +120,7 @@ function removeCond(idx: number) {
 }
 
 function onTypeChange(cond: any) {
-  cond.params = cond.condition_type === 'variable_compare' ? { operator: '==' } : {}
+  cond.params = cond.condition_type === 'variable_compare' ? { operator: '==', value_type: 'str' } : {}
   update()
 }
 </script>

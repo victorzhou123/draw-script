@@ -10,17 +10,20 @@ from engine.log_utils import truncate_for_log
 from config import settings
 from engine.base_handler import BaseNodeHandler, NodeResult
 from engine.node_registry import NodeRegistry
+from engine.type_coerce import coerce_typed, TypeConversionError
 
 logger = logging.getLogger(__name__)
 
 
 @NodeRegistry.register("vision")
 class VisionNodeHandler(BaseNodeHandler):
-    async def _log(self, message: str) -> None:
+    async def _log(self, message: str, level: str = "action") -> None:
         self.ctx.log.append(message)
         await self.ctx.ui_manager.broadcast_event("execution_log", {
             "execution_id": self.ctx.execution_id,
             "client_id": self.ctx.client_id,
+            "node_id": self.ctx.node.id,
+            "level": level,
             "message": message,
         })
 
@@ -73,10 +76,14 @@ class VisionNodeHandler(BaseNodeHandler):
                     await self._log(f"[Vision] OCR完成(context图): text={truncate_for_log(vision_result.text)!r}")
                     self.ctx.variables["last_vision_result"] = vision_result.__dict__
                     if result_var:
-                        self.ctx.variables[result_var] = vision_result.text
+                        value_type = data.get("value_type") or "str"
+                        try:
+                            self.ctx.variables[result_var] = coerce_typed(vision_result.text, value_type)
+                        except TypeConversionError as e:
+                            return NodeResult(success=False, error=f"OCR 结果类型转换失败（变量 '{result_var}'，声明类型 {value_type}）: {e}")
                     return NodeResult(success=True, output=vision_result.__dict__)
                 except Exception as e:
-                    await self._log(f"[Vision] OCR异常: {e}")
+                    await self._log(f"[Vision] OCR异常: {e}", level="error")
                     return NodeResult(success=False, error=str(e))
 
         # ai_vision shortcut: use context image directly, skip client screenshot
@@ -109,22 +116,26 @@ class VisionNodeHandler(BaseNodeHandler):
                     self.ctx.variables["last_vision_result"] = vision_result.__dict__
 
                     if result_var:
+                        value_type = data.get("value_type") or "str"
                         if vision_result.found and vision_result.location:
                             x, y = int(vision_result.location.get("x", 0)), int(vision_result.location.get("y", 0))
-                            self.ctx.variables[result_var] = f"{x},{y}"
+                            raw_value = f"{x},{y}"
                         elif vision_result.text:
                             post_process: list = data.get("post_process") or []
-                            value = vision_result.text
+                            raw_value = vision_result.text
                             if "parse_markdown_json" in post_process:
-                                value = _parse_markdown_json(value)
-                                await self._log(f"[Vision] post_process parse_markdown_json → {type(value).__name__}")
-                            self.ctx.variables[result_var] = value
+                                raw_value = _parse_markdown_json(raw_value)
+                                await self._log(f"[Vision] post_process parse_markdown_json → {type(raw_value).__name__}")
                         else:
-                            self.ctx.variables[result_var] = None
+                            raw_value = None
+                        try:
+                            self.ctx.variables[result_var] = coerce_typed(raw_value, value_type)
+                        except TypeConversionError as e:
+                            return NodeResult(success=False, error=f"AI视觉结果类型转换失败（变量 '{result_var}'，声明类型 {value_type}）: {e}")
 
                     return NodeResult(success=True, output=vision_result.__dict__)
                 except Exception as e:
-                    await self._log(f"[Vision] 异常: {e}")
+                    await self._log(f"[Vision] 异常: {e}", level="error")
                     return NodeResult(success=False, error=str(e))
 
         request_id = str(uuid.uuid4())
@@ -169,31 +180,34 @@ class VisionNodeHandler(BaseNodeHandler):
             confidence = output.get("confidence", 0.0)
 
             if result_var:
+                result_type = params.get("result_type", "coordinate")
+                found_value_type = data.get("found_value_type") or "str"
+                not_found_value_type = data.get("not_found_value_type") or "str"
+
                 if locations is not None:
-                    self.ctx.variables[result_var] = locations
-                else:
-                    found_value = data.get("found_value", "") or ""
-                    not_found_value = data.get("not_found_value", "None") or "None"
-                    # found 和 not_found 分支独立处理，避免旧逻辑的耦合问题：
-                    # 旧逻辑用 `if found_value or not_found_value not in ("", "None")` 统一判断，
-                    # 导致只要 not_found_value 有自定义值（如 "0"），found=True 时就会写入
-                    # found_value（空字符串），而不是实际坐标，坐标被静默覆盖。
-                    if found:
-                        if found_value:
-                            # 用户显式配置了找到时的静态值，优先使用
-                            self.ctx.variables[result_var] = found_value
-                        elif location:
-                            x, y = int(location.get("x", 0)), int(location.get("y", 0))
-                            self.ctx.variables[result_var] = f"{x},{y}"
-                        else:
-                            self.ctx.variables[result_var] = None
+                    if locations:
+                        raw_value, type_name = locations, found_value_type
                     else:
-                        # not_found_value 仅在未找到时生效，与 found 分支完全独立
-                        self.ctx.variables[result_var] = None if not_found_value == "None" else not_found_value
+                        raw_value, type_name = data.get("not_found_value", "") or "", not_found_value_type
+                elif found:
+                    if result_type == "custom":
+                        raw_value, type_name = data.get("found_value", "") or "", found_value_type
+                    elif location:
+                        x, y = int(location.get("x", 0)), int(location.get("y", 0))
+                        raw_value, type_name = f"{x},{y}", found_value_type
+                    else:
+                        raw_value, type_name = None, found_value_type
+                else:
+                    raw_value, type_name = data.get("not_found_value", "") or "", not_found_value_type
+
+                try:
+                    self.ctx.variables[result_var] = coerce_typed(raw_value, type_name)
+                except TypeConversionError as e:
+                    return NodeResult(success=False, error=f"模板匹配结果类型转换失败（变量 '{result_var}'，声明类型 {type_name}）: {e}")
 
             cuda_error = output.pop("cuda_error", None)
             if cuda_error:
-                await self._log(f"[Vision] ⚠ GPU加速失败，已回退CPU: {cuda_error}")
+                await self._log(f"[Vision] ⚠ GPU加速失败，已回退CPU: {cuda_error}", level="error")
             self.ctx.variables["last_vision_result"] = output
             return NodeResult(success=True, output=output)
 
@@ -201,7 +215,7 @@ class VisionNodeHandler(BaseNodeHandler):
         screenshot_b64 = output.get("screenshot")
         await self._log(f"[Vision] client result keys={list(result.keys())}, has_screenshot={bool(screenshot_b64)}")
         if not screenshot_b64:
-            await self._log(f"[Vision] 未收到 screenshot, output={truncate_for_log(output)}")
+            await self._log(f"[Vision] 未收到 screenshot, output={truncate_for_log(output)}", level="error")
             return NodeResult(success=False, error="Vision node: client did not return screenshot")
 
         screenshot_bytes = base64.b64decode(screenshot_b64)
@@ -228,25 +242,54 @@ class VisionNodeHandler(BaseNodeHandler):
             self.ctx.variables["last_vision_result"] = vision_result.__dict__
 
             if result_var:
-                locations = vision_result.raw.get("locations")
-                if locations is not None:
-                    self.ctx.variables[result_var] = locations
-                elif vision_result.found and vision_result.location:
-                    x, y = int(vision_result.location.get("x", 0)), int(vision_result.location.get("y", 0))
-                    self.ctx.variables[result_var] = f"{x},{y}"
-                elif vision_result.text:
-                    post_process: list = data.get("post_process") or []
-                    value = vision_result.text
-                    if "parse_markdown_json" in post_process:
-                        value = _parse_markdown_json(value)
-                        await self._log(f"[Vision] post_process parse_markdown_json → {type(value).__name__}")
-                    self.ctx.variables[result_var] = value
+                if vision_type == "color_detect":
+                    result_type = params.get("result_type", "coordinate")
+                    found_value_type = data.get("found_value_type") or "str"
+                    not_found_value_type = data.get("not_found_value_type") or "str"
+
+                    if result_type == "custom":
+                        if vision_result.found:
+                            raw_value, type_name = data.get("found_value", "") or "", found_value_type
+                        else:
+                            raw_value, type_name = data.get("not_found_value", "") or "", not_found_value_type
+                    else:
+                        locations = vision_result.raw.get("locations")
+                        if locations:
+                            raw_value, type_name = locations, found_value_type
+                        elif vision_result.found and vision_result.location:
+                            x, y = int(vision_result.location.get("x", 0)), int(vision_result.location.get("y", 0))
+                            raw_value, type_name = f"{x},{y}", found_value_type
+                        else:
+                            raw_value, type_name = data.get("not_found_value", "") or "", not_found_value_type
+
+                    try:
+                        self.ctx.variables[result_var] = coerce_typed(raw_value, type_name)
+                    except TypeConversionError as e:
+                        return NodeResult(success=False, error=f"颜色检测结果类型转换失败（变量 '{result_var}'，声明类型 {type_name}）: {e}")
                 else:
-                    self.ctx.variables[result_var] = None
+                    value_type = data.get("value_type") or "str"
+                    locations = vision_result.raw.get("locations")
+                    if locations is not None:
+                        raw_value = locations
+                    elif vision_result.found and vision_result.location:
+                        x, y = int(vision_result.location.get("x", 0)), int(vision_result.location.get("y", 0))
+                        raw_value = f"{x},{y}"
+                    elif vision_result.text:
+                        post_process: list = data.get("post_process") or []
+                        raw_value = vision_result.text
+                        if "parse_markdown_json" in post_process:
+                            raw_value = _parse_markdown_json(raw_value)
+                            await self._log(f"[Vision] post_process parse_markdown_json → {type(raw_value).__name__}")
+                    else:
+                        raw_value = None
+                    try:
+                        self.ctx.variables[result_var] = coerce_typed(raw_value, value_type)
+                    except TypeConversionError as e:
+                        return NodeResult(success=False, error=f"识别结果类型转换失败（变量 '{result_var}'，声明类型 {value_type}）: {e}")
 
             return NodeResult(success=True, output=vision_result.__dict__)
         except Exception as e:
-            await self._log(f"[Vision] 异常: {e}")
+            await self._log(f"[Vision] 异常: {e}", level="error")
             return NodeResult(success=False, error=str(e))
 
 

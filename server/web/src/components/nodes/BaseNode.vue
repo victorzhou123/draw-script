@@ -4,11 +4,16 @@
       <component :is="iconComp" class="node-icon" />
       <div class="node-label">{{ displayLabel }}</div>
     </div>
+    <div v-if="statusBadge" class="status-badge" :class="`status-${statusBadge}`">
+      <CheckOutlined v-if="statusBadge === 'done'" />
+      <CloseOutlined v-else />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, inject, onMounted, onBeforeUnmount } from 'vue'
+import { CheckOutlined, CloseOutlined } from '@ant-design/icons-vue'
 import { useExecutionStore } from '@/stores/executionStore'
 import { ICON_MAP } from './index'
 
@@ -46,10 +51,17 @@ const isActive = computed(() => {
   const node = getNode?.()
   return node && executionStore.activeNodeIds.has(node.id)
 })
+
+const statusBadge = computed(() => {
+  const node = getNode?.()
+  if (!node) return null
+  return executionStore.nodeStatus[node.id] ?? null
+})
 </script>
 
 <style scoped>
 .draw-node {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
@@ -63,6 +75,23 @@ const isActive = computed(() => {
   transition: all 0.18s;
   user-select: none;
 }
+.status-badge {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #fff;
+  border: 1.5px solid #141414;
+  z-index: 2;
+}
+.status-badge.status-done  { background: #52c41a; }
+.status-badge.status-error { background: #ff4d4f; }
 .draw-node:not(.node-type-condition):hover { box-shadow: 0 0 0 2px rgba(255,255,255,0.1); }
 .draw-node.node-active:not(.node-type-condition) {
   border-color: #52c41a;

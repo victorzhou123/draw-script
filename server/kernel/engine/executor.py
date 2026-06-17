@@ -32,7 +32,7 @@ class ExecutionEngine:
         stop_event = asyncio.Event()
         self._stop_events[execution_id] = stop_event
         task = asyncio.create_task(
-            self._execute(execution_id, client_id, flow_json, stop_event, project_id, initial_variables or {}, completion_event, script_name)
+            self._execute(execution_id, script_id, client_id, flow_json, stop_event, project_id, initial_variables or {}, completion_event, script_name)
         )
         self._tasks[execution_id] = task
         try:
@@ -59,6 +59,7 @@ class ExecutionEngine:
     async def _execute(
         self,
         execution_id: str,
+        script_id: str,
         client_id: str,
         flow_json: dict[str, Any],
         stop_event: asyncio.Event,
@@ -83,6 +84,7 @@ class ExecutionEngine:
 
         await self.ui_manager.broadcast_event("execution_started", {
             "execution_id": execution_id,
+            "script_id": script_id,
             "client_id": client_id,
         })
 

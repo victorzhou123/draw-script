@@ -45,22 +45,51 @@
         <a-slider v-model:value="d.params.threshold" :min="0.5" :max="1.0" :step="0.05" @change="update()" />
       </a-form-item>
       <a-form-item label="检测模式">
-        <a-select v-model:value="d.params.mode" :style="{ width: '100%' }" @change="update()">
-          <a-select-option value="single">单个匹配（返回坐标字符串）</a-select-option>
-          <a-select-option value="all_matches">所有匹配（返回坐标数组）</a-select-option>
+        <a-select v-model:value="d.params.mode" :style="{ width: '100%' }" @change="onModeChange">
+          <a-select-option value="single">单个匹配</a-select-option>
+          <a-select-option value="all_matches">所有匹配</a-select-option>
         </a-select>
       </a-form-item>
-      <a-form-item label="结果存入">
-        <a-auto-complete v-model:value="d.result_var" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))" placeholder="context 字段名" allow-clear @change="update()" />
+      <a-form-item label="存入类型">
+        <a-select v-model:value="d.params.result_type" :style="{ width: '100%' }" @change="onResultTypeChange">
+          <a-select-option value="coordinate">坐标</a-select-option>
+          <a-select-option value="custom">自定义</a-select-option>
+        </a-select>
       </a-form-item>
-      <template v-if="d.params.mode !== 'all_matches'">
-        <a-form-item label="匹配成功时写入">
-          <a-input v-model:value="d.found_value" placeholder="留空则写入坐标 x,y" @change="update()" />
-        </a-form-item>
-        <a-form-item label="未匹配时写入">
-          <a-input v-model:value="d.not_found_value" placeholder="留空则写入 None" @change="update()" />
-        </a-form-item>
-      </template>
+      <a-form-item v-if="d.params.result_type === 'custom'" label="匹配成功时写入">
+        <div class="value-row">
+          <a-input v-if="d.found_value_type !== 'bool'" v-model:value="d.found_value" placeholder="留空则不写入" class="value-input" @change="update()" />
+          <a-select v-else v-model:value="d.found_value" class="value-input" allow-clear placeholder="选择 True / False" @change="update()">
+            <a-select-option value="True">True</a-select-option>
+            <a-select-option value="False">False</a-select-option>
+          </a-select>
+          <a-select v-model:value="d.found_value_type" class="value-type-select" @change="update()">
+            <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
+        </div>
+      </a-form-item>
+      <a-form-item label="结果存入">
+        <div v-if="d.params.result_type !== 'custom'" class="value-row">
+          <a-auto-complete v-model:value="d.result_var" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))" placeholder="context 字段名" allow-clear class="value-input" @change="update()" />
+          <a-select v-model:value="d.found_value_type" class="value-type-select" @change="update()">
+            <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
+        </div>
+        <a-auto-complete v-else v-model:value="d.result_var" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))" placeholder="context 字段名" allow-clear @change="update()" />
+      </a-form-item>
+      <a-form-item label="未匹配时写入">
+        <div class="value-row">
+          <a-input v-if="d.not_found_value_type !== 'bool'" v-model:value="d.not_found_value" placeholder="留空则写入空值" class="value-input" @change="update()" />
+          <a-select v-else v-model:value="d.not_found_value" class="value-input" allow-clear placeholder="选择 True / False" @change="update()">
+            <a-select-option value="True">True</a-select-option>
+            <a-select-option value="False">False</a-select-option>
+          </a-select>
+          <a-select v-model:value="d.not_found_value_type" class="value-type-select" @change="update()">
+            <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
+        </div>
+        <div class="hint-text">类型选 None 表示存入空值，与左边文本框内容无关</div>
+      </a-form-item>
       <a-form-item label="结果标记">
         <a-switch v-model:checked="d.params.show_overlay" @change="update()" />
         <span class="hint-text" style="margin-left:8px">识别成功后在客户端屏幕高亮匹配位置</span>
@@ -111,7 +140,12 @@
         <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:2px">当前项目暂无标记，请先在项目中添加方框类型标记</div>
       </a-form-item>
       <a-form-item label="识别结果存入">
-        <a-auto-complete v-model:value="d.result_var" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))" placeholder="context 字段名（存储全部识别文字）" allow-clear @change="update()" />
+        <div class="value-row">
+          <a-auto-complete v-model:value="d.result_var" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))" placeholder="context 字段名（存储全部识别文字）" allow-clear class="value-input" @change="update()" />
+          <a-select v-model:value="d.value_type" class="value-type-select" @change="update()">
+            <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
+        </div>
       </a-form-item>
     </template>
 
@@ -164,7 +198,12 @@
         </a-form-item>
       </template>
       <a-form-item label="结果存入">
-        <a-auto-complete v-model:value="d.result_var" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))" placeholder="context 字段名" allow-clear @change="update()" />
+        <div class="value-row">
+          <a-auto-complete v-model:value="d.result_var" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))" placeholder="context 字段名" allow-clear class="value-input" @change="update()" />
+          <a-select v-model:value="d.value_type" class="value-type-select" @change="update()">
+            <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
+        </div>
       </a-form-item>
       <a-form-item label="数据后处理">
         <a-select
@@ -193,10 +232,50 @@
         <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:2px">当前项目暂无标记，请先在项目中添加方框类型标记</div>
       </a-form-item>
       <a-form-item label="检测模式">
-        <a-select v-model:value="d.params.mode" :style="{ width: '100%' }" @change="update()">
-          <a-select-option value="largest_contour">最大色块（返回坐标字符串）</a-select-option>
-          <a-select-option value="all_contours">所有目标（返回坐标数组）</a-select-option>
+        <a-select v-model:value="d.params.mode" :style="{ width: '100%' }" @change="onModeChange">
+          <a-select-option value="largest_contour">最大色块</a-select-option>
+          <a-select-option value="all_contours">所有目标</a-select-option>
         </a-select>
+      </a-form-item>
+      <a-form-item label="存入类型">
+        <a-select v-model:value="d.params.result_type" :style="{ width: '100%' }" @change="onResultTypeChange">
+          <a-select-option value="coordinate">坐标</a-select-option>
+          <a-select-option value="custom">自定义</a-select-option>
+        </a-select>
+      </a-form-item>
+      <a-form-item v-if="d.params.result_type === 'custom'" label="匹配成功时写入">
+        <div class="value-row">
+          <a-input v-if="d.found_value_type !== 'bool'" v-model:value="d.found_value" placeholder="留空则不写入" class="value-input" @change="update()" />
+          <a-select v-else v-model:value="d.found_value" class="value-input" allow-clear placeholder="选择 True / False" @change="update()">
+            <a-select-option value="True">True</a-select-option>
+            <a-select-option value="False">False</a-select-option>
+          </a-select>
+          <a-select v-model:value="d.found_value_type" class="value-type-select" @change="update()">
+            <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
+        </div>
+      </a-form-item>
+      <a-form-item label="结果存入">
+        <div v-if="d.params.result_type !== 'custom'" class="value-row">
+          <a-auto-complete v-model:value="d.result_var" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))" placeholder="context 字段名" allow-clear class="value-input" @change="update()" />
+          <a-select v-model:value="d.found_value_type" class="value-type-select" @change="update()">
+            <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
+        </div>
+        <a-auto-complete v-else v-model:value="d.result_var" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))" placeholder="context 字段名" allow-clear @change="update()" />
+      </a-form-item>
+      <a-form-item label="未匹配时写入">
+        <div class="value-row">
+          <a-input v-if="d.not_found_value_type !== 'bool'" v-model:value="d.not_found_value" placeholder="留空则写入空值" class="value-input" @change="update()" />
+          <a-select v-else v-model:value="d.not_found_value" class="value-input" allow-clear placeholder="选择 True / False" @change="update()">
+            <a-select-option value="True">True</a-select-option>
+            <a-select-option value="False">False</a-select-option>
+          </a-select>
+          <a-select v-model:value="d.not_found_value_type" class="value-type-select" @change="update()">
+            <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
+        </div>
+        <div class="hint-text">类型选 None 表示存入空值，与左边文本框内容无关</div>
       </a-form-item>
       <a-form-item v-if="d.params.mode === 'all_contours'" label="最小面积">
         <a-input-number v-model:value="d.params.min_area" :min="0" :style="{ width: '100%' }" placeholder="过滤小于此面积的色块（像素²）" @change="update()" />
@@ -207,9 +286,6 @@
       </a-form-item>
       <a-form-item label="容差">
         <a-input-number v-model:value="d.params.tolerance" :min="0" :max="128" @change="update()" />
-      </a-form-item>
-      <a-form-item label="结果存入">
-        <a-auto-complete v-model:value="d.result_var" :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))" placeholder="context 字段名" allow-clear @change="update()" />
       </a-form-item>
     </template>
   </div>
@@ -222,20 +298,73 @@ import { FORM_CTX } from './useFormContext'
 const ctx = inject(FORM_CTX)!
 const d = ctx.localData
 
+const VALUE_TYPES = ['str', 'int', 'float', 'bool', 'list', 'dict', 'None']
+
 const templateSource = ref<'fixed' | 'context'>('fixed')
 const aiImageSource = ref<'screenshot' | 'context'>('screenshot')
 const ocrImageSource = ref<'screenshot' | 'context'>('screenshot')
+
+function isArrayMode(data: any): boolean {
+  return data.params.mode === 'all_matches' || data.params.mode === 'all_contours'
+}
 
 watch(d, (data) => {
   if (!data || data.type !== 'vision') return
   templateSource.value = String(data.params?.template_context_var || '') ? 'context' : 'fixed'
   aiImageSource.value = String(data.params?.context_image_var || '') ? 'context' : 'screenshot'
   ocrImageSource.value = String(data.params?.ocr_context_image_var || '') ? 'context' : 'screenshot'
-  if (!data.params.mode) { data.params.mode = 'single'; ctx.emitUpdate() }
+  const validModes: Record<string, string[]> = {
+    template_match: ['single', 'all_matches'],
+    color_detect: ['largest_contour', 'all_contours'],
+    ai_vision: ['describe', 'find'],
+  }
+  const modesForType = validModes[data.vision_type]
+  if (modesForType && !modesForType.includes(data.params.mode)) {
+    data.params.mode = modesForType[0]
+    ctx.emitUpdate()
+  }
   if (data.params.show_overlay && !data.params.overlay_mode) { data.params.overlay_mode = 'fixed'; ctx.emitUpdate() }
+
+  if (['template_match', 'color_detect'].includes(data.vision_type)) {
+    if (!data.params.result_type) {
+      const hasCustomValues = (data.found_value || '') || (data.not_found_value || '')
+      data.params.result_type = hasCustomValues ? 'custom' : 'coordinate'
+      ctx.emitUpdate()
+    }
+    if (!data.found_value_type) {
+      data.found_value_type = isArrayMode(data) ? 'list' : (data.params.result_type === 'coordinate' ? 'str' : (data.found_value ? 'str' : 'None'))
+      ctx.emitUpdate()
+    }
+    if (!data.not_found_value_type) {
+      data.not_found_value_type = data.not_found_value ? 'str' : 'None'
+      ctx.emitUpdate()
+    }
+  }
+
+  if (['ocr', 'ai_vision'].includes(data.vision_type) && !data.value_type) {
+    data.value_type = 'str'
+    ctx.emitUpdate()
+  }
 }, { immediate: true })
 
 function update() { ctx.emitUpdate() }
+
+function onResultTypeChange() {
+  if (d.value.params.result_type === 'coordinate') {
+    d.value.found_value = ''
+    d.value.found_value_type = isArrayMode(d.value) ? 'list' : 'str'
+  }
+  update()
+}
+
+function onModeChange() {
+  if (isArrayMode(d.value)) {
+    d.value.found_value_type = 'list'
+  } else if (d.value.params.result_type === 'coordinate') {
+    d.value.found_value_type = 'str'
+  }
+  update()
+}
 
 function onTemplateSourceChange() {
   if (templateSource.value === 'fixed') { d.value.params.template_context_var = '' }
@@ -264,4 +393,7 @@ function onOcrImageSourceChange() {
 .type-point { background: #111d2c; color: #1890ff; }
 .type-box { background: #2b2111; color: #faad14; }
 .model-provider-tag { display: inline-block; font-size: 10px; padding: 0 5px; border-radius: 3px; margin-left: 6px; background: #1a0a2e; color: #9254de; font-weight: 600; }
+.value-row { display: flex; align-items: center; gap: 6px; }
+.value-input { flex: 1; min-width: 0; }
+.value-type-select { width: 100px; flex-shrink: 0; }
 </style>

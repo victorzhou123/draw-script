@@ -11,6 +11,7 @@ export interface Script {
   description: string
   flow_json: string
   project_id: string | null
+  default_client_id: string | null
   created_at: string
   updated_at: string
 }

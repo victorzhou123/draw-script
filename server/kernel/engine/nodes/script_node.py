@@ -62,11 +62,13 @@ class ScriptNodeHandler(BaseNodeHandler):
             script_call_stack=self.ctx.script_call_stack + [script_id],
         )
 
-        async def _log(message: str):
+        async def _log(message: str, level: str = "action"):
             self.ctx.log.append(message)
             await self.ctx.ui_manager.broadcast_event("execution_log", {
                 "execution_id": self.ctx.execution_id,
                 "client_id": self.ctx.client_id,
+                "node_id": self.ctx.node.id,
+                "level": level,
                 "message": message,
             })
 
@@ -74,7 +76,7 @@ class ScriptNodeHandler(BaseNodeHandler):
         error = await run_branch(sub_ctx, start, {}, script_name)
 
         if error:
-            await _log(f"  ◀ 子脚本失败：{script_name}  ERROR: {error}")
+            await _log(f"  ◀ 子脚本失败：{script_name}  ERROR: {error}", level="error")
             return NodeResult(success=False, error=error)
 
         await _log(f"  ◀ 子脚本完成：{script_name}")

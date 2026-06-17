@@ -6,6 +6,12 @@
         <FileTextOutlined />
         {{ scriptStore.currentScript.name }}
       </span>
+      <a-tooltip v-if="boundClientName" :title="boundClientConnected ? '已连接' : '未连接'">
+        <span class="client-chip" :class="{ connected: boundClientConnected }">
+          <LaptopOutlined />
+          {{ boundClientName }}
+        </span>
+      </a-tooltip>
     </div>
 
     <div class="toolbar-divider" />
@@ -95,6 +101,17 @@ const scriptStore = useScriptStore()
 const clientStore = useClientStore()
 
 const connectedCount = computed(() => clientStore.connectedIds.size)
+
+const boundClient = computed(() => {
+  const id = scriptStore.currentScript?.default_client_id
+  if (!id) return null
+  return clientStore.clients.find(c => c.id === id) ?? null
+})
+const boundClientName = computed(() => boundClient.value?.name ?? scriptStore.currentScript?.default_client_id ?? '')
+const boundClientConnected = computed(() => {
+  const id = scriptStore.currentScript?.default_client_id
+  return !!id && clientStore.connectedIds.has(id)
+})
 </script>
 
 <style scoped>
@@ -117,6 +134,14 @@ const connectedCount = computed(() => clientStore.connectedIds.size)
   padding: 2px 8px; max-width: 180px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.client-chip {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; color: #888;
+  background: #2b1d11; border: 1px solid #3f2e00; border-radius: 4px;
+  padding: 2px 8px; max-width: 160px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.client-chip.connected { color: #52c41a; border-color: #274916; background: #162312; }
 .toolbar-divider { width: 1px; height: 20px; background: #2a2a2a; margin: 0 8px; flex-shrink: 0; }
 .toolbar-group { display: flex; align-items: center; gap: 4px; }
 .toolbar-spacer { flex: 1; }

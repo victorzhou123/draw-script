@@ -21,8 +21,8 @@ class ActionNodeHandler(BaseNodeHandler):
                 cx, cy = coords_val.split(",", 1)
                 params["x"] = int(float(cx.strip()))
                 params["y"] = int(float(cy.strip()))
-            except (ValueError, AttributeError):
-                pass
+            except (ValueError, AttributeError) as e:
+                return NodeResult(success=False, error=f"Action node: 坐标解析失败 coords={coords_val!r}: {e}")
         params.pop("coords", None)
 
         request_id = str(uuid.uuid4())

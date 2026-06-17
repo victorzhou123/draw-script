@@ -106,6 +106,7 @@ class ScriptUpdate(BaseModel):
     description: str | None = None
     flow_json: str | None = None
     project_id: str | None = None
+    default_client_id: str | None = None
 
 
 class ScriptResponse(BaseModel):
@@ -114,6 +115,7 @@ class ScriptResponse(BaseModel):
     description: str
     flow_json: str
     project_id: str | None
+    default_client_id: str | None
     created_at: datetime
     updated_at: datetime
 

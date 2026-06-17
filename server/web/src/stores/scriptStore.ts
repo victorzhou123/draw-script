@@ -53,6 +53,14 @@ export const useScriptStore = defineStore('script', () => {
     return updated
   }
 
+  async function setDefaultClient(id: string, clientId: string | null) {
+    const updated = await api.updateScript(id, { default_client_id: clientId })
+    const idx = scripts.value.findIndex(s => s.id === id)
+    if (idx !== -1) scripts.value[idx] = updated
+    if (currentScript.value?.id === id) currentScript.value = updated
+    return updated
+  }
+
   async function duplicateScript(id: string) {
     const original = scripts.value.find(s => s.id === id)
     if (!original) return
@@ -65,5 +73,5 @@ export const useScriptStore = defineStore('script', () => {
     return copy
   }
 
-  return { scripts, currentScript, loading, fetchScripts, selectScript, createScript, saveScript, deleteScript, duplicateScript, renameScript }
+  return { scripts, currentScript, loading, fetchScripts, selectScript, createScript, saveScript, deleteScript, duplicateScript, renameScript, setDefaultClient }
 })

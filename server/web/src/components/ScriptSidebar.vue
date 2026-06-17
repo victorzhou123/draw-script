@@ -46,6 +46,9 @@
                 <a-menu-item key="duplicate" @click="onDuplicate(script.id)">
                   <CopyOutlined /> 复制成新脚本
                 </a-menu-item>
+                <a-menu-item key="settings" @click="openSettings(script)">
+                  <SettingOutlined /> 设置
+                </a-menu-item>
               </a-menu>
             </template>
           </a-dropdown>
@@ -216,12 +219,38 @@
         </div>
       </a-spin>
     </a-modal>
+
+    <!-- Settings Modal -->
+    <a-modal
+      v-model:open="settingsModalOpen"
+      title="脚本设置"
+      ok-text="保存"
+      cancel-text="取消"
+      :confirm-loading="settingsSaving"
+      @ok="saveSettings"
+    >
+      <a-spin :spinning="settingsLoading">
+        <a-form layout="vertical">
+          <a-form-item label="绑定运行 Client">
+            <a-select
+              v-model:value="settingsClientId"
+              style="width: 100%"
+              placeholder="未绑定"
+              allow-clear
+              show-search
+              :options="clientStore.clients.map(c => ({ value: c.id, label: `${c.name} (${c.id})` }))"
+            />
+            <div class="hint-text">绑定后，画布左上角会显示该 client，节点状态（动作/日志）也只跟踪这个 client 的执行情况</div>
+          </a-form-item>
+        </a-form>
+      </a-spin>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
-import { InfoCircleOutlined, CopyOutlined, CheckOutlined, EditOutlined, CloseOutlined } from '@ant-design/icons-vue'
+import { InfoCircleOutlined, CopyOutlined, CheckOutlined, EditOutlined, CloseOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptStore } from '@/stores/scriptStore'
 import { useProjectStore } from '@/stores/projectStore'
@@ -468,6 +497,34 @@ async function openInfo(script: Script) {
   infoLoading.value = false
 }
 
+const settingsModalOpen = ref(false)
+const settingsLoading   = ref(false)
+const settingsSaving    = ref(false)
+const settingsScript    = ref<Script | null>(null)
+const settingsClientId  = ref<string | null>(null)
+
+async function openSettings(script: Script) {
+  settingsScript.value = script
+  settingsClientId.value = script.default_client_id
+  settingsModalOpen.value = true
+  settingsLoading.value = true
+  if (clientStore.clients.length === 0) await clientStore.fetchClients()
+  settingsLoading.value = false
+}
+
+async function saveSettings() {
+  if (!settingsScript.value) return
+  settingsSaving.value = true
+  try {
+    await scriptStore.setDefaultClient(settingsScript.value.id, settingsClientId.value)
+    settingsModalOpen.value = false
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    settingsSaving.value = false
+  }
+}
+
 function copyId() {
   if (!infoScript.value) return
   navigator.clipboard.writeText(infoScript.value.id)
@@ -575,6 +632,7 @@ async function copyCurl() {
 </script>
 
 <style scoped>
+.hint-text { font-size: 11px; color: #444; margin-top: 6px; line-height: 1.5; }
 .script-sidebar {
   height: 100%;
   display: flex;

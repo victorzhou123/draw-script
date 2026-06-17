@@ -1,5 +1,12 @@
 import { useClientStore } from '@/stores/clientStore'
 import { useExecutionStore } from '@/stores/executionStore'
+import { useScriptStore } from '@/stores/scriptStore'
+
+function isBoundClient(clientId: string | undefined): boolean {
+  if (!clientId) return false
+  const scriptStore = useScriptStore()
+  return !!scriptStore.currentScript?.default_client_id && scriptStore.currentScript.default_client_id === clientId
+}
 
 class UIWebSocket {
   private ws: WebSocket | null = null
@@ -55,14 +62,28 @@ class UIWebSocket {
       case 'client_status':
         clientStore.onClientStatus(msg.client_id as string, msg.status as string)
         break
-      case 'execution_started':
-        // Per-client tracking is done in runOnClient; no store update needed here
+      case 'execution_started': {
+        // Only clear node status when the starting script matches the currently viewed script.
+        // A different script running on the same client must not wipe out this canvas's state.
+        const scriptStore = useScriptStore()
+        const startedScriptId = msg.script_id as string | undefined
+        const startedClientId = msg.client_id as string | undefined
+        if (isBoundClient(startedClientId) && startedScriptId === scriptStore.currentScript?.id) {
+          executionStore.clearNodeStatus()
+        }
         break
+      }
       case 'execution_progress':
         executionStore.onProgress(msg.node_id as string, msg.status as string, msg.client_id as string)
+        if (isBoundClient(msg.client_id as string | undefined)) {
+          executionStore.onNodeProgress(msg.node_id as string, msg.status as string)
+        }
         break
       case 'execution_log':
         executionStore.addLog(msg.message as string, msg.client_id as string | undefined)
+        if (isBoundClient(msg.client_id as string | undefined) && msg.node_id) {
+          executionStore.onNodeLog(msg.node_id as string, msg.level as string, msg.message as string)
+        }
         break
       case 'execution_finished':
         executionStore.onFinished(
