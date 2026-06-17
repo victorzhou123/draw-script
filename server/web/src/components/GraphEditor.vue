@@ -11,10 +11,11 @@ import { Dnd } from '@antv/x6-plugin-dnd'
 import { History } from '@antv/x6-plugin-history'
 import { Snapline } from '@antv/x6-plugin-snapline'
 import { Selection } from '@antv/x6-plugin-selection'
-import { registerNodes } from './nodes/index'
+import { registerNodes, NODE_DEFS } from './nodes/index'
 import { useExecutionStore } from '@/stores/executionStore'
-import { copyNodes, getClipboard } from '@/stores/clipboardStore'
 import { message } from 'ant-design-vue'
+
+const KNOWN_SHAPES = new Set(NODE_DEFS.map(d => d.shape))
 
 registerNodes()
 
@@ -65,44 +66,138 @@ function onKeyDown(e: KeyboardEvent) {
 
   if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
     if (inInput) return
-    const nodes = (graph.value?.getSelectedCells() ?? []).filter(c => c.isNode())
-    if (!nodes.length) return
-    copyNodes(nodes.map(node => ({
-      shape: (node as any).shape as string,
-      position: (node as any).getPosition(),
-      size: (node as any).getSize(),
-      data: JSON.parse(JSON.stringify((node as any).getData() ?? {})),
-    })))
-    message.success(`已复制 ${nodes.length} 个节点`, 1.5)
+    const selectedCells = graph.value?.getSelectedCells() ?? []
+    const selectedNodes = selectedCells.filter(c => c.isNode())
+    if (!selectedNodes.length) return
+
+    const selectedNodeIds = new Set(selectedNodes.map(n => n.id))
+    const internalEdges = (graph.value?.getEdges() ?? []).filter(edge => {
+      const srcId = edge.getSourceCellId()
+      const tgtId = edge.getTargetCellId()
+      return srcId && tgtId && selectedNodeIds.has(srcId) && selectedNodeIds.has(tgtId)
+    })
+
+    const clips = [
+      ...selectedNodes.map(node => ({
+        kind: 'node' as const,
+        id: node.id,
+        shape: (node as any).shape as string,
+        position: (node as any).getPosition(),
+        size: (node as any).getSize(),
+        data: JSON.parse(JSON.stringify((node as any).getData() ?? {})),
+      })),
+      ...internalEdges.map(edge => ({
+        kind: 'edge' as const,
+        source: { cell: edge.getSourceCellId()!, port: edge.getSourcePortId()! },
+        target: { cell: edge.getTargetCellId()!, port: edge.getTargetPortId()! },
+      })),
+    ]
+
+    navigator.clipboard.writeText(JSON.stringify(clips)).then(() => {
+      message.success(`已复制 ${selectedNodes.length} 个节点`, 1.5)
+    }).catch(() => {
+      message.error('复制失败，请检查浏览器剪贴板权限', 2)
+    })
     return
   }
 
   if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
     if (inInput) return
-    const clips = getClipboard()
-    if (!clips.length || !graph.value) return
     e.preventDefault()
+    ;(async () => {
+      let text: string
+      try {
+        text = await navigator.clipboard.readText()
+      } catch {
+        message.error('读取剪贴板失败，请检查浏览器权限', 2)
+        return
+      }
 
-    const centroid = {
-      x: clips.reduce((s, n) => s + n.position.x + n.size.width / 2, 0) / clips.length,
-      y: clips.reduce((s, n) => s + n.position.y + n.size.height / 2, 0) / clips.length,
-    }
-    const target = graph.value.clientToLocal(lastMousePos)
+      let clips: any[]
+      try {
+        clips = JSON.parse(text)
+      } catch {
+        message.error('剪贴板内容不是有效的 JSON 格式', 2)
+        return
+      }
 
-    const newNodes = clips.map(n => {
-      return graph.value!.addNode({
-        shape: n.shape,
-        x: target.x + (n.position.x - centroid.x),
-        y: target.y + (n.position.y - centroid.y),
-        width: n.size.width,
-        height: n.size.height,
-        data: JSON.parse(JSON.stringify(n.data)),
+      if (!Array.isArray(clips)) {
+        message.error('剪贴板数据格式不符合节点结构', 2)
+        return
+      }
+
+      const nodeItems = clips.filter(item => item?.kind === 'node')
+      const edgeItems = clips.filter(item => item?.kind === 'edge')
+
+      if (nodeItems.length === 0) {
+        message.error('剪贴板数据中没有有效节点', 2)
+        return
+      }
+      for (const n of nodeItems) {
+        if (!n.id || !KNOWN_SHAPES.has(n.shape) || !n.position || !n.size || typeof n.data !== 'object') {
+          message.error('剪贴板数据格式不符合节点结构', 2)
+          return
+        }
+      }
+      for (const edge of edgeItems) {
+        if (!edge.source?.cell || !edge.source?.port || !edge.target?.cell || !edge.target?.port) {
+          message.error('剪贴板数据格式不符合节点结构', 2)
+          return
+        }
+      }
+
+      if (!graph.value) return
+
+      const centroid = {
+        x: nodeItems.reduce((s: number, n: any) => s + n.position.x + n.size.width / 2, 0) / nodeItems.length,
+        y: nodeItems.reduce((s: number, n: any) => s + n.position.y + n.size.height / 2, 0) / nodeItems.length,
+      }
+      const target = graph.value.clientToLocal(lastMousePos)
+
+      const idMap = new Map<string, any>()
+      const newNodes = nodeItems.map((n: any) => {
+        const node = graph.value!.addNode({
+          shape: n.shape,
+          x: target.x + (n.position.x - centroid.x),
+          y: target.y + (n.position.y - centroid.y),
+          width: n.size.width,
+          height: n.size.height,
+          data: JSON.parse(JSON.stringify(n.data)),
+        })
+        idMap.set(n.id, node)
+        return node
       })
-    })
 
-    graph.value.cleanSelection()
-    graph.value.select(newNodes)
-    emit('graphChanged')
+      const newEdges = edgeItems
+        .filter((e: any) => idMap.has(e.source.cell) && idMap.has(e.target.cell))
+        .map((e: any) => {
+          const srcNode = idMap.get(e.source.cell)
+          const edge = graph.value!.addEdge({
+            source: { cell: srcNode.id, port: e.source.port },
+            target: { cell: idMap.get(e.target.cell).id, port: e.target.port },
+            attrs: {
+              line: { stroke: '#8f8f8f', strokeWidth: 2, targetMarker: { name: 'block', width: 12, height: 8 } },
+            },
+            router: 'manhattan',
+            connector: { name: 'rounded' },
+          })
+          if (srcNode.shape === 'node-condition' && (e.source.port === 'true' || e.source.port === 'false')) {
+            const isTrue = e.source.port === 'true'
+            edge.appendLabel({
+              attrs: {
+                text: { text: isTrue ? 'Yes' : 'No', fill: isTrue ? '#52c41a' : '#ff4d4f', fontSize: 11, fontWeight: 'bold' },
+                rect: { fill: 'rgba(26,26,26,0.85)', stroke: 'none', rx: 3, ry: 3 },
+              },
+              position: { distance: 0.4 },
+            })
+          }
+          return edge
+        })
+
+      graph.value.cleanSelection()
+      graph.value.select([...newNodes, ...newEdges])
+      emit('graphChanged')
+    })()
     return
   }
 
@@ -344,7 +439,22 @@ function loadJSON(json: object) {
   // Deep-clone to avoid mutating the caller's object, then strip stored port
   // groups so X6 falls back to the registered shape's position/markup.
   const cleaned = JSON.parse(JSON.stringify(json))
-  sanitizePorts(cleaned.cells ?? [])
+
+  // Drop cells with unregistered node shapes so one stale node doesn't crash the whole graph
+  const allCells: any[] = cleaned.cells ?? []
+  const validNodeIds = new Set<string>()
+  for (const cell of allCells) {
+    if (cell.source === undefined && KNOWN_SHAPES.has(cell.shape)) validNodeIds.add(cell.id)
+  }
+  cleaned.cells = allCells.filter(cell => {
+    if (cell.source !== undefined) {
+      // Edge: keep only if both endpoints survived
+      return validNodeIds.has(cell.source?.cell) && validNodeIds.has(cell.target?.cell)
+    }
+    return KNOWN_SHAPES.has(cell.shape)
+  })
+
+  sanitizePorts(cleaned.cells)
 
   isLoadingGraph.value = true
   graph.value?.fromJSON(cleaned)
