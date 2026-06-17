@@ -137,7 +137,6 @@ import StartForm from './node-forms/StartForm.vue'
 import EndForm from './node-forms/EndForm.vue'
 import ScriptForm from './node-forms/ScriptForm.vue'
 import ComputeForm from './node-forms/ComputeForm.vue'
-import WatchForm from './node-forms/WatchForm.vue'
 import ScreenshotForm from './node-forms/ScreenshotForm.vue'
 import GlobalVarForm from './node-forms/GlobalVarForm.vue'
 
@@ -145,7 +144,7 @@ const FORM_MAP: Record<string, any> = {
   action: ActionForm, vision: VisionForm, condition: ConditionForm,
   loop: LoopForm, delay: DelayForm, http: HttpForm,
   start: StartForm, end: EndForm, script: ScriptForm, compute: ComputeForm,
-  watch: WatchForm, screenshot: ScreenshotForm, 'global-var': GlobalVarForm,
+  screenshot: ScreenshotForm, 'global-var': GlobalVarForm,
 }
 
 const props = defineProps<{
@@ -247,7 +246,7 @@ const nodeLabel = computed(() => {
     start: 'Start', end: 'End', action: 'Action', screenshot: 'Screenshot',
     vision: 'Vision', condition: 'Condition', delay: 'Delay', loop: 'Loop',
     http: 'HTTP', compute: 'Compute', script: 'Script',
-    watch: 'Watch', 'global-var': 'Global Var',
+    'global-var': 'Global Var',
   }
   return map[nodeType.value] || nodeType.value
 })
@@ -322,10 +321,6 @@ watch(() => props.selectedNode, (node) => {
     }
     d.operator = d.operator || 'and'
   }
-  // Normalize watch node: ensure fields is always an array
-  if (d.type === 'watch') {
-    if (!Array.isArray(d.params.fields)) d.params.fields = []
-  }
   // Normalize legacy keyboard_press → keyboard_hotkey
   if (d.action_type === 'keyboard_press') {
     d.action_type = 'keyboard_hotkey'
@@ -376,7 +371,6 @@ function emitUpdate() {
 .badge-http       { color: #13c2c2; border-color: #13c2c2; background: #112123; }
 .badge-compute    { color: #36cfc9; border-color: #36cfc9; background: #112123; }
 .badge-script     { color: #b37feb; border-color: #9254de; background: #1a0a2e; }
-.badge-watch       { color: #ff7a45; border-color: #ff7a45; background: #2b1200; }
 .badge-global-var  { color: #40a9ff; border-color: #1890ff; background: #0d2340; }
 .prop-form :deep(.ant-form-item) { margin-bottom: 12px; }
 .prop-form :deep(.ant-form-item-label > label) { font-size: 11px; color: #666; }

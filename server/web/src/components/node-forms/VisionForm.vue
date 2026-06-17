@@ -79,16 +79,16 @@
       </a-form-item>
       <a-form-item label="未匹配时写入">
         <div class="value-row">
-          <a-input v-if="d.not_found_value_type !== 'bool'" v-model:value="d.not_found_value" placeholder="留空则写入空值" class="value-input" @change="update()" />
+          <a-input v-if="d.not_found_value_type === 'None'" value="None" disabled class="value-input" />
+          <a-input v-else-if="d.not_found_value_type !== 'bool'" v-model:value="d.not_found_value" placeholder="留空则写入空值" class="value-input" @change="update()" />
           <a-select v-else v-model:value="d.not_found_value" class="value-input" allow-clear placeholder="选择 True / False" @change="update()">
             <a-select-option value="True">True</a-select-option>
             <a-select-option value="False">False</a-select-option>
           </a-select>
-          <a-select v-model:value="d.not_found_value_type" class="value-type-select" @change="update()">
+          <a-select v-model:value="d.not_found_value_type" class="value-type-select" @change="onNotFoundValueTypeChange">
             <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
           </a-select>
         </div>
-        <div class="hint-text">类型选 None 表示存入空值，与左边文本框内容无关</div>
       </a-form-item>
       <a-form-item label="结果标记">
         <a-switch v-model:checked="d.params.show_overlay" @change="update()" />
@@ -266,16 +266,16 @@
       </a-form-item>
       <a-form-item label="未匹配时写入">
         <div class="value-row">
-          <a-input v-if="d.not_found_value_type !== 'bool'" v-model:value="d.not_found_value" placeholder="留空则写入空值" class="value-input" @change="update()" />
+          <a-input v-if="d.not_found_value_type === 'None'" value="None" disabled class="value-input" />
+          <a-input v-else-if="d.not_found_value_type !== 'bool'" v-model:value="d.not_found_value" placeholder="留空则写入空值" class="value-input" @change="update()" />
           <a-select v-else v-model:value="d.not_found_value" class="value-input" allow-clear placeholder="选择 True / False" @change="update()">
             <a-select-option value="True">True</a-select-option>
             <a-select-option value="False">False</a-select-option>
           </a-select>
-          <a-select v-model:value="d.not_found_value_type" class="value-type-select" @change="update()">
+          <a-select v-model:value="d.not_found_value_type" class="value-type-select" @change="onNotFoundValueTypeChange">
             <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
           </a-select>
         </div>
-        <div class="hint-text">类型选 None 表示存入空值，与左边文本框内容无关</div>
       </a-form-item>
       <a-form-item v-if="d.params.mode === 'all_contours'" label="最小面积">
         <a-input-number v-model:value="d.params.min_area" :min="0" :style="{ width: '100%' }" placeholder="过滤小于此面积的色块（像素²）" @change="update()" />
@@ -379,6 +379,13 @@ function onAiImageSourceChange() {
 
 function onOcrImageSourceChange() {
   if (ocrImageSource.value === 'screenshot') { d.value.params.ocr_context_image_var = '' }
+  update()
+}
+
+function onNotFoundValueTypeChange() {
+  if (d.value.not_found_value_type === 'None') {
+    d.value.not_found_value = ''
+  }
   update()
 }
 </script>

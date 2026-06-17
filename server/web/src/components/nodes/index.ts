@@ -16,7 +16,6 @@ import {
   CodeOutlined,
   ApartmentOutlined,
   NodeCollapseOutlined,
-  PrinterOutlined,
   DatabaseOutlined,
 } from '@ant-design/icons-vue'
 
@@ -34,7 +33,6 @@ export const ICON_MAP: Record<string, Component> = {
   CodeOutlined,
   ApartmentOutlined,
   NodeCollapseOutlined,
-  PrinterOutlined,
   DatabaseOutlined,
 }
 
@@ -143,7 +141,6 @@ const NODE_DEFS = [
   { shape: 'node-http',       icon: 'GlobalOutlined',      label: 'HTTP',       w: 120, h: 60  },
   { shape: 'node-compute',    icon: 'CodeOutlined',        label: 'Compute',    w: 120, h: 60  },
   { shape: 'node-script',     icon: 'ApartmentOutlined',   label: 'Script',     w: 120, h: 60  },
-  { shape: 'node-watch',      icon: 'PrinterOutlined',     label: 'Watch',      w: 120, h: 60  },
   { shape: 'node-global-var', icon: 'DatabaseOutlined',    label: 'Global Var', w: 120, h: 60  },
 ]
 

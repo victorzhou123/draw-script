@@ -17,9 +17,6 @@ export const useExecutionStore = defineStore('execution', () => {
   // Per-client execution logs: clientId → log lines
   const clientLogs = ref<Record<string, string[]>>({})
 
-  // Watch node snapshots: nodeId → clientId → snapshot
-  const watchSnapshots = ref<Record<string, Record<string, Record<string, unknown>>>>({})
-
   // nodeId → Set of clientIds currently executing that node
   const activeNodeClients = ref(new Map<string, Set<string>>())
   // Derived set of active node IDs for consumers (BaseNode, GraphEditor)
@@ -87,11 +84,6 @@ export const useExecutionStore = defineStore('execution', () => {
     } else {
       clientLogs.value = {}
     }
-  }
-
-  function onWatchSnapshot(nodeId: string, clientId: string, snapshot: Record<string, unknown>) {
-    if (!watchSnapshots.value[nodeId]) watchSnapshots.value[nodeId] = {}
-    watchSnapshots.value[nodeId][clientId] = snapshot
   }
 
   function clearNodeStatus() {
@@ -198,12 +190,12 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   return {
-    clientExecutions, clientLogs, activeNodeIds, activeNodeClients, watchSnapshots,
+    clientExecutions, clientLogs, activeNodeIds, activeNodeClients,
     nodeStatus, nodeActions, nodeLogs, nodeContextBefore, nodeContextAfter,
     debugAccumulatedContext,
     isRunning, anyRunning,
     runOnClient, stopOnClient, runOnProject, stopOnProject,
-    logsFor, addLog, clearLogs, onProgress, onFinished, onWatchSnapshot,
+    logsFor, addLog, clearLogs, onProgress, onFinished,
     clearNodeStatus, clearNodeStatusFor, onNodeProgress, onNodeLog, nodeActionsFor, nodeLogsFor,
     onNodeContext, nodeContextBeforeFor, nodeContextAfterFor,
     setDebugExecution,

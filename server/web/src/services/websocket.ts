@@ -114,13 +114,6 @@ class UIWebSocket {
           )
         }
         break
-      case 'watch_snapshot':
-        executionStore.onWatchSnapshot(
-          msg.node_id as string,
-          msg.client_id as string,
-          msg.snapshot as Record<string, unknown>,
-        )
-        break
     }
   }
 
