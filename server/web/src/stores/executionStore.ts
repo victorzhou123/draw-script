@@ -35,6 +35,9 @@ export const useExecutionStore = defineStore('execution', () => {
   // nodeId → ctx.variables snapshot before/after execution
   const nodeContextBefore = ref<Record<string, Record<string, any>>>({})
   const nodeContextAfter = ref<Record<string, Record<string, any>>>({})
+  // Accumulated ctx.variables from the last debug run — used as initial vars for next 「执行」
+  const debugAccumulatedContext = ref<Record<string, any>>({})
+  const _currentDebugExecId = ref<string | null>(null)
 
   function isRunning(clientId: string): boolean {
     return clientExecutions.value[clientId]?.status === 'running'
@@ -119,12 +122,33 @@ export const useExecutionStore = defineStore('execution', () => {
     return nodeLogs.value[nodeId] ?? []
   }
 
-  function onNodeContext(nodeId: string, phase: string, variables: Record<string, any>) {
+  function onNodeContext(nodeId: string, phase: string, variables: Record<string, any>, executionId?: string) {
     if (phase === 'before') {
       nodeContextBefore.value = { ...nodeContextBefore.value, [nodeId]: variables }
     } else {
       nodeContextAfter.value = { ...nodeContextAfter.value, [nodeId]: variables }
+      if (executionId && executionId === _currentDebugExecId.value) {
+        debugAccumulatedContext.value = { ...variables }
+      }
     }
+  }
+
+  function setDebugExecution(executionId: string) {
+    _currentDebugExecId.value = executionId
+  }
+
+  function clearNodeStatusFor(nodeId: string) {
+    const dropKey = (rec: Record<string, any>) => {
+      if (rec[nodeId] === undefined) return rec
+      const next = { ...rec }
+      delete next[nodeId]
+      return next
+    }
+    nodeStatus.value = dropKey(nodeStatus.value) as Record<string, 'done' | 'error'>
+    nodeActions.value = dropKey(nodeActions.value) as Record<string, string[]>
+    nodeLogs.value = dropKey(nodeLogs.value) as Record<string, string[]>
+    nodeContextBefore.value = dropKey(nodeContextBefore.value)
+    nodeContextAfter.value = dropKey(nodeContextAfter.value)
   }
 
   function nodeContextBeforeFor(nodeId: string): Record<string, any> | null {
@@ -176,10 +200,12 @@ export const useExecutionStore = defineStore('execution', () => {
   return {
     clientExecutions, clientLogs, activeNodeIds, activeNodeClients, watchSnapshots,
     nodeStatus, nodeActions, nodeLogs, nodeContextBefore, nodeContextAfter,
+    debugAccumulatedContext,
     isRunning, anyRunning,
     runOnClient, stopOnClient, runOnProject, stopOnProject,
     logsFor, addLog, clearLogs, onProgress, onFinished, onWatchSnapshot,
-    clearNodeStatus, onNodeProgress, onNodeLog, nodeActionsFor, nodeLogsFor,
+    clearNodeStatus, clearNodeStatusFor, onNodeProgress, onNodeLog, nodeActionsFor, nodeLogsFor,
     onNodeContext, nodeContextBeforeFor, nodeContextAfterFor,
+    setDebugExecution,
   }
 })

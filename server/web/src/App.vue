@@ -109,6 +109,7 @@ import HelpDrawer from './components/HelpDrawer.vue'
 import { useScriptStore } from './stores/scriptStore'
 import { useProjectStore } from './stores/projectStore'
 import { useClientStore } from './stores/clientStore'
+import { useExecutionStore } from './stores/executionStore'
 import { uiWS } from './services/websocket'
 
 const darkTheme = { algorithm: theme.darkAlgorithm }
@@ -116,6 +117,7 @@ const darkTheme = { algorithm: theme.darkAlgorithm }
 const scriptStore = useScriptStore()
 const projectStore = useProjectStore()
 const clientStore = useClientStore()
+const executionStore = useExecutionStore()
 const graphEditor = ref<InstanceType<typeof GraphEditor>>()
 const selectedNode = ref<{ id: string; data: any } | null>(null)
 const graphCells = ref<any[]>([])
@@ -213,7 +215,7 @@ async function onDebugExecute(nodeId: string) {
   }
   try {
     const flowJson = graphEditor.value?.getJSON()
-    await api.debugExecuteNode(script.id, nodeId, clientId, flowJson)
+    await api.debugExecuteNode(script.id, nodeId, clientId, flowJson, executionStore.debugAccumulatedContext)
   } catch (e: any) {
     message.error(e?.response?.data?.detail || '执行失败')
   }

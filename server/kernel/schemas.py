@@ -171,6 +171,7 @@ class DebugNodeRequest(BaseModel):
     client_id: str
     node_id: str
     flow_json: dict[str, Any] = Field(default_factory=dict)
+    initial_variables: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────

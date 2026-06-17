@@ -176,6 +176,7 @@ async def debug_execute_node(
         background_tasks.add_task(
             engine.debug_execute_node,
             script_id, body.client_id, body.flow_json, body.node_id, script.project_id,
+            body.initial_variables,
         )
     return {"ok": True}
 

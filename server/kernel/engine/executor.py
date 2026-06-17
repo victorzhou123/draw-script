@@ -180,6 +180,7 @@ class ExecutionEngine:
         flow_json: dict[str, Any],
         node_id: str,
         project_id: str | None = None,
+        initial_variables: dict[str, Any] | None = None,
     ) -> None:
         execution_id = f"debug-{uuid.uuid4().hex[:8]}"
         graph = FlowGraph.from_x6_json(flow_json)
@@ -196,6 +197,8 @@ class ExecutionEngine:
             "execution_id": execution_id,
             "script_id": script_id,
             "client_id": client_id,
+            "debug": True,
+            "debug_node_id": node_id,
         })
 
         if not target:
@@ -217,7 +220,7 @@ class ExecutionEngine:
             session_factory=self.session_factory,
             project_id=project_id,
             gpu_enabled=gpu_enabled,
-            variables={},
+            variables=dict(initial_variables or {}),
         )
 
         await _broadcast_progress(ctx, node_id, target.node_type, "running")
@@ -265,6 +268,7 @@ class ExecutionEngine:
             "execution_id": execution_id,
             "script_id": script_id,
             "client_id": client_id,
+            "debug": True,
         })
 
         if not start_node:

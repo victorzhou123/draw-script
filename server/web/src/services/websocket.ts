@@ -63,13 +63,24 @@ class UIWebSocket {
         clientStore.onClientStatus(msg.client_id as string, msg.status as string)
         break
       case 'execution_started': {
-        // Only clear node status when the starting script matches the currently viewed script.
-        // A different script running on the same client must not wipe out this canvas's state.
         const scriptStore = useScriptStore()
         const startedScriptId = msg.script_id as string | undefined
         const startedClientId = msg.client_id as string | undefined
+        const isDebug = !!msg.debug
+        const debugNodeId = msg.debug_node_id as string | undefined
+        const executionId = msg.execution_id as string
         if (isBoundClient(startedClientId) && startedScriptId === scriptStore.currentScript?.id) {
-          executionStore.clearNodeStatus()
+          if (isDebug && debugNodeId) {
+            // 「执行」single node: only wipe that node's status, leave others intact
+            executionStore.clearNodeStatusFor(debugNodeId)
+            executionStore.setDebugExecution(executionId)
+          } else if (isDebug) {
+            // 「执行到此」: fresh run from Start — clear all, still track as debug exec
+            executionStore.clearNodeStatus()
+            executionStore.setDebugExecution(executionId)
+          } else {
+            executionStore.clearNodeStatus()
+          }
         }
         break
       }
@@ -99,6 +110,7 @@ class UIWebSocket {
             msg.node_id as string,
             msg.phase as string,
             msg.variables as Record<string, any>,
+            msg.execution_id as string,
           )
         }
         break
