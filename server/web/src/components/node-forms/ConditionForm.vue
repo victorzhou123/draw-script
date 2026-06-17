@@ -66,24 +66,25 @@
           </a-select>
         </a-form-item>
         <a-form-item label="期望值">
-          <a-auto-complete
-            v-if="cond.params.value_type !== 'bool'"
-            v-model:value="cond.params.value"
-            :options="ctx.contextFields.value.map((f:any) => ({ value: '{{' + f.name + '}}', label: f.name }))"
-            placeholder="字面值，按右侧声明类型转换，或 {{变量}}"
-            allow-clear
-            @change="update()"
-          />
-          <a-select v-else v-model:value="cond.params.value" allow-clear placeholder="选择 True / False" @change="update()">
-            <a-select-option value="True">True</a-select-option>
-            <a-select-option value="False">False</a-select-option>
-          </a-select>
-        </a-form-item>
-        <a-form-item label="期望值类型">
-          <a-select v-model:value="cond.params.value_type" @change="update()">
-            <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
-          </a-select>
-          <div class="hint-text">需和变量实际存入的类型一致才能比较成功；期望值填写变量引用时此项不生效</div>
+          <div class="value-row">
+            <a-auto-complete
+              v-if="cond.params.value_type !== 'bool'"
+              v-model:value="cond.params.value"
+              :options="ctx.contextFields.value.map((f:any) => ({ value: '{{' + f.name + '}}', label: f.name }))"
+              placeholder="字面值，或 {{变量}}"
+              allow-clear
+              class="value-input"
+              @change="update()"
+            />
+            <a-select v-else v-model:value="cond.params.value" class="value-input" allow-clear placeholder="选择 True / False" @change="update()">
+              <a-select-option value="True">True</a-select-option>
+              <a-select-option value="False">False</a-select-option>
+            </a-select>
+            <a-select v-model:value="cond.params.value_type" class="value-type-select" @change="update()">
+              <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
+            </a-select>
+          </div>
+          <div class="hint-text">需和变量实际存入的类型一致才能比较成功；期望值填写变量引用时类型不生效</div>
         </a-form-item>
       </template>
 
@@ -134,4 +135,7 @@ function onTypeChange(cond: any) {
 .cond-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .cond-label { font-size: 12px; color: #888; font-weight: 600; }
 .op-badge { font-size: 11px; color: #faad14; background: #2b2111; padding: 1px 8px; border-radius: 3px; border: 1px solid #3f2e00; }
+.value-row { display: flex; align-items: center; gap: 6px; }
+.value-input { flex: 1; min-width: 0; }
+.value-type-select { width: 90px; flex-shrink: 0; }
 </style>

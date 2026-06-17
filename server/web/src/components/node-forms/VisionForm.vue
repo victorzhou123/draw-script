@@ -147,6 +147,20 @@
           </a-select>
         </div>
       </a-form-item>
+      <a-form-item label="未识别时写入">
+        <div class="value-row">
+          <a-input v-if="d.ocr_not_found_value_type === 'None'" value="None" disabled class="value-input" />
+          <a-input v-else-if="d.ocr_not_found_value_type !== 'bool'" v-model:value="d.ocr_not_found_value" placeholder="留空则写入空字符串" class="value-input" @change="update()" />
+          <a-select v-else v-model:value="d.ocr_not_found_value" class="value-input" allow-clear placeholder="选择 True / False" @change="update()">
+            <a-select-option value="True">True</a-select-option>
+            <a-select-option value="False">False</a-select-option>
+          </a-select>
+          <a-select v-model:value="d.ocr_not_found_value_type" class="value-type-select" @change="onOcrNotFoundValueTypeChange">
+            <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
+        </div>
+        <div class="hint-text" style="margin-top:4px">OCR未识别到任何文字时写入此值</div>
+      </a-form-item>
     </template>
 
     <!-- AI Vision -->
@@ -345,6 +359,11 @@ watch(d, (data) => {
     data.value_type = 'str'
     ctx.emitUpdate()
   }
+
+  if (data.vision_type === 'ocr' && !data.ocr_not_found_value_type) {
+    data.ocr_not_found_value_type = 'str'
+    ctx.emitUpdate()
+  }
 }, { immediate: true })
 
 function update() { ctx.emitUpdate() }
@@ -385,6 +404,13 @@ function onOcrImageSourceChange() {
 function onNotFoundValueTypeChange() {
   if (d.value.not_found_value_type === 'None') {
     d.value.not_found_value = ''
+  }
+  update()
+}
+
+function onOcrNotFoundValueTypeChange() {
+  if (d.value.ocr_not_found_value_type === 'None') {
+    d.value.ocr_not_found_value = ''
   }
   update()
 }

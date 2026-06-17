@@ -178,7 +178,7 @@ function onKeyDown(e: KeyboardEvent) {
             attrs: {
               line: { stroke: '#8f8f8f', strokeWidth: 2, targetMarker: { name: 'block', width: 12, height: 8 } },
             },
-            router: 'manhattan',
+            router: { name: 'manhattan', args: { padding: 4 } },
             connector: { name: 'rounded' },
           })
           if (srcNode.shape === 'node-condition' && (e.source.port === 'true' || e.source.port === 'false')) {
@@ -253,7 +253,7 @@ onMounted(() => {
               targetMarker: { name: 'block', width: 12, height: 8 },
             },
           },
-          router: 'manhattan',
+          router: { name: 'manhattan', args: { padding: 4 } },
           connector: { name: 'rounded' },
         })
       },
@@ -424,7 +424,7 @@ function sanitizePorts(cells: any[]) {
     // Edges with manually-set vertices use orth; all others use manhattan.
     if (cell.source !== undefined && cell.target !== undefined) {
       const hasVertices = Array.isArray(cell.vertices) && cell.vertices.length > 0
-      cell.router = hasVertices ? 'orth' : 'manhattan'
+      cell.router = hasVertices ? 'orth' : { name: 'manhattan', args: { padding: 4 } }
     }
   }
 }

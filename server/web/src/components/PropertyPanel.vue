@@ -298,6 +298,8 @@ watch(() => props.selectedNode, (node) => {
     found_value_type: node.data.found_value_type || '',
     not_found_value_type: node.data.not_found_value_type || '',
     value_type: node.data.value_type || '',
+    ocr_not_found_value: node.data.ocr_not_found_value ?? '',
+    ocr_not_found_value_type: node.data.ocr_not_found_value_type || '',
     fields: node.data.fields || [],
     return_fields: node.data.return_fields || [],
     known_fields: node.data.known_fields || [],

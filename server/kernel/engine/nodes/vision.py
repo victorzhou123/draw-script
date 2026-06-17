@@ -75,9 +75,14 @@ class VisionNodeHandler(BaseNodeHandler):
                     vision_result = await VisionEngine().analyze("ocr", img_bytes, params, None)
                     await self._log(f"[Vision] OCR完成(context图): text={truncate_for_log(vision_result.text)!r}")
                     if result_var:
-                        value_type = data.get("value_type") or "str"
+                        if vision_result.text:
+                            value_type = data.get("value_type") or "str"
+                            raw_value = vision_result.text
+                        else:
+                            value_type = data.get("ocr_not_found_value_type") or "str"
+                            raw_value = data.get("ocr_not_found_value") or ""
                         try:
-                            self.ctx.variables[result_var] = coerce_typed(vision_result.text, value_type)
+                            self.ctx.variables[result_var] = coerce_typed(raw_value, value_type)
                         except TypeConversionError as e:
                             return NodeResult(success=False, error=f"OCR 结果类型转换失败（变量 '{result_var}'，声明类型 {value_type}）: {e}")
                     return NodeResult(success=True, output=vision_result.__dict__)
@@ -275,7 +280,11 @@ class VisionNodeHandler(BaseNodeHandler):
                             raw_value = _parse_markdown_json(raw_value)
                             await self._log(f"[Vision] post_process parse_markdown_json → {type(raw_value).__name__}")
                     else:
-                        raw_value = None
+                        if vision_type == "ocr":
+                            value_type = data.get("ocr_not_found_value_type") or value_type
+                            raw_value = data.get("ocr_not_found_value") or ""
+                        else:
+                            raw_value = None
                     try:
                         self.ctx.variables[result_var] = coerce_typed(raw_value, value_type)
                     except TypeConversionError as e:
