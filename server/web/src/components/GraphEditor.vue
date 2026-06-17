@@ -41,7 +41,7 @@ let mouseMoveHandler: ((e: MouseEvent) => void) | null = null
 const hasPortLabel = (node: any, portId: string) =>
   node.getPort(portId)?.attrs?.labelText?.text !== undefined
 
-function onKeyDown(e: KeyboardEvent) {
+async function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Space' || e.code === 'Space') {
     graph.value?.disableRubberband()
     return
@@ -93,111 +93,22 @@ function onKeyDown(e: KeyboardEvent) {
       })),
     ]
 
-    navigator.clipboard.writeText(JSON.stringify(clips)).then(() => {
-      message.success(`已复制 ${selectedNodes.length} 个节点`, 1.5)
-    }).catch(() => {
-      message.error('复制失败，请检查浏览器剪贴板权限', 2)
-    })
-    return
-  }
-
-  if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-    if (inInput) return
-    e.preventDefault()
-    ;(async () => {
-      let text: string
-      try {
-        text = await navigator.clipboard.readText()
-      } catch {
-        message.error('读取剪贴板失败，请检查浏览器权限', 2)
-        return
-      }
-
-      let clips: any[]
-      try {
-        clips = JSON.parse(text)
-      } catch {
-        message.error('剪贴板内容不是有效的 JSON 格式', 2)
-        return
-      }
-
-      if (!Array.isArray(clips)) {
-        message.error('剪贴板数据格式不符合节点结构', 2)
-        return
-      }
-
-      const nodeItems = clips.filter(item => item?.kind === 'node')
-      const edgeItems = clips.filter(item => item?.kind === 'edge')
-
-      if (nodeItems.length === 0) {
-        message.error('剪贴板数据中没有有效节点', 2)
-        return
-      }
-      for (const n of nodeItems) {
-        if (!n.id || !KNOWN_SHAPES.has(n.shape) || !n.position || !n.size || typeof n.data !== 'object') {
-          message.error('剪贴板数据格式不符合节点结构', 2)
-          return
-        }
-      }
-      for (const edge of edgeItems) {
-        if (!edge.source?.cell || !edge.source?.port || !edge.target?.cell || !edge.target?.port) {
-          message.error('剪贴板数据格式不符合节点结构', 2)
-          return
-        }
-      }
-
-      if (!graph.value) return
-
-      const centroid = {
-        x: nodeItems.reduce((s: number, n: any) => s + n.position.x + n.size.width / 2, 0) / nodeItems.length,
-        y: nodeItems.reduce((s: number, n: any) => s + n.position.y + n.size.height / 2, 0) / nodeItems.length,
-      }
-      const target = graph.value.clientToLocal(lastMousePos)
-
-      const idMap = new Map<string, any>()
-      const newNodes = nodeItems.map((n: any) => {
-        const node = graph.value!.addNode({
-          shape: n.shape,
-          x: target.x + (n.position.x - centroid.x),
-          y: target.y + (n.position.y - centroid.y),
-          width: n.size.width,
-          height: n.size.height,
-          data: JSON.parse(JSON.stringify(n.data)),
-        })
-        idMap.set(n.id, node)
-        return node
-      })
-
-      const newEdges = edgeItems
-        .filter((e: any) => idMap.has(e.source.cell) && idMap.has(e.target.cell))
-        .map((e: any) => {
-          const srcNode = idMap.get(e.source.cell)
-          const edge = graph.value!.addEdge({
-            source: { cell: srcNode.id, port: e.source.port },
-            target: { cell: idMap.get(e.target.cell).id, port: e.target.port },
-            attrs: {
-              line: { stroke: '#8f8f8f', strokeWidth: 2, targetMarker: { name: 'block', width: 12, height: 8 } },
-            },
-            router: { name: 'manhattan', args: { padding: 4 } },
-            connector: { name: 'rounded' },
-          })
-          if (srcNode.shape === 'node-condition' && (e.source.port === 'true' || e.source.port === 'false')) {
-            const isTrue = e.source.port === 'true'
-            edge.appendLabel({
-              attrs: {
-                text: { text: isTrue ? 'Yes' : 'No', fill: isTrue ? '#52c41a' : '#ff4d4f', fontSize: 11, fontWeight: 'bold' },
-                rect: { fill: 'rgba(26,26,26,0.85)', stroke: 'none', rx: 3, ry: 3 },
-              },
-              position: { distance: 0.4 },
-            })
-          }
-          return edge
-        })
-
-      graph.value.cleanSelection()
-      graph.value.select([...newNodes, ...newEdges])
-      emit('graphChanged')
-    })()
+    const json = JSON.stringify(clips)
+    // navigator.clipboard requires HTTPS/localhost; fall back to execCommand for LAN access
+    const writeOk = navigator.clipboard && window.isSecureContext
+      ? await navigator.clipboard.writeText(json).then(() => true).catch(() => false)
+      : (() => {
+          const el = document.createElement('textarea')
+          el.value = json
+          el.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
+          document.body.appendChild(el)
+          el.focus(); el.select()
+          const ok = document.execCommand('copy')
+          document.body.removeChild(el)
+          return ok
+        })()
+    if (writeOk) message.success(`已复制 ${selectedNodes.length} 个节点`, 1.5)
+    else message.error('复制失败', 2)
     return
   }
 
@@ -213,9 +124,89 @@ function onKeyUp(e: KeyboardEvent) {
   }
 }
 
+function pasteFromText(text: string) {
+  let clips: any[]
+  try { clips = JSON.parse(text) } catch {
+    message.error('剪贴板内容不是有效的 JSON 格式', 2)
+    return
+  }
+  if (!Array.isArray(clips)) { message.error('剪贴板数据格式不符合节点结构', 2); return }
+
+  const nodeItems = clips.filter(item => item?.kind === 'node')
+  const edgeItems = clips.filter(item => item?.kind === 'edge')
+  if (nodeItems.length === 0) { message.error('剪贴板数据中没有有效节点', 2); return }
+  for (const n of nodeItems) {
+    if (!n.id || !KNOWN_SHAPES.has(n.shape) || !n.position || !n.size || typeof n.data !== 'object') {
+      message.error('剪贴板数据格式不符合节点结构', 2); return
+    }
+  }
+  for (const edge of edgeItems) {
+    if (!edge.source?.cell || !edge.source?.port || !edge.target?.cell || !edge.target?.port) {
+      message.error('剪贴板数据格式不符合节点结构', 2); return
+    }
+  }
+  if (!graph.value) return
+
+  const centroid = {
+    x: nodeItems.reduce((s: number, n: any) => s + n.position.x + n.size.width / 2, 0) / nodeItems.length,
+    y: nodeItems.reduce((s: number, n: any) => s + n.position.y + n.size.height / 2, 0) / nodeItems.length,
+  }
+  const target = graph.value.clientToLocal(lastMousePos)
+  const idMap = new Map<string, any>()
+  const newNodes = nodeItems.map((n: any) => {
+    const node = graph.value!.addNode({
+      shape: n.shape,
+      x: target.x + (n.position.x - centroid.x),
+      y: target.y + (n.position.y - centroid.y),
+      width: n.size.width,
+      height: n.size.height,
+      data: JSON.parse(JSON.stringify(n.data)),
+    })
+    idMap.set(n.id, node)
+    return node
+  })
+  const newEdges = edgeItems
+    .filter((e: any) => idMap.has(e.source.cell) && idMap.has(e.target.cell))
+    .map((e: any) => {
+      const srcNode = idMap.get(e.source.cell)
+      const edge = graph.value!.addEdge({
+        source: { cell: srcNode.id, port: e.source.port },
+        target: { cell: idMap.get(e.target.cell).id, port: e.target.port },
+        attrs: { line: { stroke: '#8f8f8f', strokeWidth: 2, targetMarker: { name: 'block', width: 12, height: 8 } } },
+        router: 'manhattan',
+        connector: { name: 'rounded' },
+      })
+      if (srcNode.shape === 'node-condition' && (e.source.port === 'true' || e.source.port === 'false')) {
+        const isTrue = e.source.port === 'true'
+        edge.appendLabel({
+          attrs: {
+            text: { text: isTrue ? 'Yes' : 'No', fill: isTrue ? '#52c41a' : '#ff4d4f', fontSize: 11, fontWeight: 'bold' },
+            rect: { fill: 'rgba(26,26,26,0.85)', stroke: 'none', rx: 3, ry: 3 },
+          },
+          position: { distance: 0.4 },
+        })
+      }
+      return edge
+    })
+  graph.value.cleanSelection()
+  graph.value.select([...newNodes, ...newEdges])
+  emit('graphChanged')
+}
+
+function onPaste(e: ClipboardEvent) {
+  const el = e.target as HTMLElement
+  const inInput = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable
+  if (inInput) return
+  const text = e.clipboardData?.getData('text') ?? ''
+  if (!text) return
+  e.preventDefault()
+  pasteFromText(text)
+}
+
 onMounted(() => {
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('keyup', onKeyUp)
+  document.addEventListener('paste', onPaste)
   if (!containerEl.value) return
 
   mouseMoveHandler = (e: MouseEvent) => {
@@ -391,6 +382,7 @@ onBeforeUnmount(() => {
   graph.value?.dispose()
   document.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('keyup', onKeyUp)
+  document.removeEventListener('paste', onPaste)
   if (contextMenuHandler) document.removeEventListener('contextmenu', contextMenuHandler)
   if (mouseMoveHandler && containerEl.value)
     containerEl.value.removeEventListener('mousemove', mouseMoveHandler)
