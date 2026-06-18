@@ -4,10 +4,19 @@
       <component :is="iconComp" class="node-icon" />
       <div class="node-label">{{ displayLabel }}</div>
     </div>
-    <div v-if="statusBadge" class="status-badge" :class="`status-${statusBadge}`">
-      <CheckOutlined v-if="statusBadge === 'done'" />
-      <CloseOutlined v-else />
+    <div v-if="statusBadge === 'done'" class="status-badge status-done">
+      <CheckOutlined />
     </div>
+    <a-tooltip
+      v-else-if="statusBadge === 'error'"
+      placement="topRight"
+      :title="nodeErrorText"
+      :overlay-inner-style="{ fontSize: '12px', maxWidth: '320px', whiteSpace: 'pre-line', wordBreak: 'break-word' }"
+    >
+      <div class="status-badge status-error">
+        <CloseOutlined />
+      </div>
+    </a-tooltip>
   </div>
 </template>
 
@@ -56,6 +65,13 @@ const statusBadge = computed(() => {
   const node = getNode?.()
   if (!node) return null
   return executionStore.nodeStatus[node.id] ?? null
+})
+
+const nodeErrorText = computed(() => {
+  const node = getNode?.()
+  if (!node) return ''
+  const logs = executionStore.nodeLogsFor(node.id)
+  return logs.map(l => l.replace(/^\s*ERROR:\s*/, '')).join('\n') || '执行错误'
 })
 </script>
 
