@@ -139,12 +139,15 @@ import ScriptForm from './node-forms/ScriptForm.vue'
 import ComputeForm from './node-forms/ComputeForm.vue'
 import ScreenshotForm from './node-forms/ScreenshotForm.vue'
 import GlobalVarForm from './node-forms/GlobalVarForm.vue'
+import ContextEditForm from './node-forms/ContextEditForm.vue'
+import WaitForm from './node-forms/WaitForm.vue'
 
 const FORM_MAP: Record<string, any> = {
   action: ActionForm, vision: VisionForm, condition: ConditionForm,
   loop: LoopForm, delay: DelayForm, http: HttpForm,
   start: StartForm, end: EndForm, script: ScriptForm, compute: ComputeForm,
   screenshot: ScreenshotForm, 'global-var': GlobalVarForm,
+  'context-edit': ContextEditForm, wait: WaitForm,
 }
 
 const props = defineProps<{
@@ -247,6 +250,8 @@ const nodeLabel = computed(() => {
     vision: 'Vision', condition: 'Condition', delay: 'Delay', loop: 'Loop',
     http: 'HTTP', compute: 'Compute', script: 'Script',
     'global-var': 'Global Var',
+    'context-edit': 'Context Edit',
+    wait: 'Wait',
   }
   return map[nodeType.value] || nodeType.value
 })
@@ -376,6 +381,8 @@ defineExpose({ setActiveTab: (tab: 'props' | 'debug') => { activeTab.value = tab
 .badge-compute    { color: #36cfc9; border-color: #36cfc9; background: #112123; }
 .badge-script     { color: #b37feb; border-color: #9254de; background: #1a0a2e; }
 .badge-global-var  { color: #40a9ff; border-color: #1890ff; background: #0d2340; }
+.badge-context-edit { color: #eb2f96; border-color: #eb2f96; background: #1a0a14; }
+.badge-wait        { color: #2db7f5; border-color: #2db7f5; background: #0d1f2b; }
 .prop-form :deep(.ant-form-item) { margin-bottom: 12px; }
 .prop-form :deep(.ant-form-item-label > label) { font-size: 11px; color: #666; }
 .section-title { font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.8px; margin: 14px 0 6px; display: flex; align-items: center; gap: 6px; }

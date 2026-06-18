@@ -22,6 +22,12 @@ function nodeContributions(data: any): string[] {
     return data.output_fields.filter(Boolean)
   if (data.type === 'script' && Array.isArray(data.output_mappings) && data.output_mappings.length)
     return data.output_mappings.map((m: any) => m.to?.trim()).filter(Boolean)
+  if (data.type === 'context-edit' && Array.isArray(data.params?.operations)) {
+    return data.params.operations
+      .filter((op: any) => op.op === 'set' || op.op === 'rename')
+      .map((op: any) => op.op === 'set' ? op.key?.trim() : op.to?.trim())
+      .filter(Boolean)
+  }
   return []
 }
 

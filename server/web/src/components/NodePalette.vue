@@ -84,7 +84,8 @@ function onDragStart(def: typeof NODE_DEFS[0], event: MouseEvent) {
 .palette-wait     .palette-icon { color: #2db7f5; }
 .palette-http     .palette-icon { color: #13c2c2; }
 .palette-compute  .palette-icon { color: #36cfc9; }
-.palette-script   .palette-icon { color: #b37feb; }
+.palette-script        .palette-icon { color: #b37feb; }
+.palette-context-edit  .palette-icon { color: #eb2f96; }
 
 .palette-start:hover    .palette-label { color: #52c41a; }
 .palette-end:hover      .palette-label { color: #ff4d4f; }
@@ -97,5 +98,6 @@ function onDragStart(def: typeof NODE_DEFS[0], event: MouseEvent) {
 .palette-wait:hover     .palette-label { color: #2db7f5; }
 .palette-http:hover     .palette-label { color: #13c2c2; }
 .palette-compute:hover  .palette-label { color: #36cfc9; }
-.palette-script:hover   .palette-label { color: #b37feb; }
+.palette-script:hover        .palette-label { color: #b37feb; }
+.palette-context-edit:hover  .palette-label { color: #eb2f96; }
 </style>
