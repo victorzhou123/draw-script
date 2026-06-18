@@ -10,7 +10,7 @@ echo.
 :: 检测 Python
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo [错误] 未检测到 Python，请先安装 Python 3.8 或更高版本。
+    echo [错误] 未检测到 Python，请先安装 Python 3.10 或更高版本。
     echo 下载地址: https://www.python.org/downloads/
     echo 安装时请勾选 "Add Python to PATH"
     echo.
@@ -18,12 +18,22 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: 安装依赖
-echo 正在检查依赖包...
-pip install -r requirements.txt --quiet
+:: 初始化配置（首次运行时交互引导），并查询服务端 GPU 设置
+echo 正在检查配置...
+python preflight.py
+set GPU_MODE=%errorlevel%
+
+:: 根据 GPU 模式安装对应依赖
+if %GPU_MODE%==1 (
+    echo 正在安装 CUDA 依赖...
+    pip install -r requirements-cuda.txt --quiet
+) else (
+    echo 正在安装基础依赖...
+    pip install -r requirements.txt --quiet
+)
+
 if errorlevel 1 (
     echo [错误] 依赖安装失败，请检查网络连接后重试。
-    echo 也可手动运行: pip install -r requirements.txt
     echo.
     pause
     exit /b 1
@@ -32,7 +42,7 @@ if errorlevel 1 (
 echo 依赖就绪，正在启动...
 echo.
 
-:: 启动客户端（首次运行时会引导配置服务端 IP）
+:: 启动客户端
 python agent.py
 
 echo.
