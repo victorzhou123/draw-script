@@ -21,6 +21,8 @@ class ConditionNodeHandler(BaseNodeHandler):
             else:
                 # Backward compat: old single-condition format
                 result = self._evaluate(data.get("condition_type", ""), data.get("params", {}))
+        except ValueError as e:
+            return NodeResult(success=False, error=f"条件节点配置错误: {e}")
         except TypeConversionError as e:
             return NodeResult(success=False, error=f"条件判断类型转换失败: {e}")
 
@@ -31,6 +33,8 @@ class ConditionNodeHandler(BaseNodeHandler):
 
         if condition_type == "variable_compare":
             var_path = params.get("variable", "")
+            if not var_path:
+                raise ValueError("变量路径未填写")
             operator = params.get("operator", "==")
             value_type = params.get("value_type") or "str"
             expected = self._resolve_value(params.get("value"), value_type)
@@ -39,7 +43,9 @@ class ConditionNodeHandler(BaseNodeHandler):
 
         if condition_type == "boolean_check":
             var_path = params.get("variable", "")
-            val = self._get_var(var_path) if var_path else None
+            if not var_path:
+                raise ValueError("变量路径未填写")
+            val = self._get_var(var_path)
             return bool(val)
 
         return False

@@ -11,7 +11,19 @@ class ActionNodeHandler(BaseNodeHandler):
     async def execute(self) -> NodeResult:
         data = self.ctx.node.data
         action_type = data.get("action_type", "mouse_click")
-        params = {k: self._interpolate(v) for k, v in data.get("params", {}).items()}
+        raw_params = data.get("params", {})
+
+        if action_type in ("mouse_click", "mouse_double_click", "mouse_move"):
+            if not raw_params.get("coords") and raw_params.get("x") is None:
+                return NodeResult(success=False, error=f"Action ({action_type}): 坐标未配置")
+        elif action_type == "keyboard_type":
+            if not str(raw_params.get("text") or "").strip():
+                return NodeResult(success=False, error="Action (keyboard_type): 输入文本未配置")
+        elif action_type == "keyboard_hotkey":
+            if not str(raw_params.get("keys") or "").strip():
+                return NodeResult(success=False, error="Action (keyboard_hotkey): 按键未配置")
+
+        params = {k: self._interpolate(v) for k, v in raw_params.items()}
 
         # Resolve 'coords' param: "$varname" → "x,y" string → split into x/y integers.
         # This is how vision results (template_match, ai_vision find, etc.) are consumed.

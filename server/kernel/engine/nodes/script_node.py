@@ -42,7 +42,9 @@ class ScriptNodeHandler(BaseNodeHandler):
         child_vars = {}
         for m in input_mappings:
             src, dst = m.get("from", "").strip(), m.get("to", "").strip()
-            if src and dst and src in self.ctx.variables:
+            if src and dst:
+                if src not in self.ctx.variables:
+                    return NodeResult(success=False, error=f"Script node: 输入映射来源变量 '{src}' 不存在于当前 context")
                 child_vars[dst] = self.ctx.variables[src]
 
         from engine.context import ExecutionContext

@@ -34,6 +34,21 @@ class VisionNodeHandler(BaseNodeHandler):
         result_var = data.get("result_var", "").strip()
         range_marker = data.get("range_marker", "").strip()
 
+        if not result_var:
+            return NodeResult(success=False, error="Vision node: 结果存入字段未配置")
+
+        if vision_type == "template_match":
+            if not params.get("template_id", "") and not params.get("template_context_var", ""):
+                return NodeResult(success=False, error="Vision node (模板匹配): 请选择模板图片或指定图片来源字段")
+        elif vision_type == "ai_vision":
+            if not params.get("model_id", "").strip():
+                return NodeResult(success=False, error="Vision node (AI视觉): 未选择 AI 模型")
+            if not params.get("prompt", "").strip():
+                return NodeResult(success=False, error="Vision node (AI视觉): 提示词未填写")
+        elif vision_type == "color_detect":
+            if not params.get("color", "").strip():
+                return NodeResult(success=False, error="Vision node (颜色检测): 颜色值未填写")
+
         if range_marker:
             params["range_marker"] = range_marker
 

@@ -51,9 +51,12 @@ def resolve_loop_count(variables: dict, params: dict) -> int:
     """
     raw_count = interpolate_value(variables, params.get("count", 1))
     try:
-        return int(raw_count)
+        count = int(raw_count)
     except (TypeError, ValueError):
         raise LoopCountError(f"循环次数配置无效: {raw_count!r}")
+    if count <= 0:
+        raise LoopCountError(f"循环次数必须大于 0，当前值: {count}")
+    return count
 
 
 @dataclass
