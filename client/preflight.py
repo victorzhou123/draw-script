@@ -42,7 +42,7 @@ def main() -> None:
         sys.exit(0)
 
     http_base = _ws_to_http_base(config["server"]["url"])
-    api_url = f"{http_base}/clients/{client_id}"
+    api_url = f"{http_base}/api/clients/{client_id}"
 
     try:
         with urllib.request.urlopen(api_url, timeout=5) as resp:

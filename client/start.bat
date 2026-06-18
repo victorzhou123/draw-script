@@ -25,6 +25,7 @@ set GPU_MODE=%errorlevel%
 
 :: 根据 GPU 模式安装对应依赖
 if %GPU_MODE%==1 (
+    pip uninstall opencv-python -y >nul 2>&1
     echo 正在安装 CUDA 依赖...
     pip install -r requirements-cuda.txt --quiet
 ) else (
