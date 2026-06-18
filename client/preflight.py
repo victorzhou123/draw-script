@@ -48,13 +48,19 @@ def main() -> None:
         with urllib.request.urlopen(api_url, timeout=5) as resp:
             data = json.loads(resp.read().decode())
         if data.get("gpu_enabled"):
-            logger.info(f"[preflight] GPU 加速已启用 (client={client_id})")
+            logger.info("[preflight] gpu模式，安装 CUDA 依赖...")
             sys.exit(1)
         else:
-            logger.info(f"[preflight] GPU 加速未启用 (client={client_id})")
+            logger.info("[preflight] cpu模式，安装基础依赖...")
             sys.exit(0)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            logger.info("[preflight] cpu模式，安装基础依赖...")
+        else:
+            logger.warning(f"[preflight] 服务端返回错误 HTTP {e.code}，使用基础模式")
+        sys.exit(0)
     except Exception as e:
-        logger.warning(f"[preflight] 无法查询服务端，使用基础模式: {e}")
+        logger.warning(f"[preflight] 无法连接服务端，使用基础模式: {e}")
         sys.exit(0)
 
 
