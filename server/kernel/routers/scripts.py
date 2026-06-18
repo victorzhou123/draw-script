@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import Execution, Script, get_session
+from database import Execution, Marker, MarkerCapture, Script, get_session
 from dependencies import get_engine
 from schemas import DebugNodeRequest, ExecutionResponse, RunScriptRequest, ScriptCreate, ScriptResponse, ScriptUpdate
 
@@ -101,6 +101,31 @@ async def run_script(
     db.add(execution)
     await db.commit()
     await db.refresh(execution)
+
+    # restore the bound window once before execution starts
+    from ws_manager import client_ws_manager
+    _cap_result = await db.execute(
+        select(MarkerCapture)
+        .join(Marker, MarkerCapture.marker_id == Marker.id)
+        .where(
+            Marker.project_id == script.project_id,
+            MarkerCapture.client_id == body.client_id,
+            MarkerCapture.window_title.isnot(None),
+            MarkerCapture.window_w.isnot(None),
+        )
+        .limit(1)
+    )
+    _cap = _cap_result.scalar_one_or_none()
+    if _cap:
+        await client_ws_manager.send_to_client(body.client_id, {
+            "type": "restore_window",
+            "title": _cap.window_title,
+            "process": _cap.window_process or "",
+            "x": _cap.window_x or 0,
+            "y": _cap.window_y or 0,
+            "w": _cap.window_w,
+            "h": _cap.window_h,
+        })
 
     import sys, logging as _lg_mod
     _r = _lg_mod.getLogger("routers.scripts")
