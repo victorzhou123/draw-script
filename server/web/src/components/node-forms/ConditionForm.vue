@@ -17,6 +17,7 @@
         <a-select v-model:value="cond.condition_type" @change="onTypeChange(cond)">
           <a-select-option value="variable_compare">变量比较</a-select-option>
           <a-select-option value="boolean_check">布尔值判断</a-select-option>
+          <a-select-option value="none_check">None 判断</a-select-option>
         </a-select>
       </a-form-item>
 
@@ -34,7 +35,35 @@
               {{ val }}
             </template>
           </a-auto-complete>
-          <div class="hint-text">判断该变量的值是否为真（非空、非零、非False）</div>
+        </a-form-item>
+        <a-form-item label="判断方式">
+          <a-radio-group :value="cond.params.expect_true ?? true" button-style="solid" @change="(e: any) => { cond.params.expect_true = e.target.value; update() }">
+            <a-radio-button :value="true">是 True</a-radio-button>
+            <a-radio-button :value="false">是 False</a-radio-button>
+          </a-radio-group>
+        </a-form-item>
+      </template>
+
+      <template v-if="cond.condition_type === 'none_check'">
+        <a-form-item label="变量路径">
+          <a-auto-complete
+            v-model:value="cond.params.variable"
+            :options="ctx.contextFields.value.map((f:any) => ({ value: f.name }))"
+            placeholder="例如: my_var"
+            allow-clear
+            @change="update()"
+          >
+            <template #option="{ value: val }">
+              <span class="ctx-dot" :class="ctx.contextFields.value.find((f:any) => f.name === val)?.certain ? 'certain' : 'conditional'" />
+              {{ val }}
+            </template>
+          </a-auto-complete>
+        </a-form-item>
+        <a-form-item label="判断方式">
+          <a-radio-group v-model:value="cond.params.expect_none" button-style="solid" @change="update()">
+            <a-radio-button :value="true">是 None</a-radio-button>
+            <a-radio-button :value="false">不是 None</a-radio-button>
+          </a-radio-group>
         </a-form-item>
       </template>
 
@@ -121,7 +150,15 @@ function removeCond(idx: number) {
 }
 
 function onTypeChange(cond: any) {
-  cond.params = cond.condition_type === 'variable_compare' ? { operator: '==', value_type: 'str' } : {}
+  if (cond.condition_type === 'variable_compare') {
+    cond.params = { operator: '==', value_type: 'str' }
+  } else if (cond.condition_type === 'none_check') {
+    cond.params = { expect_none: true }
+  } else if (cond.condition_type === 'boolean_check') {
+    cond.params = { expect_true: true }
+  } else {
+    cond.params = {}
+  }
   update()
 }
 </script>

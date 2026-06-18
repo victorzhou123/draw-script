@@ -46,7 +46,18 @@ class ConditionNodeHandler(BaseNodeHandler):
             if not var_path:
                 raise ValueError("变量路径未填写")
             val = self._get_var(var_path)
-            return bool(val)
+            if val is not True and val is not False:
+                raise ValueError(f"布尔值判断要求变量为严格 True/False，实际值: {repr(val)}")
+            expect_true = params.get("expect_true", True)
+            return val is True if expect_true else val is False
+
+        if condition_type == "none_check":
+            var_path = params.get("variable", "")
+            if not var_path:
+                raise ValueError("变量路径未填写")
+            val = self._get_var(var_path)
+            is_none = val is None
+            return is_none if params.get("expect_none", True) else not is_none
 
         return False
 
