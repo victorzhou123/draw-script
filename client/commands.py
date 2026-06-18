@@ -43,6 +43,17 @@ def _save_markers(data: dict) -> None:
 
 # ── Window helpers ────────────────────────────────────────────────────────────
 
+class _WINDOWPLACEMENT(ctypes.Structure):
+    _fields_ = [
+        ("length",           ctypes.wintypes.UINT),
+        ("flags",            ctypes.wintypes.UINT),
+        ("showCmd",          ctypes.wintypes.UINT),
+        ("ptMinPosition",    ctypes.wintypes.POINT),
+        ("ptMaxPosition",    ctypes.wintypes.POINT),
+        ("rcNormalPosition", ctypes.wintypes.RECT),
+    ]
+
+
 def _list_windows() -> list[dict]:
     import psutil
     windows: list[dict] = []
@@ -64,17 +75,26 @@ def _list_windows() -> list[dict]:
             process = psutil.Process(pid.value).name()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             process = "unknown"
-        rect = ctypes.wintypes.RECT()
-        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-        w = rect.right - rect.left
-        h = rect.bottom - rect.top
+        # minimized windows report taskbar-button size via GetWindowRect;
+        # use GetWindowPlacement to get the true restored rect instead
+        if ctypes.windll.user32.IsIconic(hwnd):
+            placement = _WINDOWPLACEMENT()
+            placement.length = ctypes.sizeof(placement)
+            ctypes.windll.user32.GetWindowPlacement(hwnd, ctypes.byref(placement))
+            rc = placement.rcNormalPosition
+        else:
+            rc = ctypes.wintypes.RECT()
+            ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rc))
+        w = rc.right - rc.left
+        h = rc.bottom - rc.top
         if w < 50 or h < 50:
             return True
         windows.append({"hwnd": hwnd, "title": title, "process": process,
-                         "x": rect.left, "y": rect.top, "w": w, "h": h})
+                         "x": rc.left, "y": rc.top, "w": w, "h": h})
         return True
 
-    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
+    # use HWND (pointer-sized) not c_int to avoid truncation on 64-bit Windows
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
     ctypes.windll.user32.EnumWindows(WNDENUMPROC(_callback), 0)
     return windows
 
@@ -1020,8 +1040,9 @@ class CommandHandler:
             logger.warning(f"restore_window: window '{title}' not found")
             return
         try:
-            import win32gui
-            win32gui.MoveWindow(win["hwnd"], x, y, w, h, True)
+            if ctypes.windll.user32.IsIconic(win["hwnd"]):
+                ctypes.windll.user32.ShowWindow(win["hwnd"], 9)  # SW_RESTORE
+            ctypes.windll.user32.MoveWindow(win["hwnd"], x, y, w, h, True)
             logger.info(f"restore_window: moved '{title}' to ({x},{y}) size {w}×{h}")
         except Exception as e:
             logger.error(f"restore_window: MoveWindow failed: {e}")
