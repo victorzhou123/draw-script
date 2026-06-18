@@ -244,7 +244,7 @@ onMounted(() => {
               targetMarker: { name: 'block', width: 12, height: 8 },
             },
           },
-          router: { name: 'manhattan', args: { padding: 4 } },
+          router: 'manhattan',
           connector: { name: 'rounded' },
         })
       },
@@ -416,7 +416,7 @@ function sanitizePorts(cells: any[]) {
     // Edges with manually-set vertices use orth; all others use manhattan.
     if (cell.source !== undefined && cell.target !== undefined) {
       const hasVertices = Array.isArray(cell.vertices) && cell.vertices.length > 0
-      cell.router = hasVertices ? 'orth' : { name: 'manhattan', args: { padding: 4 } }
+      cell.router = hasVertices ? 'orth' : 'manhattan'
     }
   }
 }
