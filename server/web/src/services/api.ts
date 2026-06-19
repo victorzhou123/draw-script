@@ -187,6 +187,11 @@ export const api = {
   },
   deleteTemplate: (projectId: string, templateId: string) =>
     http.delete(`/projects/${projectId}/templates/${templateId}`).then(r => r.data),
+  updateTemplateImage: (projectId: string, templateId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return http.put<Template>(`/projects/${projectId}/templates/${templateId}/image`, form).then(r => r.data)
+  },
   templateImageUrl: (projectId: string, templateId: string) =>
     `/api/projects/${projectId}/templates/${templateId}/image`,
 
@@ -201,6 +206,26 @@ export const api = {
   // Syntax check
   syntaxCheck: (code: string) =>
     http.post<{ ok: boolean; line?: number; col?: number; msg?: string }>('/scripts/syntax-check', { code }).then(r => r.data),
+
+  // Persistent logs
+  getLogs: (params: {
+    level?: string
+    source?: string
+    script_id?: string
+    client_id?: string
+    keyword?: string
+    time_range?: string
+    start_time?: string
+    end_time?: string
+    page?: number
+    page_size?: number
+  }) => http.get<LogQueryResult>('/logs/entries', { params }).then(r => r.data),
+  clearPersistentLogs: () => http.delete('/logs/entries').then(r => r.data),
+
+  // App settings
+  getAppSettings: () => http.get<AppSettings>('/app-settings').then(r => r.data),
+  updateAppSettings: (data: Partial<AppSettings>) =>
+    http.put('/app-settings', data).then(r => r.data),
 
   // AI Models
   getModels: () => http.get<AIModel[]>('/models').then(r => r.data),
@@ -225,4 +250,31 @@ export interface ModelTestResult {
   success: boolean
   message: string
   latency_ms: number | null
+}
+
+export interface AppLogEntry {
+  id: number
+  timestamp: string
+  level: string
+  source: string
+  logger_name: string | null
+  message: string
+  client_id: string | null
+  script_id: string | null
+  execution_id: string | null
+  node_id: string | null
+  node_label: string | null
+  node_type: string | null
+}
+
+export interface LogQueryResult {
+  total: number
+  page: number
+  page_size: number
+  items: AppLogEntry[]
+}
+
+export interface AppSettings {
+  log_retention_days: number
+  log_auto_refresh_interval: number
 }

@@ -473,6 +473,17 @@ function updateNodeData(nodeId: string, data: any) {
 function undo() { graph.value?.undo() }
 function redo() { graph.value?.redo() }
 
+function focusNode(nodeId: string) {
+  const g = graph.value
+  if (!g) return
+  const cell = g.getCellById(nodeId)
+  if (!cell) return
+  g.cleanSelection()
+  g.select(cell)
+  // centerCell is available on Graph v2 but may not be in type defs of all builds
+  ;(g as any).centerCell?.(cell)
+}
+
 function startDragNode(shape: string, data: object, event: MouseEvent) {
   if (!dnd.value || !graph.value) return
   const node = graph.value.createNode({
@@ -482,7 +493,7 @@ function startDragNode(shape: string, data: object, event: MouseEvent) {
   dnd.value.start(node, event)
 }
 
-defineExpose({ getJSON, loadJSON, undo, redo, startDragNode, updateNodeData })
+defineExpose({ getJSON, loadJSON, undo, redo, startDragNode, updateNodeData, focusNode })
 </script>
 
 <style scoped>

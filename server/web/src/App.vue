@@ -87,7 +87,7 @@
     <ProjectGroupDrawer :open="projectGroupDrawerOpen" @close="projectGroupDrawerOpen = false" />
     <ClientsDrawer :open="clientsDrawerOpen" @close="clientsDrawerOpen = false" />
     <AIModelsDrawer :open="aiModelsDrawerOpen" @close="aiModelsDrawerOpen = false" />
-    <LogsDrawer :open="logsDrawerOpen" @close="logsDrawerOpen = false" />
+    <LogsDrawer :open="logsDrawerOpen" @close="logsDrawerOpen = false" @navigate="onNavigateToNode" />
     <HelpDrawer :open="helpDrawerOpen" @close="helpDrawerOpen = false" />
   </a-config-provider>
 </template>
@@ -173,6 +173,17 @@ async function onScriptSelected(id: string) {
 
 function onDragStart(shape: string, defaultData: object, event: MouseEvent) {
   graphEditor.value?.startDragNode(shape, defaultData, event)
+}
+
+async function onNavigateToNode(scriptId: string, nodeId: string) {
+  logsDrawerOpen.value = false
+  if (scriptStore.currentScript?.id !== scriptId) {
+    await onScriptSelected(scriptId)
+    // Wait for the graph to finish rendering before selecting the node
+    await nextTick()
+    await new Promise(r => setTimeout(r, 150))
+  }
+  graphEditor.value?.focusNode(nodeId)
 }
 
 function onNodeSelected(node: { id: string; data: any }) {
