@@ -10,6 +10,7 @@ from engine.log_utils import truncate_for_log
 from config import settings
 from engine.base_handler import BaseNodeHandler, NodeResult
 from engine.node_registry import NodeRegistry
+from engine.runner import _broadcast_log
 from engine.type_coerce import coerce_typed, TypeConversionError
 
 logger = logging.getLogger(__name__)
@@ -17,16 +18,6 @@ logger = logging.getLogger(__name__)
 
 @NodeRegistry.register("vision")
 class VisionNodeHandler(BaseNodeHandler):
-    async def _log(self, message: str, level: str = "action") -> None:
-        self.ctx.log.append(message)
-        await self.ctx.ui_manager.broadcast_event("execution_log", {
-            "execution_id": self.ctx.execution_id,
-            "client_id": self.ctx.client_id,
-            "node_id": self.ctx.node.id,
-            "level": level,
-            "message": message,
-        })
-
     async def execute(self) -> NodeResult:
         data = self.ctx.node.data
         vision_type = data.get("vision_type", "template_match")
@@ -88,7 +79,7 @@ class VisionNodeHandler(BaseNodeHandler):
                 try:
                     from cv.vision_engine import VisionEngine
                     vision_result = await VisionEngine().analyze("ocr", img_bytes, params, None)
-                    await self._log(f"[Vision] OCR完成(context图): text={truncate_for_log(vision_result.text)!r}")
+                    await _broadcast_log(self.ctx, self.ctx.node.id, "action", f"[Vision] OCR完成(context图): text={truncate_for_log(vision_result.text)!r}")
                     if result_var:
                         if vision_result.text:
                             value_type = data.get("value_type") or "str"
@@ -102,7 +93,7 @@ class VisionNodeHandler(BaseNodeHandler):
                             return NodeResult(success=False, error=f"OCR 结果类型转换失败（变量 '{result_var}'，声明类型 {value_type}）: {e}")
                     return NodeResult(success=True, output=vision_result.__dict__)
                 except Exception as e:
-                    await self._log(f"[Vision] OCR异常: {e}", level="error")
+                    await _broadcast_log(self.ctx, self.ctx.node.id, "error", f"[Vision] OCR异常: {e}")
                     return NodeResult(success=False, error=str(e))
 
         # ai_vision shortcut: use context image directly, skip client screenshot
@@ -131,7 +122,7 @@ class VisionNodeHandler(BaseNodeHandler):
                 try:
                     from cv.vision_engine import VisionEngine
                     vision_result = await VisionEngine().analyze(vision_type, img_bytes, params, model_config)
-                    await self._log(f"[Vision] AI分析完成(context图): found={vision_result.found}, text={truncate_for_log(vision_result.text)!r}")
+                    await _broadcast_log(self.ctx, self.ctx.node.id, "action", f"[Vision] AI分析完成(context图): found={vision_result.found}, text={truncate_for_log(vision_result.text)!r}")
                     if result_var:
                         value_type = data.get("value_type") or "str"
                         if vision_result.found and vision_result.location:
@@ -142,7 +133,7 @@ class VisionNodeHandler(BaseNodeHandler):
                             raw_value = vision_result.text
                             if "parse_markdown_json" in post_process:
                                 raw_value = _parse_markdown_json(raw_value)
-                                await self._log(f"[Vision] post_process parse_markdown_json → {type(raw_value).__name__}")
+                                await _broadcast_log(self.ctx, self.ctx.node.id, "action", f"[Vision] post_process parse_markdown_json → {type(raw_value).__name__}")
                         else:
                             raw_value = None
                         try:
@@ -152,7 +143,7 @@ class VisionNodeHandler(BaseNodeHandler):
 
                     return NodeResult(success=True, output=vision_result.__dict__)
                 except Exception as e:
-                    await self._log(f"[Vision] 异常: {e}", level="error")
+                    await _broadcast_log(self.ctx, self.ctx.node.id, "error", f"[Vision] 异常: {e}")
                     return NodeResult(success=False, error=str(e))
 
         request_id = str(uuid.uuid4())
@@ -224,18 +215,18 @@ class VisionNodeHandler(BaseNodeHandler):
 
             cuda_error = output.pop("cuda_error", None)
             if cuda_error:
-                await self._log(f"[Vision] ⚠ GPU加速失败，已回退CPU: {cuda_error}", level="error")
+                await _broadcast_log(self.ctx, self.ctx.node.id, "error", f"[Vision] ⚠ GPU加速失败，已回退CPU: {cuda_error}")
             return NodeResult(success=True, output=output)
 
         # OCR / AI vision / color detect: client returns cropped screenshot
         screenshot_b64 = output.get("screenshot")
-        await self._log(f"[Vision] client result keys={list(result.keys())}, has_screenshot={bool(screenshot_b64)}")
+        await _broadcast_log(self.ctx, self.ctx.node.id, "action", f"[Vision] client result keys={list(result.keys())}, has_screenshot={bool(screenshot_b64)}")
         if not screenshot_b64:
-            await self._log(f"[Vision] 未收到 screenshot, output={truncate_for_log(output)}", level="error")
+            await _broadcast_log(self.ctx, self.ctx.node.id, "error", f"[Vision] 未收到 screenshot, output={truncate_for_log(output)}")
             return NodeResult(success=False, error="Vision node: client did not return screenshot")
 
         screenshot_bytes = base64.b64decode(screenshot_b64)
-        await self._log(f"[Vision] screenshot 大小={len(screenshot_bytes)} bytes, 开始分析 vision_type={vision_type}")
+        await _broadcast_log(self.ctx, self.ctx.node.id, "action", f"[Vision] screenshot 大小={len(screenshot_bytes)} bytes, 开始分析 vision_type={vision_type}")
 
         try:
             model_config = None
@@ -254,7 +245,7 @@ class VisionNodeHandler(BaseNodeHandler):
 
             from cv.vision_engine import VisionEngine
             vision_result = await VisionEngine().analyze(vision_type, screenshot_bytes, params, model_config)
-            await self._log(f"[Vision] 分析完成: found={vision_result.found}, text={truncate_for_log(vision_result.text)!r}, location={vision_result.location}")
+            await _broadcast_log(self.ctx, self.ctx.node.id, "action", f"[Vision] 分析完成: found={vision_result.found}, text={truncate_for_log(vision_result.text)!r}, location={vision_result.location}")
             if result_var:
                 if vision_type == "color_detect":
                     result_type = params.get("result_type", "coordinate")
@@ -293,7 +284,7 @@ class VisionNodeHandler(BaseNodeHandler):
                         raw_value = vision_result.text
                         if "parse_markdown_json" in post_process:
                             raw_value = _parse_markdown_json(raw_value)
-                            await self._log(f"[Vision] post_process parse_markdown_json → {type(raw_value).__name__}")
+                            await _broadcast_log(self.ctx, self.ctx.node.id, "action", f"[Vision] post_process parse_markdown_json → {type(raw_value).__name__}")
                     else:
                         if vision_type == "ocr":
                             value_type = data.get("ocr_not_found_value_type") or value_type
@@ -307,7 +298,7 @@ class VisionNodeHandler(BaseNodeHandler):
 
             return NodeResult(success=True, output=vision_result.__dict__)
         except Exception as e:
-            await self._log(f"[Vision] 异常: {e}", level="error")
+            await _broadcast_log(self.ctx, self.ctx.node.id, "error", f"[Vision] 异常: {e}")
             return NodeResult(success=False, error=str(e))
 
 

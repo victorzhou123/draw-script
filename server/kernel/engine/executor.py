@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from database import Client
 from engine.context import ExecutionContext
 from engine.flow_graph import FlowGraph, FlowNode
 from engine.node_registry import NodeRegistry
@@ -19,6 +20,11 @@ class ExecutionEngine:
         self.session_factory = session_factory
         self._tasks: dict[str, asyncio.Task] = {}
         self._stop_events: dict[str, asyncio.Event] = {}
+
+    async def _fetch_gpu_enabled(self, client_id: str) -> bool:
+        async with self.session_factory() as db:
+            client_row = await db.get(Client, client_id)
+            return bool(client_row.gpu_enabled) if client_row else False
 
     async def run_script(
         self,
@@ -77,12 +83,7 @@ class ExecutionEngine:
                                          completion_event=completion_event)
             return
 
-        gpu_enabled = False
-        async with self.session_factory() as db:
-            from database import Client
-            client_row = await db.get(Client, client_id)
-            if client_row:
-                gpu_enabled = bool(client_row.gpu_enabled)
+        gpu_enabled = await self._fetch_gpu_enabled(client_id)
 
         await self.ui_manager.broadcast_event("execution_started", {
             "execution_id": execution_id,
@@ -195,12 +196,7 @@ class ExecutionEngine:
         graph = FlowGraph.from_x6_json(flow_json)
         target = graph.nodes.get(node_id)
 
-        gpu_enabled = False
-        async with self.session_factory() as db:
-            from database import Client
-            client_row = await db.get(Client, client_id)
-            if client_row:
-                gpu_enabled = bool(client_row.gpu_enabled)
+        gpu_enabled = await self._fetch_gpu_enabled(client_id)
 
         await self.ui_manager.broadcast_event("execution_started", {
             "execution_id": execution_id,
@@ -267,12 +263,7 @@ class ExecutionEngine:
         graph = FlowGraph.from_x6_json(flow_json)
         start_node = graph.get_start_node()
 
-        gpu_enabled = False
-        async with self.session_factory() as db:
-            from database import Client
-            client_row = await db.get(Client, client_id)
-            if client_row:
-                gpu_enabled = bool(client_row.gpu_enabled)
+        gpu_enabled = await self._fetch_gpu_enabled(client_id)
 
         await self.ui_manager.broadcast_event("execution_started", {
             "execution_id": execution_id,

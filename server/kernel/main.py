@@ -37,11 +37,10 @@ for _lg_name in ("uvicorn.error", "uvicorn.access"):
 
 
 async def _periodic_cleanup(session_factory):
-    from routers.logs import cleanup_old_logs, _DEFAULT_SETTINGS, _get_setting
-    from database import AsyncSessionLocal
+    from routers.logs import cleanup_old_logs, _get_setting
     while True:
         await asyncio.sleep(24 * 3600)
-        async with AsyncSessionLocal() as db:
+        async with session_factory() as db:
             days = await _get_setting(db, "log_retention_days")
         await cleanup_old_logs(session_factory, days)
 
@@ -72,7 +71,7 @@ async def lifespan(app: FastAPI):
 
     # Persistent log background tasks
     from log_handler import db_log_writer
-    from routers.logs import cleanup_old_logs, _DEFAULT_SETTINGS, _get_setting
+    from routers.logs import cleanup_old_logs, _get_setting
     async with AsyncSessionLocal() as db:
         retention_days = await _get_setting(db, "log_retention_days")
     await cleanup_old_logs(AsyncSessionLocal, retention_days)

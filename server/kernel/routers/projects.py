@@ -161,7 +161,20 @@ async def send_markers_to_client(
     return {"ok": True, "count": len(markers)}
 
 
-# ── Marker capture status ──────────────────────────────────────────────────────
+# ── Marker captures ────────────────────────────────────────────────────────────
+
+async def _query_marker_captures(project_id: str, client_id: str, db: AsyncSession):
+    result = await db.execute(
+        select(Marker, MarkerCapture)
+        .outerjoin(
+            MarkerCapture,
+            (MarkerCapture.marker_id == Marker.id) & (MarkerCapture.client_id == client_id),
+        )
+        .where(Marker.project_id == project_id)
+        .order_by(Marker.created_at)
+    )
+    return result.all()
+
 
 @router.get("/{project_id}/markers/captures")
 async def get_marker_captures(
@@ -170,28 +183,17 @@ async def get_marker_captures(
     db: AsyncSession = Depends(get_session),
 ):
     """Return per-marker capture status for one client (for frontend status display)."""
-    from sqlalchemy.orm import aliased
-    result = await db.execute(
-        select(Marker, MarkerCapture)
-        .outerjoin(
-            MarkerCapture,
-            (MarkerCapture.marker_id == Marker.id) & (MarkerCapture.client_id == client_id),
-        )
-        .where(Marker.project_id == project_id)
-        .order_by(Marker.created_at)
-    )
-    items = []
-    for marker, capture in result.all():
-        items.append({
+    rows = await _query_marker_captures(project_id, client_id, db)
+    return [
+        {
             "id": marker.id,
             "name": marker.name,
             "type": marker.type,
             "captured": capture is not None and capture.x is not None,
-        })
-    return items
+        }
+        for marker, capture in rows
+    ]
 
-
-# ── Marker capture coordinates (for preview) ──────────────────────────────────
 
 @router.get("/{project_id}/markers/captures/data")
 async def get_marker_capture_data(
@@ -200,18 +202,9 @@ async def get_marker_capture_data(
     db: AsyncSession = Depends(get_session),
 ):
     """Return per-marker coordinates for one client (for annotation preview)."""
-    result = await db.execute(
-        select(Marker, MarkerCapture)
-        .outerjoin(
-            MarkerCapture,
-            (MarkerCapture.marker_id == Marker.id) & (MarkerCapture.client_id == client_id),
-        )
-        .where(Marker.project_id == project_id)
-        .order_by(Marker.created_at)
-    )
-    items = []
-    for marker, capture in result.all():
-        items.append({
+    rows = await _query_marker_captures(project_id, client_id, db)
+    return [
+        {
             "id": marker.id,
             "name": marker.name,
             "type": marker.type,
@@ -224,8 +217,9 @@ async def get_marker_capture_data(
             "window_y": capture.window_y if capture else None,
             "window_w": capture.window_w if capture else None,
             "window_h": capture.window_h if capture else None,
-        })
-    return items
+        }
+        for marker, capture in rows
+    ]
 
 
 # ── Restore window ────────────────────────────────────────────────────────────

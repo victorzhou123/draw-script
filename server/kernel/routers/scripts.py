@@ -9,9 +9,11 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from database import Execution, Marker, MarkerCapture, Script, get_session
 from dependencies import get_engine
 from schemas import DebugNodeRequest, ExecutionResponse, RunScriptRequest, ScriptCreate, ScriptResponse, ScriptUpdate
+from ws_manager import client_ws_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/scripts", tags=["scripts"])
@@ -88,7 +90,6 @@ async def run_script(
     if not script:
         raise HTTPException(404, "Script not found")
 
-    from ws_manager import client_ws_manager
     if not client_ws_manager.is_connected(body.client_id):
         raise HTTPException(400, f"Client {body.client_id} is not connected")
 
@@ -103,7 +104,6 @@ async def run_script(
     await db.refresh(execution)
 
     # restore the bound window once before execution starts
-    from ws_manager import client_ws_manager
     _cap_result = await db.execute(
         select(MarkerCapture)
         .join(Marker, MarkerCapture.marker_id == Marker.id)
@@ -127,16 +127,6 @@ async def run_script(
             "h": _cap.window_h,
         })
 
-    import sys, logging as _lg_mod
-    _r = _lg_mod.getLogger("routers.scripts")
-    sys.stderr.write(
-        f"[DIAG] run_script reached | logger={_r.name} "
-        f"level={_r.getEffectiveLevel()} handlers={_r.handlers} "
-        f"parent={_r.parent.name if _r.parent else None} "
-        f"parent_handlers={_r.parent.handlers if _r.parent else None}\n"
-    )
-    sys.stderr.flush()
-    logger.info(f"[DIAG] run_script called: script_id={script_id} log_level_check={logger.isEnabledFor(10)}")
     logger.debug(
         f"run_script request: script_id={script_id} client_id={body.client_id} "
         f"wait={body.wait} params={body.params}"
@@ -146,7 +136,6 @@ async def run_script(
     engine = get_engine(request)
 
     if body.wait and engine:
-        from config import settings
         completion_event = asyncio.Event()
         asyncio.create_task(
             engine.run_script(execution.id, script_id, body.client_id,
@@ -192,7 +181,6 @@ async def debug_execute_node(
     if not script:
         raise HTTPException(404, "Script not found")
 
-    from ws_manager import client_ws_manager
     if not client_ws_manager.is_connected(body.client_id):
         raise HTTPException(400, f"Client {body.client_id} is not connected")
 
@@ -218,7 +206,6 @@ async def debug_run_to_node(
     if not script:
         raise HTTPException(404, "Script not found")
 
-    from ws_manager import client_ws_manager
     if not client_ws_manager.is_connected(body.client_id):
         raise HTTPException(400, f"Client {body.client_id} is not connected")
 
