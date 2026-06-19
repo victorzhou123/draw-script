@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from config import settings
 from database import init_db
 from log_handler import memory_handler
-from routers import clients, models, projects, scripts, ws
+from routers import clients, logs, models, projects, scripts, ws
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,16 @@ for _lg_name in ("uvicorn.error", "uvicorn.access"):
     _lg.propagate = False
     if memory_handler not in _lg.handlers:
         _lg.addHandler(memory_handler)
+
+
+async def _periodic_cleanup(session_factory):
+    from routers.logs import cleanup_old_logs, _DEFAULT_SETTINGS, _get_setting
+    from database import AsyncSessionLocal
+    while True:
+        await asyncio.sleep(24 * 3600)
+        async with AsyncSessionLocal() as db:
+            days = await _get_setting(db, "log_retention_days")
+        await cleanup_old_logs(session_factory, days)
 
 
 @asynccontextmanager
@@ -60,15 +70,27 @@ async def lifespan(app: FastAPI):
     monitor = HeartbeatMonitor(client_ws_manager, ui_ws_manager)
     heartbeat_task = asyncio.create_task(monitor.run())
 
+    # Persistent log background tasks
+    from log_handler import db_log_writer
+    from routers.logs import cleanup_old_logs, _DEFAULT_SETTINGS, _get_setting
+    async with AsyncSessionLocal() as db:
+        retention_days = await _get_setting(db, "log_retention_days")
+    await cleanup_old_logs(AsyncSessionLocal, retention_days)
+    log_writer_task = asyncio.create_task(db_log_writer(AsyncSessionLocal))
+    cleanup_task = asyncio.create_task(_periodic_cleanup(AsyncSessionLocal))
+
     root_handlers = [type(h).__name__ for h in logging.getLogger().handlers]
     logger.info(f"Draw-Script server started on {settings.host}:{settings.port}  log_level={settings.log_level}  root_handlers={root_handlers}")
     yield
 
     heartbeat_task.cancel()
-    try:
-        await heartbeat_task
-    except asyncio.CancelledError:
-        pass
+    log_writer_task.cancel()
+    cleanup_task.cancel()
+    for t in (heartbeat_task, log_writer_task, cleanup_task):
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="Draw-Script", version="0.1.0", lifespan=lifespan)
@@ -85,18 +107,8 @@ app.include_router(scripts.router, prefix="/api")
 app.include_router(clients.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(models.router, prefix="/api")
+app.include_router(logs.router, prefix="/api")
 app.include_router(ws.router)
-
-
-@app.get("/api/logs")
-def get_logs(limit: int = 300):
-    return memory_handler.get_records(limit)
-
-
-@app.delete("/api/logs")
-def clear_logs():
-    memory_handler.clear()
-    return {"ok": True}
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(static_dir):

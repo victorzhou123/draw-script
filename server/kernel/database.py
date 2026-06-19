@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import AsyncGenerator
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, event, func, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -12,6 +12,13 @@ engine = create_async_engine(
     f"sqlite+aiosqlite:///{settings.db_path}",
     echo=False,
 )
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def _set_sqlite_wal(dbapi_conn, connection_record):
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.close()
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
@@ -121,6 +128,30 @@ class Template(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class AppLog(Base):
+    __tablename__ = "app_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    level: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)  # 'system' | 'execution'
+    logger_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    client_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    script_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    execution_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    node_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    node_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    node_type: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class AIModelConfig(Base):
     __tablename__ = "ai_model_configs"
 
@@ -185,6 +216,14 @@ async def init_db() -> None:
         ]:
             try:
                 await conn.execute(text(f"ALTER TABLE marker_captures ADD COLUMN {col} {coltype}"))
+            except Exception:
+                pass
+        # app_logs columns (added after initial release)
+        for col, coltype in [
+            ("node_label", "TEXT"), ("node_type", "TEXT"),
+        ]:
+            try:
+                await conn.execute(text(f"ALTER TABLE app_logs ADD COLUMN {col} {coltype}"))
             except Exception:
                 pass
 

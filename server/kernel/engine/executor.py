@@ -90,6 +90,7 @@ class ExecutionEngine:
             "client_id": client_id,
         })
 
+        from log_handler import enqueue_execution_log
         log: list[str] = []
         separator = "-" * 40
         sep_entry = f"{separator}\n开始执行：{script_name or execution_id}"
@@ -99,6 +100,13 @@ class ExecutionEngine:
             "client_id": client_id,
             "message": sep_entry,
         })
+        enqueue_execution_log(
+            level="INFO",
+            message=sep_entry,
+            client_id=client_id,
+            script_id=script_id,
+            execution_id=execution_id,
+        )
         ctx = ExecutionContext(
             execution_id=execution_id,
             client_id=client_id,
@@ -108,6 +116,7 @@ class ExecutionEngine:
             ui_manager=self.ui_manager,
             session_factory=self.session_factory,
             project_id=project_id,
+            script_id=script_id,
             gpu_enabled=gpu_enabled,
             variables=dict(initial_variables) if initial_variables else {},
             stop_event=stop_event,
@@ -219,6 +228,7 @@ class ExecutionEngine:
             ui_manager=self.ui_manager,
             session_factory=self.session_factory,
             project_id=project_id,
+            script_id=script_id,
             gpu_enabled=gpu_enabled,
             variables=dict(initial_variables or {}),
         )
@@ -289,6 +299,7 @@ class ExecutionEngine:
             ui_manager=self.ui_manager,
             session_factory=self.session_factory,
             project_id=project_id,
+            script_id=script_id,
             gpu_enabled=gpu_enabled,
             variables={},
         )

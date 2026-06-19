@@ -45,6 +45,18 @@ async def _broadcast_log(ctx, node_id: str, level: str, message: str) -> None:
         "level": level,
         "message": message,
     })
+    from log_handler import enqueue_execution_log
+    _node = ctx.graph.nodes.get(node_id) if ctx.graph else None
+    enqueue_execution_log(
+        level="ERROR" if level == "error" else "INFO",
+        message=message,
+        client_id=ctx.client_id,
+        script_id=ctx.script_id,
+        execution_id=ctx.execution_id,
+        node_id=node_id,
+        node_label=_node.data.get("label", "").strip() if _node else None,
+        node_type=_node.node_type if _node else None,
+    )
 
 
 async def _broadcast_progress(ctx, node_id: str, node_type: str | None, status: str) -> None:
