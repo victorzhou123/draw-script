@@ -85,8 +85,8 @@ class UIWebSocket {
         break
       }
       case 'execution_progress':
-        executionStore.onProgress(msg.node_id as string, msg.status as string, msg.client_id as string)
         if (isBoundClient(msg.client_id as string | undefined)) {
+          executionStore.onProgress(msg.node_id as string, msg.status as string, msg.client_id as string)
           executionStore.onNodeProgress(msg.node_id as string, msg.status as string)
         }
         break
