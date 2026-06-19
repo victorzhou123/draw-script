@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from config import settings
 from database import init_db
 from log_handler import memory_handler
-from routers import clients, logs, models, projects, scripts, ws
+from routers import clients, logs, models, projects, scripts, service_keys, ws
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +106,7 @@ app.include_router(scripts.router, prefix="/api")
 app.include_router(clients.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(models.router, prefix="/api")
+app.include_router(service_keys.router, prefix="/api")
 app.include_router(logs.router, prefix="/api")
 app.include_router(ws.router)
 

@@ -167,6 +167,17 @@ class AIModelConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class ServiceApiKey(Base):
+    __tablename__ = "service_api_keys"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    service_name: Mapped[str] = mapped_column(String, nullable=False)
+    api_key: Mapped[str] = mapped_column(String, default="")
+    base_url: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class GlobalVariable(Base):
     __tablename__ = "global_variables"
 
@@ -226,6 +237,8 @@ async def init_db() -> None:
                 await conn.execute(text(f"ALTER TABLE app_logs ADD COLUMN {col} {coltype}"))
             except Exception:
                 pass
+        # service_api_keys is created via metadata.create_all above;
+        # no ALTER needed for new installs. Existing DBs get it on next startup.
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

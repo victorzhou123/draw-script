@@ -244,6 +244,14 @@ export const api = {
     http.post<ModelTestResult>('/models/test', data).then(r => r.data),
   testSavedModel: (id: string) =>
     http.post<ModelTestResult>(`/models/${id}/test`).then(r => r.data),
+
+  // Service API Keys
+  getServiceKeys: () => http.get<ServiceApiKey[]>('/service-keys').then(r => r.data),
+  createServiceKey: (data: { service_name: string; api_key?: string; base_url?: string }) =>
+    http.post<ServiceApiKey>('/service-keys', data).then(r => r.data),
+  updateServiceKey: (id: string, data: { service_name?: string; api_key?: string; base_url?: string }) =>
+    http.put<ServiceApiKey>(`/service-keys/${id}`, data).then(r => r.data),
+  deleteServiceKey: (id: string) => http.delete(`/service-keys/${id}`).then(r => r.data),
 }
 
 export interface ModelTestResult {
@@ -277,4 +285,13 @@ export interface LogQueryResult {
 export interface AppSettings {
   log_retention_days: number
   log_auto_refresh_interval: number
+}
+
+export interface ServiceApiKey {
+  id: string
+  service_name: string
+  api_key: string
+  base_url: string
+  created_at: string
+  updated_at: string
 }

@@ -197,6 +197,9 @@ const nodeErrorText = computed(() => {
 .node-type-context-edit { border-color: #eb2f96; background: #1a0a14; }
 .node-type-context-edit .node-icon, .node-type-context-edit .node-label { color: #eb2f96; }
 
+.node-type-crawl { border-color: #389e0d; background: #0d1a0a; }
+.node-type-crawl .node-icon, .node-type-crawl .node-label { color: #52c41a; }
+
 @keyframes pulse {
   0%, 100% { box-shadow: 0 0 14px rgba(82,196,26,0.55); }
   50%       { box-shadow: 0 0 28px rgba(82,196,26,0.9); }

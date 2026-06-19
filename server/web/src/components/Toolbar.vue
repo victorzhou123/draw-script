@@ -53,9 +53,9 @@
           <span v-if="connectedCount > 0" class="client-badge">{{ connectedCount }}</span>
         </a-button>
       </a-tooltip>
-      <a-tooltip title="AI 模型管理">
+      <a-tooltip title="配置中心">
         <a-button size="small" class="tool-btn ai-btn" @click="emit('openModels')">
-          <RobotOutlined /> AI 模型
+          <RobotOutlined /> 配置中心
         </a-button>
       </a-tooltip>
       <a-tooltip title="后端日志">

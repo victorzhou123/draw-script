@@ -125,6 +125,7 @@ import { useProjectStore } from '@/stores/projectStore'
 import { useScriptStore } from '@/stores/scriptStore'
 import { useModelStore } from '@/stores/modelStore'
 import { useExecutionStore } from '@/stores/executionStore'
+import { useServiceKeyStore } from '@/stores/serviceKeyStore'
 import { analyzeContextAtNode, analyzeContextEvolution } from '@/utils/contextAnalysis'
 import { FORM_CTX } from './node-forms/useFormContext'
 import ActionForm from './node-forms/ActionForm.vue'
@@ -141,13 +142,14 @@ import ScreenshotForm from './node-forms/ScreenshotForm.vue'
 import GlobalVarForm from './node-forms/GlobalVarForm.vue'
 import ContextEditForm from './node-forms/ContextEditForm.vue'
 import WaitForm from './node-forms/WaitForm.vue'
+import CrawlForm from './node-forms/CrawlForm.vue'
 
 const FORM_MAP: Record<string, any> = {
   action: ActionForm, vision: VisionForm, condition: ConditionForm,
   loop: LoopForm, delay: DelayForm, http: HttpForm,
   start: StartForm, end: EndForm, script: ScriptForm, compute: ComputeForm,
   screenshot: ScreenshotForm, 'global-var': GlobalVarForm,
-  'context-edit': ContextEditForm, wait: WaitForm,
+  'context-edit': ContextEditForm, wait: WaitForm, crawl: CrawlForm,
 }
 
 const props = defineProps<{
@@ -170,6 +172,7 @@ const projectStore = useProjectStore()
 const scriptStore = useScriptStore()
 const modelStore = useModelStore()
 const executionStore = useExecutionStore()
+const serviceKeyStore = useServiceKeyStore()
 
 const nodeActions = computed(() => executionStore.nodeActionsFor(editingNodeId.value))
 const nodeLogs = computed(() => executionStore.nodeLogsFor(editingNodeId.value))
@@ -242,6 +245,7 @@ const availableGlobalVars = computed(() => {
 
 const aiModels = computed(() => modelStore.enabledAIModels)
 const otherScripts = computed(() => scriptStore.scripts.filter(s => s.id !== scriptStore.currentScript?.id))
+const serviceKeys = computed(() => serviceKeyStore.keys)
 
 const nodeType = computed(() => localData.value.type || '')
 const nodeLabel = computed(() => {
@@ -251,7 +255,7 @@ const nodeLabel = computed(() => {
     http: 'HTTP', compute: 'Compute', script: 'Script',
     'global-var': 'Global Var',
     'context-edit': 'Context Edit',
-    wait: 'Wait',
+    wait: 'Wait', crawl: 'Crawl',
   }
   return map[nodeType.value] || nodeType.value
 })
@@ -267,6 +271,7 @@ provide(FORM_CTX, {
   aiModels,
   otherScripts,
   availableGlobalVars,
+  serviceKeys,
   emitUpdate,
 })
 
@@ -280,6 +285,10 @@ watch(() => scriptStore.currentScript?.project_id, (pid) => {
 
 watch(() => localData.value.vision_type, (vt) => {
   if (vt === 'ai_vision') modelStore.fetchModels()
+}, { immediate: true })
+
+watch(() => localData.value.type, (t) => {
+  if (t === 'crawl') serviceKeyStore.fetchKeys()
 }, { immediate: true })
 
 watch(() => props.selectedNode, (node) => {
@@ -315,6 +324,8 @@ watch(() => props.selectedNode, (node) => {
     post_process: node.data.post_process || [],
     input_mappings: node.data.input_mappings || [],
     output_mappings: node.data.output_mappings || [],
+    crawl_engine: node.data.crawl_engine || 'native',
+    output_var: node.data.output_var || '',
   }))
   // Normalize condition node: migrate old single-condition to new multi-condition format
   if (d.type === 'condition') {
@@ -383,6 +394,7 @@ defineExpose({ setActiveTab: (tab: 'props' | 'debug') => { activeTab.value = tab
 .badge-global-var  { color: #40a9ff; border-color: #1890ff; background: #0d2340; }
 .badge-context-edit { color: #eb2f96; border-color: #eb2f96; background: #1a0a14; }
 .badge-wait        { color: #2db7f5; border-color: #2db7f5; background: #0d1f2b; }
+.badge-crawl       { color: #52c41a; border-color: #389e0d; background: #0d1a0a; }
 .prop-form :deep(.ant-form-item) { margin-bottom: 12px; }
 .prop-form :deep(.ant-form-item-label > label) { font-size: 11px; color: #666; }
 .section-title { font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.8px; margin: 14px 0 6px; display: flex; align-items: center; gap: 6px; }
