@@ -80,6 +80,15 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
+  async function updateTemplateImage(projectId: string, templateId: string, file: File) {
+    const updated = await api.updateTemplateImage(projectId, templateId, file)
+    if (templates.value[projectId]) {
+      const idx = templates.value[projectId].findIndex(t => t.id === templateId)
+      if (idx >= 0) templates.value[projectId][idx] = updated
+    }
+    return updated
+  }
+
   async function fetchGlobalVars(projectId: string) {
     globalVars.value[projectId] = await api.getGlobalVars(projectId)
   }
@@ -109,7 +118,7 @@ export const useProjectStore = defineStore('project', () => {
     projects, markers, templates, globalVars, loading,
     fetchProjects, createProject, deleteProject,
     fetchMarkers, createMarker, deleteMarker, sendMarkers,
-    fetchTemplates, uploadTemplate, renameTemplate, deleteTemplate,
+    fetchTemplates, uploadTemplate, renameTemplate, deleteTemplate, updateTemplateImage,
     fetchGlobalVars, upsertGlobalVar, deleteGlobalVar,
     getProjectName,
   }

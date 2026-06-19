@@ -282,7 +282,21 @@
                 </div>
                 <div v-if="currentTemplates.length === 0" class="empty-hint">暂无模板，输入名称后上传图片</div>
                 <div v-for="t in currentTemplates" :key="t.id" class="template-row">
-                  <img :src="templateImageUrl(t.id)" class="template-thumb" />
+                  <a-upload
+                    :show-upload-list="false"
+                    accept="image/*"
+                    :before-upload="(f: File) => { handleTemplateImageUpdate(t.id, f); return false }"
+                  >
+                    <a-tooltip title="点击替换图片" placement="right">
+                      <div class="template-thumb-wrap">
+                        <img :src="templateImageUrl(t.id)" class="template-thumb" />
+                        <div v-if="updatingTemplateId === t.id" class="template-thumb-overlay">
+                          <a-spin size="small" />
+                        </div>
+                        <div v-else class="template-thumb-hover">替换</div>
+                      </div>
+                    </a-tooltip>
+                  </a-upload>
                   <template v-if="renamingTemplateId === t.id">
                     <a-input
                       v-model:value="renameTemplateValue"
@@ -457,6 +471,8 @@ const newTemplateName = ref('')
 const uploadingTemplate = ref(false)
 const renamingTemplateId = ref<string | null>(null)
 const renameTemplateValue = ref('')
+const updatingTemplateId = ref<string | null>(null)
+const imageTimestamps = ref<Record<string, number>>({})
 
 // ── Computed ──────────────────────────────────────────────────────────
 
@@ -477,7 +493,9 @@ const addableScripts = computed(() => scriptStore.scripts.filter(s => !s.project
 const currentTemplates = computed(() => selectedId.value ? (projectStore.templates[selectedId.value] ?? []) : [])
 
 function templateImageUrl(templateId: string) {
-  return api.templateImageUrl(selectedId.value!, templateId)
+  const base = api.templateImageUrl(selectedId.value!, templateId)
+  const ts = imageTimestamps.value[templateId]
+  return ts ? `${base}?t=${ts}` : base
 }
 
 function clientCountFor(pid: string) { return clientStore.clients.filter(c => c.project_ids.includes(pid)).length }
@@ -763,6 +781,20 @@ async function handleTemplateUpload(file: File) {
   }
 }
 
+async function handleTemplateImageUpdate(templateId: string, file: File) {
+  if (!selectedId.value) return
+  updatingTemplateId.value = templateId
+  try {
+    await projectStore.updateTemplateImage(selectedId.value, templateId, file)
+    imageTimestamps.value[templateId] = Date.now()
+    message.success('图片已更新')
+  } catch {
+    message.error('图片更新失败')
+  } finally {
+    updatingTemplateId.value = null
+  }
+}
+
 function startTemplateRename(t: { id: string; name: string }) {
   renamingTemplateId.value = t.id
   renameTemplateValue.value = t.name
@@ -873,7 +905,11 @@ watch(currentMarkers, (markers) => {
 .template-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 5px; background: #1f1f1f; border: 1px solid #252525; }
 .template-row:hover .danger-btn { opacity: 1 !important; }
 .template-row .danger-btn { opacity: 0; transition: opacity 0.15s; }
-.template-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 3px; border: 1px solid #303030; flex-shrink: 0; }
+.template-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 3px; border: 1px solid #303030; flex-shrink: 0; display: block; }
+.template-thumb-wrap { position: relative; width: 40px; height: 40px; flex-shrink: 0; cursor: pointer; }
+.template-thumb-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.55); border-radius: 3px; display: flex; align-items: center; justify-content: center; }
+.template-thumb-hover { position: absolute; inset: 0; background: rgba(0,0,0,0.55); border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; opacity: 0; transition: opacity 0.15s; }
+.template-thumb-wrap:hover .template-thumb-hover { opacity: 1; }
 
 /* Marker list */
 .marker-list-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 6px; }

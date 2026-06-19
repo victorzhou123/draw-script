@@ -343,6 +343,37 @@ async def delete_template(project_id: str, template_id: str, db: AsyncSession = 
     return {"ok": True}
 
 
+@router.put("/{project_id}/templates/{template_id}/image", response_model=TemplateResponse)
+async def update_template_image(
+    project_id: str,
+    template_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_session),
+):
+    template = await db.get(Template, template_id)
+    if not template or template.project_id != project_id:
+        raise HTTPException(404, "Template not found")
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".bmp", ".webp"):
+        raise HTTPException(400, "Only image files are accepted (png/jpg/jpeg/bmp/webp)")
+
+    old_path = os.path.join(settings.templates_dir, template.filename)
+    if os.path.isfile(old_path):
+        os.remove(old_path)
+
+    filename = f"{template_id}{ext}"
+    dest = os.path.join(settings.templates_dir, filename)
+    content = await file.read()
+    with open(dest, "wb") as f:
+        f.write(content)
+
+    template.filename = filename
+    await db.commit()
+    await db.refresh(template)
+    return template
+
+
 @router.get("/{project_id}/templates/{template_id}/image")
 async def get_template_image(project_id: str, template_id: str, db: AsyncSession = Depends(get_session)):
     template = await db.get(Template, template_id)
