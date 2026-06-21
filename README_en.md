@@ -95,63 +95,70 @@ DrawScript is a visual RPA (Robotic Process Automation) system. Design automatio
 
 ### Requirements
 
-- **Server**: Python 3.10+, Node.js 18+
+- **Server**: Python 3.10+, Node.js 18+ (Linux / macOS / Windows)
 - **Client**: Windows 10/11, Python 3.10+
 
 ---
 
 ### 1. Start the Server
 
+**Step 1 — one-time environment setup**
+
 ```bash
-git clone https://github.com/<your-username>/draw-script.git
+git clone https://github.com/victorzhou123/draw-script.git
 cd draw-script/server
 
-# Install backend dependencies
+# Install backend Python dependencies (once only)
 pip install -r kernel/requirements.txt
-
-# Install frontend dependencies and build (production)
-cd web && npm install && npm run build && cd ..
-
-# Start (production mode, access at http://localhost:9001)
-make prod
 ```
 
-**Development mode** (hot reload for both frontend and backend):
+**Step 2 — choose a launch mode**
 
 ```bash
+# Production mode (recommended for deployment)
+make prod
+# · Builds the frontend automatically (npm install + npm run build)
+# · Backend runs in the background; logs written to server.log (info level)
+# · Open http://localhost:9001 in your browser
+
+# Development mode (foreground, hot reload)
 make dev
-# Backend:  http://localhost:9001
-# Frontend Vite: http://localhost:5173
+# · Backend runs in the foreground with debug logging; restarts on code changes
+# · Vite dev server starts alongside (http://localhost:5173)
+# · Ctrl+C stops both services
+
+# Development mode (background)
+make dev-bg
+# · Same as dev but both services run in the background, logs go to server.log
+# · Useful for remote SSH sessions or when you don't want to occupy a terminal
+
+# Stop all services
+make stop
 ```
 
 ---
 
 ### 2. Start the Windows Client Agent
 
-On the **Windows machine**:
+Copy the `client/` directory to the **Windows machine** and run:
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Edit config.toml — set your server address and a unique client ID
-# [server]
-# url = "ws://YOUR_SERVER_IP:9001/ws/client"
-# [client]
-# id = "pc-001"
-# name = "PC-001"
-
-# Launch (double-click or from command line)
+```bat
 start.bat
 ```
 
-> **CUDA acceleration** (for PaddleOCR and other CV features): see the [CUDA Setup Guide](./docs/cuda-setup.md). You need to manually install the matching OpenCV CUDA wheel before running `start.bat`.
+On first run it automatically:
+1. Checks that Python is installed
+2. **Runs an interactive setup wizard**: enter the server IP/port, a unique client ID, and a display name; CUDA DLL directories are detected automatically
+3. Installs the right dependencies (CPU or CUDA build) based on the server's GPU setting for this client
+4. Starts the agent and connects to the server
+
+Subsequent runs skip the wizard, update dependencies, and launch immediately.
 
 ---
 
 ### 3. Create Your First Script
 
-1. Open the server URL in your browser
+1. Open the server URL in your browser (default `http://localhost:9001`)
 2. Create a new script in the left sidebar
 3. Drag in **Start** → **Action** (mouse click) → **End**
 4. Click the Action node and configure the target coordinates in the right panel
@@ -164,21 +171,43 @@ start.bat
 
 ### Server Environment Variables
 
+The server reads all settings from environment variables. The Makefile presets sensible values for each mode. To launch manually or override any setting:
+
+```bash
+# Example: custom port and log level
+cd server/kernel
+DS_HOST=0.0.0.0 DS_PORT=8080 DS_LOG_LEVEL=debug python3 main.py
+```
+
+Full variable reference:
+
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `DS_HOST` | `0.0.0.0` | Bind address |
+| `DS_PORT` | `9001` | Listen port |
 | `DS_LOG_LEVEL` | `info` | Log level: `debug` / `info` / `warning` |
-| `DS_RELOAD` | `false` | Enable uvicorn hot reload (development only) |
+| `DS_RELOAD` | `false` | Enable uvicorn hot reload (set to `true` for development) |
+| `DS_DB_PATH` | `draw_script.db` | SQLite database file path |
+| `DS_TEMPLATES_DIR` | `templates` | Directory for template images |
+| `DS_AI_API_KEY` | — | Default AI vision API key (can also be set in the UI Config Center) |
+| `DS_AI_BASE_URL` | Alibaba DashScope | AI vision API base URL |
+| `DS_AI_MODEL` | `qwen-vl-plus` | Default AI vision model |
 
 ### Client Config (`client/config.toml`)
 
+Generated automatically by the first-run wizard. You can also edit it manually:
+
 ```toml
 [server]
-url = "ws://127.0.0.1:9001/ws/client"
+url = "ws://YOUR_SERVER_IP:9001/ws/client"
 
 [client]
 id = "pc-001"       # unique ID — must match what you bind scripts to in the UI
 name = "PC-001"     # display name
 platform = "windows"
+
+[cuda]
+dll_dirs = []       # CUDA/cuDNN DLL directories; auto-detected on first run
 ```
 
 ### AI Vision / Firecrawl API Keys
