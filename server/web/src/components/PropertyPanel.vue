@@ -62,9 +62,12 @@
             <template v-if="ctxBefore && Object.keys(ctxBefore).length > 0">
               <div class="ctx-kv-list">
                 <div v-for="[k, v] in Object.entries(ctxBefore)" :key="k" class="ctx-kv-entry">
-                  <div class="ctx-kv-row">
-                    <span class="ctx-kv-key" :title="k">{{ k }}</span>
-                    <span v-if="!isComplex(v)" class="ctx-kv-val" :class="valTypeClass(v)">{{ formatPrimitive(v) }}</span>
+                  <div class="ctx-kv-row" :class="{'ctx-kv-row-top': !isComplex(v) && expandedPrimKeys.has('before:' + k)}">
+                    <span class="ctx-kv-key" :title="k" @click="handleKeyClick('before', k)">{{ k }}</span>
+                    <span v-if="!isComplex(v)"
+                          class="ctx-kv-val ctx-prim-val"
+                          :class="[valTypeClass(v), { 'ctx-prim-expanded': expandedPrimKeys.has('before:' + k) }]"
+                          @click="handlePrimValClick('before', k, v)">{{ formatPrimitive(v) }}</span>
                     <span v-else class="ctx-kv-val ctx-obj-val" @click="toggleCtxKey('before', k)">
                       <span :class="valTypeClass(v)">{{ formatSummary(v) }}</span>
                       <span class="ctx-chevron">{{ expandedCtxKeys.has('before:' + k) ? '▼' : '▶' }}</span>
@@ -81,9 +84,12 @@
             <template v-if="ctxAfter && Object.keys(ctxAfter).length > 0">
               <div class="ctx-kv-list">
                 <div v-for="[k, v] in Object.entries(ctxAfter)" :key="k" class="ctx-kv-entry">
-                  <div class="ctx-kv-row">
-                    <span class="ctx-kv-key" :title="k">{{ k }}</span>
-                    <span v-if="!isComplex(v)" class="ctx-kv-val" :class="valTypeClass(v)">{{ formatPrimitive(v) }}</span>
+                  <div class="ctx-kv-row" :class="{'ctx-kv-row-top': !isComplex(v) && expandedPrimKeys.has('after:' + k)}">
+                    <span class="ctx-kv-key" :title="k" @click="handleKeyClick('after', k)">{{ k }}</span>
+                    <span v-if="!isComplex(v)"
+                          class="ctx-kv-val ctx-prim-val"
+                          :class="[valTypeClass(v), { 'ctx-prim-expanded': expandedPrimKeys.has('after:' + k) }]"
+                          @click="handlePrimValClick('after', k, v)">{{ formatPrimitive(v) }}</span>
                     <span v-else class="ctx-kv-val ctx-obj-val" @click="toggleCtxKey('after', k)">
                       <span :class="valTypeClass(v)">{{ formatSummary(v) }}</span>
                       <span class="ctx-chevron">{{ expandedCtxKeys.has('after:' + k) ? '▼' : '▶' }}</span>
@@ -120,6 +126,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, provide } from 'vue'
+import { message } from 'ant-design-vue'
 import { ApartmentOutlined, CloseOutlined } from '@ant-design/icons-vue'
 import { useProjectStore } from '@/stores/projectStore'
 import { useScriptStore } from '@/stores/scriptStore'
@@ -180,6 +187,7 @@ const ctxBefore = computed(() => executionStore.nodeContextBeforeFor(editingNode
 const ctxAfter = computed(() => executionStore.nodeContextAfterFor(editingNodeId.value))
 
 const expandedCtxKeys = ref(new Set<string>())
+const expandedPrimKeys = ref(new Set<string>())
 
 function toggleCtxKey(phase: string, key: string) {
   const k = `${phase}:${key}`
@@ -187,6 +195,40 @@ function toggleCtxKey(phase: string, key: string) {
   if (next.has(k)) next.delete(k)
   else next.add(k)
   expandedCtxKeys.value = next
+}
+
+function copyText(text: string) {
+  const succeed = () => message.success('已复制', 1.5)
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(succeed).catch(() => fallbackCopy(text))
+  } else {
+    fallbackCopy(text)
+  }
+}
+
+function fallbackCopy(text: string) {
+  const el = document.createElement('textarea')
+  el.value = text
+  el.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
+  document.body.appendChild(el)
+  el.select()
+  try { document.execCommand('copy'); message.success('已复制', 1.5) } catch { message.error('复制失败') }
+  document.body.removeChild(el)
+}
+
+function handleKeyClick(phase: string, key: string) {
+  copyText(key)
+}
+
+function handlePrimValClick(phase: string, key: string, v: any) {
+  const k = `${phase}:${key}`
+  if (expandedPrimKeys.value.has(k)) {
+    copyText(v === null || v === undefined ? 'null' : String(v))
+  } else {
+    const next = new Set(expandedPrimKeys.value)
+    next.add(k)
+    expandedPrimKeys.value = next
+  }
 }
 
 function isComplex(v: any): boolean {
@@ -296,6 +338,7 @@ watch(() => props.selectedNode, (node) => {
   editingNodeId.value = node.id
   activeTab.value = 'props'
   expandedCtxKeys.value = new Set()
+  expandedPrimKeys.value = new Set()
   const d = JSON.parse(JSON.stringify({
     label: node.data.label || '',
     type: node.data.type || '',
@@ -431,11 +474,25 @@ defineExpose({ setActiveTab: (tab: 'props' | 'debug') => { activeTab.value = tab
   color: #666; flex-shrink: 0;
   min-width: 50px; max-width: 110px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: pointer;
 }
+.ctx-kv-key:hover { color: #888; }
+.ctx-kv-row-top { align-items: flex-start !important; }
 .ctx-kv-val {
   font-size: 11px; font-family: 'Consolas', monospace;
   flex: 1; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ctx-prim-val { cursor: pointer; }
+.ctx-prim-val:hover { opacity: 0.8; }
+.ctx-prim-expanded {
+  white-space: pre-wrap !important;
+  word-break: break-all;
+  overflow: visible !important;
+  text-overflow: unset !important;
+  max-height: 115px;
+  overflow-y: auto !important;
+  display: block;
 }
 .ctx-obj-val { cursor: pointer; display: flex; align-items: center; gap: 4px; }
 .ctx-obj-val:hover { opacity: 0.8; }

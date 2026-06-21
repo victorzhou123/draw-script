@@ -42,7 +42,15 @@
             <a-button type="text" size="small" danger @click="removeField(idx)">✕</a-button>
           </div>
           <a-button size="small" class="add-field-btn" @click="addField">+ 添加字段</a-button>
-          <div class="field-hint">结果以 JSON 对象写入 context</div>
+          <div class="field-hint">
+            {{ d.params.output_format === 'str' ? '结果以纯文本写入 context' : '结果以 JSON 对象写入 context' }}
+          </div>
+        </a-form-item>
+        <a-form-item label="输出格式">
+          <a-select v-model:value="d.params.output_format" size="small" style="width:120px" @change="update()">
+            <a-select-option value="json">JSON（对象）</a-select-option>
+            <a-select-option value="str">str（纯文本）</a-select-option>
+          </a-select>
         </a-form-item>
       </template>
 
@@ -56,12 +64,7 @@
         </a-form-item>
         <a-form-item label="选择器">
           <a-input v-model:value="d.params.selector" placeholder="h1.title 或 //h1[@class='title']" @change="update()" />
-        </a-form-item>
-        <a-form-item label="输出格式">
-          <a-select v-model:value="d.params.output_format" size="small" style="width:120px" @change="update()">
-            <a-select-option value="json">JSON（数组）</a-select-option>
-            <a-select-option value="text">纯文本</a-select-option>
-          </a-select>
+          <div class="field-hint">结果以 str 写入 context</div>
         </a-form-item>
       </template>
     </template>

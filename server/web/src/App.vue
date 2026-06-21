@@ -344,6 +344,15 @@ html, body, #app { height: 100%; background: #141414; }
 .empty-icon { font-size: 40px; color: #2a2a2a; display: block; }
 .empty-text { font-size: 13px; color: #3a3a3a; margin-top: 14px; }
 
+/* Dark scrollbars (webkit) */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #141414; border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
+::-webkit-scrollbar-corner { background: #141414; }
+/* Dark scrollbars (Firefox) */
+* { scrollbar-color: #3a3a3a #141414; scrollbar-width: thin; }
+
 /* Right panel slide transition */
 .slide-right-enter-active,
 .slide-right-leave-active {

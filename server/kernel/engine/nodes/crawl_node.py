@@ -1,5 +1,4 @@
 import asyncio
-import json
 
 import httpx
 
@@ -20,13 +19,15 @@ async def _get_service_key(session_factory, key_id: str) -> dict | None:
         return {"api_key": k.api_key, "base_url": k.base_url}
 
 
-def _extract_native(html: str, params: dict) -> dict | list | str:
-    from lxml import etree
-    import io
+def _extract_native(html: bytes | str, params: dict) -> dict | str:
+    from lxml import html as lhtml
 
-    parser = etree.HTMLParser()
-    tree = etree.parse(io.StringIO(html), parser)
-    root = tree.getroot()
+    if isinstance(html, bytes):
+        root = lhtml.document_fromstring(html)
+    else:
+        root = lhtml.fromstring(html)
+    if root is None:
+        raise ValueError("HTML 解析失败：响应内容为空或无法识别")
 
     selector_mode = params.get("selector_mode", "single")
 
@@ -50,13 +51,13 @@ def _extract_native(html: str, params: dict) -> dict | list | str:
                 elif hasattr(el, "text_content"):
                     texts.append(el.text_content().strip())
             result[name] = texts[0] if len(texts) == 1 else texts
+        if params.get("output_format") == "str":
+            return "\n".join(f"{k}: {v}" for k, v in result.items())
         return result
 
-    # single selector mode
+    # single selector mode — always returns str
     sel_type = params.get("selector_type", "css")
     selector = (params.get("selector") or "").strip()
-    if not selector:
-        return html
 
     if sel_type == "xpath":
         matches = root.xpath(selector)
@@ -70,10 +71,7 @@ def _extract_native(html: str, params: dict) -> dict | list | str:
         elif hasattr(el, "text_content"):
             texts.append(el.text_content().strip())
 
-    output_format = params.get("output_format", "json")
-    if output_format == "text":
-        return "\n".join(texts)
-    return texts
+    return "\n".join(texts)
 
 
 async def _scrape_native(url: str, params: dict) -> dict:
@@ -81,16 +79,18 @@ async def _scrape_native(url: str, params: dict) -> dict:
         resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; DrawScript-Crawler/1.0)"})
     resp.raise_for_status()
 
-    output_format = params.get("output_format", "json")
-    if output_format == "html":
-        return {"url": url, "content": resp.text, "format": "html"}
-    if output_format == "text":
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(resp.text, "lxml")
-        return {"url": url, "content": soup.get_text(separator="\n", strip=True), "format": "text"}
+    selector_mode = params.get("selector_mode", "single")
+    has_selector = (
+        selector_mode == "multi_field" and params.get("fields")
+    ) or (
+        selector_mode == "single" and (params.get("selector") or "").strip()
+    )
 
-    extracted = _extract_native(resp.text, params)
-    return {"url": url, "content": extracted, "format": output_format}
+    if has_selector:
+        extracted = _extract_native(resp.content, params)
+        return {"url": url, "content": extracted}
+
+    return {"url": url, "content": resp.text}
 
 
 async def _scrape_firecrawl_single(url: str, params: dict, api_key: str, base_url: str) -> dict:
@@ -192,7 +192,8 @@ class CrawlNodeHandler(BaseNodeHandler):
         except Exception as e:
             return NodeResult(success=False, error=f"Crawl node: {e}")
 
+        stored = result.get("content", result) if isinstance(result, dict) else result
         if output_var:
-            self.ctx.variables[output_var] = result
+            self.ctx.variables[output_var] = stored
 
-        return NodeResult(success=True, output={output_var: result} if output_var else {"result": result})
+        return NodeResult(success=True, output={output_var: stored} if output_var else {"result": result})
