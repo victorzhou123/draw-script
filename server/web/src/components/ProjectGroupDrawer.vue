@@ -439,11 +439,13 @@
     >
       <a-form layout="vertical">
         <a-form-item label="模板名称">
-          <a-input v-model:value="editTemplateName" placeholder="模板名称" />
+          <a-input
+            v-model:value="editTemplateName"
+            placeholder="模板名称"
+            @blur="saveTemplateName"
+            @press-enter="saveTemplateName"
+          />
         </a-form-item>
-        <a-button block :loading="savingTemplateName" :disabled="!editTemplateName.trim()" style="margin-bottom:8px" @click="saveTemplateName">
-          保存名称
-        </a-button>
         <a-divider style="margin:12px 0;color:#555;font-size:12px">重新截图</a-divider>
         <a-form-item label="客户端">
           <a-select v-model:value="editCaptureClientId" :style="{ width: '100%' }" placeholder="请选择在线客户端">
@@ -603,7 +605,7 @@ const editTemplateModalOpen = ref(false)
 const editingTemplateId = ref<string | null>(null)
 const editTemplateName = ref('')
 const editCaptureClientId = ref<string | null>(null)
-const savingTemplateName = ref(false)
+const editTemplateOriginalName = ref('')
 
 // ── Computed ──────────────────────────────────────────────────────────
 
@@ -997,21 +999,21 @@ async function startRegionCapture() {
 function openTemplateEditModal(t: { id: string; name: string }) {
   editingTemplateId.value = t.id
   editTemplateName.value = t.name
+  editTemplateOriginalName.value = t.name
   editCaptureClientId.value = null
   editTemplateModalOpen.value = true
 }
 
 async function saveTemplateName() {
-  if (!selectedId.value || !editingTemplateId.value || !editTemplateName.value.trim()) return
-  savingTemplateName.value = true
+  const name = editTemplateName.value.trim()
+  if (!selectedId.value || !editingTemplateId.value || !name) return
+  if (name === editTemplateOriginalName.value) return
   try {
-    await projectStore.renameTemplate(selectedId.value, editingTemplateId.value, editTemplateName.value.trim())
+    await projectStore.renameTemplate(selectedId.value, editingTemplateId.value, name)
+    editTemplateOriginalName.value = name
     message.success('模板已重命名')
-    editTemplateModalOpen.value = false
   } catch {
     message.error('重命名失败')
-  } finally {
-    savingTemplateName.value = false
   }
 }
 
