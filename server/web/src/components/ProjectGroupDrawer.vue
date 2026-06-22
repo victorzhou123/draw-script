@@ -451,7 +451,6 @@
               v-model:value="captureSelectedWindow"
               :style="{ width: '100%' }"
               placeholder="请选择窗口"
-              :field-names="{ label: 'title', value: 'title' }"
             >
               <a-select-option
                 v-for="w in captureWindowList"
