@@ -1209,6 +1209,7 @@ class CommandHandler:
             "set_markers":                self.handle_set_markers,
             "restore_window":             self.handle_restore_window,
             "resize_window_interactive":  self.handle_resize_window_interactive,
+            "resize_window_to_size":      self.handle_resize_window_to_size,
             "stop":                       self.handle_stop,
             "get_status":                 self.handle_get_status,
             "compute_node":               self.handle_compute_node,
@@ -1311,6 +1312,44 @@ class CommandHandler:
             "new_y":          new_y,
             "new_w":          new_w,
             "new_h":          new_h,
+        })
+
+    async def handle_resize_window_to_size(self, msg: dict) -> None:
+        project_id     = msg.get("project_id", "")
+        window_title   = msg.get("window_title", "")
+        window_process = msg.get("window_process", "")
+        target_w       = int(msg.get("target_w") or 0)
+        target_h       = int(msg.get("target_h") or 0)
+
+        if not window_title or not target_w or not target_h:
+            logger.warning("resize_window_to_size: missing window_title/target_w/target_h")
+            return
+
+        win = _find_window(window_title, window_process)
+        if not win:
+            logger.warning(f"resize_window_to_size: window '{window_title}' not found")
+            return
+
+        hwnd = win["hwnd"]
+        new_x, new_y = win["x"], win["y"]
+        try:
+            if ctypes.windll.user32.IsIconic(hwnd) or ctypes.windll.user32.IsZoomed(hwnd):
+                ctypes.windll.user32.ShowWindow(hwnd, 9)
+            ctypes.windll.user32.MoveWindow(hwnd, new_x, new_y, target_w, target_h, True)
+            logger.info(f"resize_window_to_size: '{window_title}' → {target_w}×{target_h}")
+        except Exception as e:
+            logger.error(f"resize_window_to_size: MoveWindow failed: {e}")
+            return
+
+        await self._send({
+            "type":           "window_resized",
+            "project_id":     project_id,
+            "window_title":   window_title,
+            "window_process": window_process,
+            "new_x":          new_x,
+            "new_y":          new_y,
+            "new_w":          target_w,
+            "new_h":          target_h,
         })
 
     async def handle_capture_screenshot(self, msg: dict) -> None:
@@ -1765,8 +1804,10 @@ class CommandHandler:
             return
 
         import pyautogui
-        abs_x = box["x"] + win_x
-        abs_y = box["y"] + win_y
+        # box["x"/"y"] are absolute screen coords from the full-screen overlay;
+        # win_x/y is passed to _show_box_overlay only for the "相对" display label.
+        abs_x = box["x"]
+        abs_y = box["y"]
         screenshot = await _run_blocking(
             pyautogui.screenshot, region=(abs_x, abs_y, box["w"], box["h"])
         )

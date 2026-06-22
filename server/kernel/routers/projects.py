@@ -492,6 +492,38 @@ async def resize_window_interactive(
     return {"ok": True}
 
 
+# ── Resize window to specific size ───────────────────────────────────────────
+
+class ResizeWindowToSizeRequest(BaseModel):
+    client_id: str
+    target_w: int
+    target_h: int
+
+
+@router.post("/{project_id}/markers/resize-window-to-size")
+async def resize_window_to_size(
+    project_id: str,
+    body: ResizeWindowToSizeRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    pcw = await db.get(ProjectClientWindow, (project_id, body.client_id))
+    if not pcw:
+        raise HTTPException(400, "No window info recorded for this client — please annotate markers first")
+
+    from ws_manager import client_ws_manager
+    sent = await client_ws_manager.send_to_client(body.client_id, {
+        "type":           "resize_window_to_size",
+        "project_id":     project_id,
+        "window_title":   pcw.window_title,
+        "window_process": pcw.window_process or "",
+        "target_w":       body.target_w,
+        "target_h":       body.target_h,
+    })
+    if not sent:
+        raise HTTPException(400, f"Client {body.client_id} is not connected")
+    return {"ok": True}
+
+
 @router.get("/{project_id}/window-binding")
 async def get_window_binding(
     project_id: str,

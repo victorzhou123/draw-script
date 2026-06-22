@@ -218,6 +218,8 @@ export const api = {
     http.post(`/projects/${projectId}/markers/restore-window`, { client_id: clientId }).then(r => r.data),
   resizeWindowInteractive: (projectId: string, clientId: string) =>
     http.post(`/projects/${projectId}/markers/resize-window-interactive`, { client_id: clientId }).then(r => r.data),
+  resizeWindowToSize: (projectId: string, clientId: string, targetW: number, targetH: number) =>
+    http.post(`/projects/${projectId}/markers/resize-window-to-size`, { client_id: clientId, target_w: targetW, target_h: targetH }).then(r => r.data),
   getMarkerWindows: (projectId: string) =>
     http.get<MarkerWindow[]>(`/projects/${projectId}/marker-windows`).then(r => r.data),
 

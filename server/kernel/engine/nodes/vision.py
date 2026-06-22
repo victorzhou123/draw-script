@@ -54,8 +54,7 @@ class VisionNodeHandler(BaseNodeHandler):
                     params["template_b64"] = raw
             elif template_id:
                 import os
-                from database import Marker, MarkerCapture, Template
-                from sqlalchemy import select as _select
+                from database import Template
                 async with self.ctx.session_factory() as session:
                     tpl = await session.get(Template, template_id)
                     if tpl:
@@ -63,22 +62,18 @@ class VisionNodeHandler(BaseNodeHandler):
                         if os.path.isfile(tpl_path):
                             with open(tpl_path, "rb") as fh:
                                 raw_bytes = fh.read()
-                            # Scale template if source dimensions differ from current window
+                            # Scale template to match current client's window size.
+                            # project_client_windows is the canonical source; marker_captures.window_w
+                            # is no longer written for new annotations (only on resize/copy).
                             if tpl.source_w and tpl.source_h and self.ctx.project_id:
-                                cap_result = await session.execute(
-                                    _select(MarkerCapture)
-                                    .join(Marker, MarkerCapture.marker_id == Marker.id)
-                                    .where(
-                                        Marker.project_id == self.ctx.project_id,
-                                        MarkerCapture.client_id == self.ctx.client_id,
-                                        MarkerCapture.window_w.isnot(None),
-                                    )
-                                    .limit(1)
+                                from database import ProjectClientWindow
+                                pcw = await session.get(
+                                    ProjectClientWindow,
+                                    (self.ctx.project_id, self.ctx.client_id),
                                 )
-                                cap = cap_result.scalar_one_or_none()
-                                if cap and cap.window_w and cap.window_h:
-                                    scale_x = cap.window_w / tpl.source_w
-                                    scale_y = cap.window_h / tpl.source_h
+                                if pcw and pcw.window_w and pcw.window_h:
+                                    scale_x = pcw.window_w / tpl.source_w
+                                    scale_y = pcw.window_h / tpl.source_h
                                     if abs(scale_x - 1.0) > 0.001 or abs(scale_y - 1.0) > 0.001:
                                         import cv2
                                         import numpy as np

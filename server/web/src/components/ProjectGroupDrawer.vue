@@ -229,13 +229,20 @@
                         @click="restoreWindow"
                       >还原窗口</a-button>
                     </a-tooltip>
-                    <a-tooltip :title="windowBinding ? '在客户端调整窗口大小，标注坐标自动按比例缩放' : '请先标注以记录窗口绑定'">
+                    <a-tooltip :title="windowBinding ? '在客户端拖拽调整窗口大小，标注坐标自动按比例缩放' : '请先标注以记录窗口绑定'">
                       <a-button
                         size="small" class="icon-btn resize-window-btn"
                         :disabled="!capturePreviewClientId || !windowBinding"
                         :loading="resizingWindow"
                         @click="resizeWindowInteractive"
-                      >自定义大小</a-button>
+                      >拖拽调节</a-button>
+                    </a-tooltip>
+                    <a-tooltip :title="windowBinding ? '输入目标宽高，标注坐标自动按比例缩放' : '请先标注以记录窗口绑定'">
+                      <a-button
+                        size="small" class="icon-btn resize-window-btn"
+                        :disabled="!capturePreviewClientId || !windowBinding"
+                        @click="openResizeSizeModal"
+                      >数字调节</a-button>
                     </a-tooltip>
                   </div>
                 </div>
@@ -390,10 +397,13 @@
                 </div>
                 <div v-if="currentTemplates.length === 0" class="empty-hint">暂无模板，输入名称后上传图片</div>
                 <div v-for="t in currentTemplates" :key="t.id" class="template-row">
-                  <div class="template-thumb-wrap">
+                  <div class="template-thumb-wrap" @click="updatingTemplateId !== t.id && openTemplatePreview(t.id)">
                     <img :src="templateImageUrl(t.id)" class="template-thumb" />
                     <div v-if="updatingTemplateId === t.id" class="template-thumb-overlay">
                       <a-spin size="small" />
+                    </div>
+                    <div v-else class="template-thumb-hover">
+                      <EyeOutlined />
                     </div>
                   </div>
                   <span class="member-name">{{ t.name }}</span>
@@ -496,6 +506,52 @@
           @click="recaptureTemplate"
         >在客户端重新截图</a-button>
       </a-form>
+    </a-modal>
+
+    <!-- 模板图片预览 Modal -->
+    <a-modal
+      v-model:open="templatePreviewOpen"
+      title="模板预览"
+      :footer="null"
+      :body-style="{ padding: '8px', background: '#141414', textAlign: 'center' }"
+      :width="800"
+    >
+      <img :src="previewTemplateUrl" style="max-width:100%;max-height:75vh;object-fit:contain;border-radius:4px;" />
+    </a-modal>
+
+    <!-- 自定义窗口大小 Modal -->
+    <a-modal
+      v-model:open="resizeSizeModalOpen"
+      title="自定义窗口大小"
+      :width="320"
+      :ok-button-props="{ loading: resizingWindow }"
+      ok-text="确认调整"
+      @ok="confirmResizeToSize"
+    >
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+        <a-input-number
+          v-model:value="resizeSizeW"
+          :min="100"
+          :max="9999"
+          size="small"
+          style="flex:1"
+          addonBefore="宽"
+          addonAfter="px"
+          @pressEnter="confirmResizeToSize"
+        />
+        <span style="color:#555;flex-shrink:0">×</span>
+        <a-input-number
+          v-model:value="resizeSizeH"
+          :min="100"
+          :max="9999"
+          size="small"
+          style="flex:1"
+          addonBefore="高"
+          addonAfter="px"
+          @pressEnter="confirmResizeToSize"
+        />
+      </div>
+      <div style="font-size:11px;color:#555;margin-top:8px">标注坐标将按比例自动缩放</div>
     </a-modal>
 
     <!-- 标注预览 Modal -->
@@ -612,6 +668,10 @@ const restoringWindow = ref(false)
 const resizingWindow = ref(false)
 const windowBinding = ref<WindowBinding | null>(null)
 const loadingWindowBinding = ref(false)
+// Custom resize modal
+const resizeSizeModalOpen = ref(false)
+const resizeSizeW = ref<number>(800)
+const resizeSizeH = ref<number>(600)
 // Copy captures
 const markerWindows = ref<MarkerWindow[]>([])
 const copySourceClientId = ref<string | null>(null)
@@ -648,6 +708,10 @@ const imageTimestamps = ref<Record<string, number>>({})
 const captureModalOpen = ref(false)
 const captureClientId = ref<string | null>(null)
 const captureTemplateName = ref('')
+
+// Template preview
+const templatePreviewOpen = ref(false)
+const previewTemplateUrl = ref('')
 
 // Edit template modal
 const editTemplateModalOpen = ref(false)
@@ -741,6 +805,28 @@ async function resizeWindowInteractive() {
   try {
     await api.resizeWindowInteractive(selectedId.value, capturePreviewClientId.value)
     message.info('已发送指令，请在客户端调整窗口大小后确认')
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail ?? '发送失败')
+  } finally {
+    resizingWindow.value = false
+  }
+}
+
+function openResizeSizeModal() {
+  if (windowBinding.value) {
+    resizeSizeW.value = windowBinding.value.window_w
+    resizeSizeH.value = windowBinding.value.window_h
+  }
+  resizeSizeModalOpen.value = true
+}
+
+async function confirmResizeToSize() {
+  if (!capturePreviewClientId.value || !selectedId.value) return
+  resizingWindow.value = true
+  try {
+    await api.resizeWindowToSize(selectedId.value, capturePreviewClientId.value, resizeSizeW.value, resizeSizeH.value)
+    message.info(`已发送指令，目标大小 ${resizeSizeW.value}×${resizeSizeH.value}`)
+    resizeSizeModalOpen.value = false
   } catch (e: any) {
     message.error(e?.response?.data?.detail ?? '发送失败')
   } finally {
@@ -1071,6 +1157,11 @@ async function startRegionCapture() {
   } catch (e: any) {
     message.error(e?.response?.data?.detail ?? '发送截图指令失败')
   }
+}
+
+function openTemplatePreview(templateId: string) {
+  previewTemplateUrl.value = templateImageUrl(templateId)
+  templatePreviewOpen.value = true
 }
 
 function openTemplateEditModal(t: { id: string; name: string }) {
