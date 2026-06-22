@@ -139,6 +139,8 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
         window_title   = msg.get("window_title")
         new_w          = msg.get("new_w")
         new_h          = msg.get("new_h")
+        new_x          = msg.get("new_x")
+        new_y          = msg.get("new_y")
 
         if project_id and window_title and new_w and new_h:
             from database import Marker, MarkerCapture
@@ -170,6 +172,10 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                         cap.h = round(cap.h * new_h / old_h)
                     cap.window_w = new_w
                     cap.window_h = new_h
+                    if new_x is not None:
+                        cap.window_x = new_x
+                    if new_y is not None:
+                        cap.window_y = new_y
                     scaled += 1
                 await db.commit()
             logger.info(

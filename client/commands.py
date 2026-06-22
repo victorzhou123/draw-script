@@ -434,7 +434,7 @@ def _run_resize_window_modal(
 
     def _confirm():
         win = _find_window(window_title, window_process)
-        result[0] = (win["w"], win["h"]) if win else None
+        result[0] = (win["x"], win["y"], win["w"], win["h"]) if win else None
         dialog.destroy()
 
     def _cancel():
@@ -1193,13 +1193,15 @@ class CommandHandler:
             logger.info("resize_window_interactive: cancelled by user")
             return
 
-        new_w, new_h = result
-        logger.info(f"resize_window_interactive: new size {new_w}×{new_h}")
+        new_x, new_y, new_w, new_h = result
+        logger.info(f"resize_window_interactive: new pos ({new_x},{new_y}) size {new_w}×{new_h}")
         await self._send({
             "type":           "window_resized",
             "project_id":     project_id,
             "window_title":   window_title,
             "window_process": window_process,
+            "new_x":          new_x,
+            "new_y":          new_y,
             "new_w":          new_w,
             "new_h":          new_h,
         })
