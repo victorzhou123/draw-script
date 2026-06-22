@@ -178,73 +178,132 @@
                   </div>
                 </div>
 
-                <!-- 发送标注 -->
-                <div class="send-divider" />
-                <div class="send-header">
-                  <span class="subsection-title"><SendOutlined /> 发送标注</span>
-                  <a-checkbox
-                    :indeterminate="sendIndeterminate"
-                    :checked="sendAllChecked"
-                    @change="toggleSelectAll"
-                  >全选</a-checkbox>
+                <!-- ── 预览 / 窗口管理 ── -->
+                <div class="ops-section">
+                  <div class="ops-section-header">
+                    <EyeOutlined class="ops-icon" />
+                    <span>预览 / 窗口</span>
+                  </div>
+                  <div class="ops-row">
+                    <span class="ops-label">预览客户端</span>
+                    <a-select
+                      v-model:value="capturePreviewClientId"
+                      size="small"
+                      placeholder="选择客户端"
+                      style="flex:1;min-width:0"
+                      allow-clear
+                      :options="projectClientIds.map(cid => ({ label: clientName(cid), value: cid }))"
+                    />
+                    <a-button
+                      size="small" class="icon-btn"
+                      :disabled="!capturePreviewClientId"
+                      :loading="refreshingCaptures"
+                      @click="refreshCaptureStatus"
+                      title="刷新标注状态"
+                    ><ReloadOutlined /></a-button>
+                  </div>
+                  <div class="ops-row" style="gap:6px">
+                    <a-tooltip title="还原窗口到标注时的位置和大小">
+                      <a-button
+                        size="small" class="icon-btn window-ctrl-btn"
+                        :disabled="!capturePreviewClientId"
+                        :loading="restoringWindow"
+                        @click="restoreWindow"
+                      >还原窗口</a-button>
+                    </a-tooltip>
+                    <a-tooltip title="在客户端调整窗口大小，标注坐标自动按比例缩放">
+                      <a-button
+                        size="small" class="icon-btn resize-window-btn"
+                        :disabled="!capturePreviewClientId"
+                        :loading="resizingWindow"
+                        @click="resizeWindowInteractive"
+                      >自定义大小</a-button>
+                    </a-tooltip>
+                  </div>
                 </div>
-                <!-- Preview capture status for a specific client -->
-                <div class="preview-client-row">
-                  <span class="preview-label">预览状态</span>
-                  <a-select
-                    v-model:value="capturePreviewClientId"
-                    size="small"
-                    placeholder="选择客户端查看标注状态"
-                    style="flex:1"
-                    allow-clear
-                    :options="projectClientIds.map(cid => ({ label: clientName(cid), value: cid }))"
-                  />
+
+                <!-- ── 发送标注 ── -->
+                <div class="ops-section">
+                  <div class="ops-section-header">
+                    <div style="display:flex;align-items:center;gap:6px;flex:1">
+                      <SendOutlined class="ops-icon" />
+                      <span>发送标注</span>
+                    </div>
+                    <a-checkbox
+                      :indeterminate="sendIndeterminate"
+                      :checked="sendAllChecked"
+                      @change="toggleSelectAll"
+                      style="font-size:11px;color:#555"
+                    >全选</a-checkbox>
+                  </div>
+                  <div v-if="projectClientIds.length === 0" class="empty-hint" style="margin:0">暂无客户端</div>
+                  <div v-for="cid in projectClientIds" :key="cid" class="send-client-row">
+                    <a-checkbox
+                      :checked="sendClientIds.includes(cid)"
+                      @change="() => toggleSendClient(cid)"
+                    >
+                      <span class="status-dot" :class="`dot-${clientStatus(cid)}`" style="display:inline-block;margin-right:5px;" />
+                      <span>{{ clientName(cid) }}</span>
+                      <span class="member-status" style="margin-left:6px;">{{ statusLabel(clientStatus(cid)) }}</span>
+                    </a-checkbox>
+                  </div>
                   <a-button
-                    size="small" class="icon-btn"
-                    :disabled="!capturePreviewClientId"
-                    :loading="refreshingCaptures"
-                    @click="refreshCaptureStatus"
-                    title="刷新标注状态"
-                  ><ReloadOutlined /></a-button>
-                </div>
-                <div class="window-ctrl-row">
-                  <a-tooltip title="还原窗口到标注时的位置和大小">
-                    <a-button
-                      size="small" class="icon-btn window-ctrl-btn"
-                      :disabled="!capturePreviewClientId"
-                      :loading="restoringWindow"
-                      @click="restoreWindow"
-                    >还原窗口</a-button>
-                  </a-tooltip>
-                  <a-tooltip title="在客户端调整窗口大小，标注坐标自动按比例缩放">
-                    <a-button
-                      size="small" class="icon-btn resize-window-btn"
-                      :disabled="!capturePreviewClientId"
-                      :loading="resizingWindow"
-                      @click="resizeWindowInteractive"
-                    >自定义大小</a-button>
-                  </a-tooltip>
-                </div>
-                <div v-if="projectClientIds.length === 0" class="empty-hint">暂无客户端</div>
-                <div v-for="cid in projectClientIds" :key="cid" class="send-client-row">
-                  <a-checkbox
-                    :checked="sendClientIds.includes(cid)"
-                    @change="() => toggleSendClient(cid)"
+                    type="primary" size="small" block style="margin-top:6px"
+                    :loading="sending"
+                    :disabled="sendClientIds.length === 0 || selectedMarkerNames.size === 0"
+                    @click="sendMarkersToClients"
                   >
-                    <span class="status-dot" :class="`dot-${clientStatus(cid)}`" style="display:inline-block;margin-right:5px;" />
-                    <span>{{ clientName(cid) }}</span>
-                    <span class="member-status" style="margin-left:6px;">{{ statusLabel(clientStatus(cid)) }}</span>
-                  </a-checkbox>
+                    <SendOutlined /> 发送选中 {{ selectedMarkerNames.size }} 个标记到 {{ sendClientIds.length }} 个客户端
+                  </a-button>
+                  <div v-if="sendResult" class="send-result" :class="sendResult.ok ? 'ok' : 'err'">{{ sendResult.text }}</div>
                 </div>
-                <a-button
-                  type="primary" size="small" block style="margin-top:8px"
-                  :loading="sending"
-                  :disabled="sendClientIds.length === 0 || selectedMarkerNames.size === 0"
-                  @click="sendMarkersToClients"
-                >
-                  <SendOutlined /> 发送选中 {{ selectedMarkerNames.size }} 个标记到 {{ sendClientIds.length }} 个客户端
-                </a-button>
-                <div v-if="sendResult" class="send-result" :class="sendResult.ok ? 'ok' : 'err'">{{ sendResult.text }}</div>
+
+                <!-- ── 复制标注数据 ── -->
+                <div class="ops-section">
+                  <div class="ops-section-header">
+                    <CopyOutlined class="ops-icon" />
+                    <span>复制标注数据</span>
+                  </div>
+                  <div class="ops-row">
+                    <span class="ops-label">来源</span>
+                    <a-select
+                      v-model:value="copySourceClientId"
+                      size="small"
+                      placeholder="选择来源客户端"
+                      style="flex:1;min-width:0"
+                      allow-clear
+                      :options="projectClientIds.map(cid => ({ label: clientName(cid), value: cid }))"
+                    />
+                  </div>
+                  <div class="ops-row">
+                    <span class="ops-label">目标</span>
+                    <a-select
+                      v-model:value="copyTargetClientIds"
+                      mode="multiple"
+                      size="small"
+                      placeholder="选择目标客户端（可多选）"
+                      style="flex:1;min-width:0"
+                      :options="copyTargetOptions"
+                      :max-tag-count="2"
+                    />
+                  </div>
+                  <div class="ops-row">
+                    <span class="ops-label">模式</span>
+                    <a-radio-group v-model:value="copyMode" size="small" button-style="solid">
+                      <a-radio-button value="overwrite">覆盖已有</a-radio-button>
+                      <a-radio-button value="fill_missing">仅补充缺失</a-radio-button>
+                    </a-radio-group>
+                  </div>
+                  <a-button
+                    type="primary" size="small" block style="margin-top:6px"
+                    :loading="copying"
+                    :disabled="!copySourceClientId || copyTargetClientIds.length === 0"
+                    @click="copyCaptures"
+                  >
+                    <CopyOutlined /> 复制到 {{ copyTargetClientIds.length }} 个客户端
+                  </a-button>
+                  <div v-if="copyResult" class="send-result" :class="copyResult.ok ? 'ok' : 'err'">{{ copyResult.text }}</div>
+                </div>
               </div>
             </a-tab-pane>
 
@@ -416,7 +475,7 @@ import {
   PlusOutlined, EditOutlined, DeleteOutlined, MinusOutlined,
   LaptopOutlined, TagsOutlined, FileTextOutlined, PictureOutlined, UploadOutlined,
   AimOutlined, BorderOutlined, FolderOpenOutlined, SendOutlined, ReloadOutlined,
-  InfoCircleOutlined, EyeOutlined,
+  InfoCircleOutlined, EyeOutlined, CopyOutlined,
 } from '@ant-design/icons-vue'
 import { useProjectStore } from '@/stores/projectStore'
 import { useClientStore } from '@/stores/clientStore'
@@ -460,6 +519,12 @@ const sendResult = ref<{ ok: boolean; text: string } | null>(null)
 const capturePreviewClientId = ref<string | null>(null)
 const restoringWindow = ref(false)
 const resizingWindow = ref(false)
+// Copy captures between clients
+const copySourceClientId = ref<string | null>(null)
+const copyTargetClientIds = ref<string[]>([])
+const copyMode = ref<'overwrite' | 'fill_missing'>('overwrite')
+const copying = ref(false)
+const copyResult = ref<{ ok: boolean; text: string } | null>(null)
 const markerCaptureMap = ref<Record<string, boolean>>({})  // name → captured
 const selectedMarkerNames = ref<Set<string>>(new Set())
 const refreshingCaptures = ref(false)
@@ -565,6 +630,31 @@ async function resizeWindowInteractive() {
   }
 }
 
+const copyTargetOptions = computed(() =>
+  projectClientIds.value
+    .filter(cid => cid !== copySourceClientId.value)
+    .map(cid => ({ label: clientName(cid), value: cid }))
+)
+
+async function copyCaptures() {
+  if (!copySourceClientId.value || copyTargetClientIds.value.length === 0 || !selectedId.value) return
+  copying.value = true
+  copyResult.value = null
+  try {
+    const res = await api.copyCapturesBetweenClients(
+      selectedId.value,
+      copySourceClientId.value,
+      copyTargetClientIds.value,
+      copyMode.value,
+    )
+    copyResult.value = { ok: true, text: `已复制 ${res.copied} 条标注数据到 ${copyTargetClientIds.value.length} 个客户端` }
+  } catch (e: any) {
+    copyResult.value = { ok: false, text: e?.response?.data?.detail ?? '复制失败' }
+  } finally {
+    copying.value = false
+  }
+}
+
 async function selectProject(id: string) {
   selectedId.value = id
   detailTab.value = 'clients'
@@ -573,6 +663,7 @@ async function selectProject(id: string) {
   sendClientIds.value = []
   sendResult.value = null
   capturePreviewClientId.value = null
+  copyResult.value = null
   markerCaptureMap.value = {}
   selectedMarkerNames.value = new Set(currentMarkers.value.map(m => m.name))
   // Fetch members
@@ -944,13 +1035,34 @@ watch(currentMarkers, (markers) => {
 .usage-info-btn { color: #444 !important; padding: 0 3px !important; height: 20px !important; flex-shrink: 0; }
 .usage-info-btn:hover { color: #888 !important; }
 
-/* Send annotation */
-.send-divider { height: 1px; background: #252525; margin: 10px 0; }
-.send-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.subsection-title { font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 5px; }
-.preview-client-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.preview-label { font-size: 11px; color: #555; flex-shrink: 0; }
-.window-ctrl-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+/* Operation sections (markers tab) */
+.ops-section {
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: #1e1e1e;
+}
+.ops-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 10px;
+}
+.ops-icon { font-size: 11px; }
+.ops-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ops-row:last-child { margin-bottom: 0; }
+.ops-label { font-size: 11px; color: #555; flex-shrink: 0; width: 30px; }
 .window-ctrl-btn { color: #888 !important; }
 .resize-window-btn { color: #fa8c16 !important; border-color: transparent !important; }
 .resize-window-btn:hover:not(:disabled) { color: #ffa940 !important; background: #2b1b07 !important; }

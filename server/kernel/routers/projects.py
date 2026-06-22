@@ -266,6 +266,93 @@ async def restore_window(
     return {"ok": True}
 
 
+# ── Copy captures between clients ────────────────────────────────────────────
+
+class CopyCapturesRequest(BaseModel):
+    source_client_id: str
+    target_client_ids: list[str]
+    mode: str = "overwrite"  # "overwrite" | "fill_missing"
+
+
+@router.post("/{project_id}/markers/copy-captures")
+async def copy_captures(
+    project_id: str,
+    body: CopyCapturesRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    if not body.target_client_ids:
+        raise HTTPException(400, "No target clients specified")
+
+    marker_result = await db.execute(
+        select(Marker).where(Marker.project_id == project_id)
+    )
+    markers = marker_result.scalars().all()
+    if not markers:
+        raise HTTPException(400, "Project has no markers")
+
+    marker_ids = [m.id for m in markers]
+
+    src_result = await db.execute(
+        select(MarkerCapture).where(
+            MarkerCapture.marker_id.in_(marker_ids),
+            MarkerCapture.client_id == body.source_client_id,
+            MarkerCapture.x.isnot(None),
+        )
+    )
+    source_captures = src_result.scalars().all()
+    if not source_captures:
+        raise HTTPException(400, "Source client has no captures for this project")
+
+    copied = 0
+    for target_id in body.target_client_ids:
+        if target_id == body.source_client_id:
+            continue
+        for src in source_captures:
+            existing_result = await db.execute(
+                select(MarkerCapture).where(
+                    MarkerCapture.marker_id == src.marker_id,
+                    MarkerCapture.client_id == target_id,
+                )
+            )
+            existing = existing_result.scalar_one_or_none()
+
+            if body.mode == "fill_missing" and existing and existing.x is not None:
+                continue
+
+            if existing:
+                existing.x = src.x
+                existing.y = src.y
+                existing.w = src.w
+                existing.h = src.h
+                existing.window_title = src.window_title
+                existing.window_process = src.window_process
+                existing.window_x = src.window_x
+                existing.window_y = src.window_y
+                existing.window_w = src.window_w
+                existing.window_h = src.window_h
+                existing.captured_at = datetime.now(timezone.utc)
+            else:
+                db.add(MarkerCapture(
+                    marker_id=src.marker_id,
+                    client_id=target_id,
+                    x=src.x, y=src.y, w=src.w, h=src.h,
+                    window_title=src.window_title,
+                    window_process=src.window_process,
+                    window_x=src.window_x,
+                    window_y=src.window_y,
+                    window_w=src.window_w,
+                    window_h=src.window_h,
+                ))
+            copied += 1
+
+    await db.commit()
+    logger.info(
+        f"copy_captures: {copied} captures copied from {body.source_client_id} "
+        f"to {body.target_client_ids} in project {project_id} (mode={body.mode})"
+    )
+    return {"ok": True, "copied": copied}
+
+
 # ── Resize window interactive ─────────────────────────────────────────────────
 
 class ResizeWindowInteractiveRequest(BaseModel):

@@ -172,6 +172,17 @@ export const api = {
     http.post(`/projects/${projectId}/markers/restore-window`, { client_id: clientId }).then(r => r.data),
   resizeWindowInteractive: (projectId: string, clientId: string) =>
     http.post(`/projects/${projectId}/markers/resize-window-interactive`, { client_id: clientId }).then(r => r.data),
+  copyCapturesBetweenClients: (
+    projectId: string,
+    sourceClientId: string,
+    targetClientIds: string[],
+    mode: 'overwrite' | 'fill_missing',
+  ) =>
+    http.post(`/projects/${projectId}/markers/copy-captures`, {
+      source_client_id: sourceClientId,
+      target_client_ids: targetClientIds,
+      mode,
+    }).then(r => r.data),
 
   // Templates
   getTemplates: (projectId: string) =>
