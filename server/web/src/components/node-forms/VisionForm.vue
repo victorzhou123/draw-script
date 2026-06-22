@@ -19,6 +19,9 @@
           </a-select-option>
         </a-select>
         <div class="hint-text" style="margin-top:4px">留空默认范围为选择的窗口</div>
+        <div v-if="windowBindingTitle" class="window-binding-hint">
+          <span class="window-tag">窗口</span>{{ windowBindingTitle }}
+        </div>
         <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:2px">当前项目暂无标记，请先在项目中添加方框类型标记</div>
       </a-form-item>
       <a-form-item label="模板来源">
@@ -31,6 +34,9 @@
         <a-select v-model:value="d.params.template_id" :style="{ width: '100%' }" placeholder="选择项目模板" allow-clear @change="update()">
           <a-select-option v-for="t in ctx.availableTemplates.value" :key="t.id" :value="t.id">{{ t.name }}</a-select-option>
         </a-select>
+        <div v-if="selectedTemplateWindowTitle" class="window-binding-hint">
+          <span class="window-tag">来源窗口</span>{{ selectedTemplateWindowTitle }}
+        </div>
         <div v-if="!ctx.availableTemplates.value.length" class="hint-text" style="margin-top:4px">当前项目暂无模板，请先在项目组中上传</div>
       </a-form-item>
       <a-form-item v-else label="Context 字段">
@@ -306,11 +312,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, inject } from 'vue'
+import { ref, computed, watch, inject } from 'vue'
 import { FORM_CTX } from './useFormContext'
 
 const ctx = inject(FORM_CTX)!
 const d = ctx.localData
+
+const windowBindingTitle = computed(() => ctx.defaultClientWindowBinding.value?.window_title ?? null)
+
+const selectedTemplateWindowTitle = computed(() => {
+  const tid = d.value?.params?.template_id
+  if (!tid) return null
+  const tpl = ctx.availableTemplates.value.find((t: any) => t.id === tid)
+  return tpl?.window_title ?? null
+})
 
 const VALUE_TYPES = ['str', 'int', 'float', 'bool', 'list', 'dict', 'None']
 
@@ -418,6 +433,8 @@ function onOcrNotFoundValueTypeChange() {
 
 <style scoped>
 .hint-text { font-size: 11px; color: #444; margin-bottom: 8px; line-height: 1.5; }
+.window-binding-hint { font-size: 11px; color: #3d6b8a; margin-top: 4px; display: flex; align-items: center; gap: 5px; }
+.window-tag { background: #0a2433; color: #40a9ff; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 600; flex-shrink: 0; }
 .ctx-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: middle; flex-shrink: 0; }
 .ctx-dot.certain { background: #52c41a; }
 .ctx-dot.conditional { background: #faad14; }

@@ -1321,25 +1321,63 @@ class CommandHandler:
         try:
             import pyautogui
             range_marker_name = params.get("range_marker", "").strip()
+            window_title = params.get("window_title", "").strip()
+            window_process = params.get("window_process", "").strip()
+
             region = None
+
             if range_marker_name:
-                if server_markers:
-                    marker = _get_marker_from_server(range_marker_name, server_markers)
-                else:
-                    marker = get_marker(project_id, range_marker_name) if project_id else None
-                if not marker:
+                # Screenshot node: lock to marker's window, error if no binding
+                raw = (server_markers or {}).get(range_marker_name)
+                if raw is None and project_id:
+                    _ld = _load_markers()
+                    _m = _ld.get(project_id, {}).get(range_marker_name)
+                    _w = _ld.get(project_id, {}).get("_window")
+                    if _m and _w:
+                        raw = dict(_m)
+                        raw["window_title"] = _w.get("title", "")
+                        raw["window_process"] = _w.get("process", "")
+                if not raw:
                     await self._send({"type": "screenshot_response", "request_id": request_id,
                                       "success": False, "error": f"Screenshot: marker '{range_marker_name}' not found"})
                     return
-                mx = _int(marker.get("x"), 0)
-                my = _int(marker.get("y"), 0)
-                mw = _int(marker.get("w"), 0)
-                mh = _int(marker.get("h"), 0)
+                m_win_title = raw.get("window_title", "").strip()
+                m_win_process = raw.get("window_process", "").strip()
+                if not m_win_title:
+                    await self._send({"type": "screenshot_response", "request_id": request_id,
+                                      "success": False, "error": f"Screenshot: marker '{range_marker_name}' 未绑定窗口，请先完成标注"})
+                    return
+                win = _find_window(m_win_title, m_win_process)
+                if not win:
+                    await self._send({"type": "screenshot_response", "request_id": request_id,
+                                      "success": False, "error": f"Screenshot: 绑定窗口「{m_win_title}」未找到，请确认窗口已打开"})
+                    return
+                try:
+                    _activate_window(win["hwnd"])
+                except Exception:
+                    pass
+                mx = _int(raw.get("x"), 0)
+                my = _int(raw.get("y"), 0)
+                mw = _int(raw.get("w"), 0)
+                mh = _int(raw.get("h"), 0)
                 if mw <= 0 or mh <= 0:
                     await self._send({"type": "screenshot_response", "request_id": request_id,
                                       "success": False, "error": f"Screenshot: marker '{range_marker_name}' 不是方框标记"})
                     return
-                region = (mx, my, mw, mh)
+                region = (win["x"] + mx, win["y"] + my, mw, mh)
+
+            elif window_title:
+                # Preview mode: screenshot just the bound window area
+                win = _find_window(window_title, window_process)
+                if not win:
+                    await self._send({"type": "screenshot_response", "request_id": request_id,
+                                      "success": False, "error": f"Screenshot: 绑定窗口「{window_title}」未找到，请确认窗口已打开"})
+                    return
+                try:
+                    _activate_window(win["hwnd"])
+                except Exception:
+                    pass
+                region = (win["x"], win["y"], win["w"], win["h"])
 
             screenshot = await _run_blocking(pyautogui.screenshot, region=region)
             buf = io.BytesIO()
@@ -1467,24 +1505,45 @@ class CommandHandler:
 
         range_marker_name = params.get("range_marker", "").strip()
         if range_marker_name:
-            # Prefer server-provided coordinates (single source of truth)
-            if server_markers:
-                marker = _get_marker_from_server(range_marker_name, server_markers)
-            else:
-                marker = get_marker(project_id, range_marker_name) if project_id else None
-            if not marker:
+            # Get raw (window-relative) coords — server_markers is authoritative
+            raw = (server_markers or {}).get(range_marker_name)
+            if raw is None and project_id:
+                # Legacy fallback: read raw coords from markers.json without resolving
+                _ld = _load_markers()
+                _m = _ld.get(project_id, {}).get(range_marker_name)
+                _w = _ld.get(project_id, {}).get("_window")
+                if _m and _w:
+                    raw = dict(_m)
+                    raw["window_title"] = _w.get("title", "")
+                    raw["window_process"] = _w.get("process", "")
+            if not raw:
                 hint = "请先完成标记标注" if server_markers is not None else f"project '{project_id}'"
                 return False, {}, f"Vision node: marker '{range_marker_name}' not found ({hint})"
 
-            mx = _int(marker.get("x"), 0)
-            my = _int(marker.get("y"), 0)
-            mw = _int(marker.get("w"), 0)
-            mh = _int(marker.get("h"), 0)
+            mx = _int(raw.get("x"), 0)
+            my = _int(raw.get("y"), 0)
+            mw = _int(raw.get("w"), 0)
+            mh = _int(raw.get("h"), 0)
 
             if mw <= 0 or mh <= 0:
                 return False, {}, f"Vision node: marker '{range_marker_name}' 不是方框标记（缺少 w/h）"
+
+            # Lock to the marker's bound window (error if no binding)
+            m_win_title = (raw.get("window_title") or "").strip()
+            m_win_process = (raw.get("window_process") or "").strip()
+            if not m_win_title:
+                return False, {}, f"Vision node: marker '{range_marker_name}' 未绑定窗口，请先完成标注"
+            win = _find_window(m_win_title, m_win_process)
+            if not win:
+                return False, {}, f"Vision node: 绑定窗口「{m_win_title}」未找到，请确认窗口已打开"
+            try:
+                _activate_window(win["hwnd"])
+            except Exception:
+                pass
+            abs_x = win["x"] + mx
+            abs_y = win["y"] + my
         else:
-            # No range marker specified — fall back to the project's bound window
+            # No range marker — use the full project bound window as detection area
             win_title = win_process = ""
             if server_markers:
                 for m_data in server_markers.values():
@@ -1492,20 +1551,18 @@ class CommandHandler:
                         win_title = m_data["window_title"]
                         win_process = m_data.get("window_process", "")
                         break
-            if not win_title and project_id:
-                local_data = _load_markers()
-                bound = local_data.get(project_id, {}).get("_window")
-                if bound:
-                    win_title = bound.get("title", "")
-                    win_process = bound.get("process", "")
             if not win_title:
                 return False, {}, "Vision node: 未选择检测范围且项目未绑定窗口"
             win = _find_window(win_title, win_process)
             if not win:
-                return False, {}, f"Vision node: 未找到绑定窗口 '{win_title}'，请确认窗口已打开"
-            mx, my, mw, mh = win["x"], win["y"], win["w"], win["h"]
+                return False, {}, f"Vision node: 未找到绑定窗口「{win_title}」，请确认窗口已打开"
+            try:
+                _activate_window(win["hwnd"])
+            except Exception:
+                pass
+            abs_x, abs_y, mw, mh = win["x"], win["y"], win["w"], win["h"]
 
-        screenshot = await _run_blocking(pyautogui.screenshot, region=(mx, my, mw, mh))
+        screenshot = await _run_blocking(pyautogui.screenshot, region=(abs_x, abs_y, mw, mh))
 
         if vision_type == "template_match":
             template_b64 = params.get("template_b64", "")
@@ -1515,7 +1572,7 @@ class CommandHandler:
             threshold = float(params.get("threshold", 0.8))
             match_mode = params.get("mode") or "single"
             use_gpu = bool(params.get("use_gpu", False))
-            region_offset = (mx, my)
+            region_offset = (abs_x, abs_y)
 
             def _do_match():
                 import cv2
@@ -1724,6 +1781,7 @@ class CommandHandler:
             "image_b64": image_b64,
             "window_w": win["w"],
             "window_h": win["h"],
+            "window_title": win["title"],
         })
 
     async def handle_stop(self, msg: dict) -> None:

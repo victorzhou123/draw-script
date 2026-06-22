@@ -7,7 +7,10 @@
           {{ m.name }}
         </a-select-option>
       </a-select>
-      <div class="hint-text" style="margin-top:4px">留空则截取全屏</div>
+      <div class="hint-text" style="margin-top:4px">留空则截取绑定窗口全区域</div>
+      <div v-if="windowBindingTitle" class="window-binding-hint">
+        <span class="window-tag">窗口</span>{{ windowBindingTitle }}
+      </div>
       <div v-if="!ctx.availableMarkers.value.length" class="hint-text" style="margin-top:2px">
         当前项目暂无标记，请先在项目中添加方框类型标记
       </div>
@@ -27,11 +30,13 @@
 </template>
 
 <script setup lang="ts">
-import { inject } from 'vue'
+import { computed, inject } from 'vue'
 import { FORM_CTX } from './useFormContext'
 
 const ctx = inject(FORM_CTX)!
 const d = ctx.localData
+
+const windowBindingTitle = computed(() => ctx.defaultClientWindowBinding.value?.window_title ?? null)
 
 function update() { ctx.emitUpdate() }
 </script>
@@ -41,4 +46,6 @@ function update() { ctx.emitUpdate() }
 .marker-menu-type { display: inline-block; font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-right: 6px; font-weight: 600; }
 .type-point { background: #111d2c; color: #1890ff; }
 .type-box { background: #2b2111; color: #faad14; }
+.window-binding-hint { font-size: 11px; color: #3d6b8a; margin-top: 4px; display: flex; align-items: center; gap: 5px; }
+.window-tag { background: #0a2433; color: #40a9ff; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 600; flex-shrink: 0; }
 </style>

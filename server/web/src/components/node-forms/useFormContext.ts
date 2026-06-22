@@ -1,4 +1,5 @@
 import type { InjectionKey, Ref, ComputedRef } from 'vue'
+import type { WindowBinding } from '@/services/api'
 
 export interface ContextField {
   name: string
@@ -15,6 +16,7 @@ export interface FormContext {
   otherScripts: ComputedRef<any[]>
   availableGlobalVars: ComputedRef<string[]>
   serviceKeys: ComputedRef<any[]>
+  defaultClientWindowBinding: Ref<WindowBinding | null>
   emitUpdate: () => void
 }
 

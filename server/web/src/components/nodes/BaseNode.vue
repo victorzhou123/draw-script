@@ -17,13 +17,24 @@
         <CloseOutlined />
       </div>
     </a-tooltip>
+    <a-tooltip
+      v-else-if="statusBadge === 'warning'"
+      placement="topRight"
+      :title="nodeWarningText"
+      :overlay-inner-style="{ fontSize: '12px', maxWidth: '320px', whiteSpace: 'pre-line', wordBreak: 'break-word' }"
+    >
+      <div class="status-badge status-warning">
+        <WarningOutlined />
+      </div>
+    </a-tooltip>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, inject, onMounted, onBeforeUnmount } from 'vue'
-import { CheckOutlined, CloseOutlined } from '@ant-design/icons-vue'
+import { CheckOutlined, CloseOutlined, WarningOutlined } from '@ant-design/icons-vue'
 import { useExecutionStore } from '@/stores/executionStore'
+import { useScriptStore } from '@/stores/scriptStore'
 import { ICON_MAP } from './index'
 
 const props = defineProps<{
@@ -34,6 +45,7 @@ const props = defineProps<{
 
 const getNode = inject<() => any>('getNode')
 const executionStore = useExecutionStore()
+const scriptStore = useScriptStore()
 
 const iconComp = computed(() => ICON_MAP[props.icon])
 
@@ -64,14 +76,25 @@ const isActive = computed(() => {
 const statusBadge = computed(() => {
   const node = getNode?.()
   if (!node) return null
-  return executionStore.nodeStatus[node.id] ?? null
+  const execStatus = executionStore.nodeStatus[node.id]
+  if (execStatus) return execStatus
+  const check = scriptStore.nodeCheckResults[node.id]
+  return check?.status ?? null
 })
 
 const nodeErrorText = computed(() => {
   const node = getNode?.()
   if (!node) return ''
   const logs = executionStore.nodeLogsFor(node.id)
-  return logs.map(l => l.replace(/^\s*ERROR:\s*/, '')).join('\n') || '执行错误'
+  if (logs.length > 0) return logs.map(l => l.replace(/^\s*ERROR:\s*/, '')).join('\n')
+  const check = scriptStore.nodeCheckResults[node.id]
+  return check?.message || '执行错误'
+})
+
+const nodeWarningText = computed(() => {
+  const node = getNode?.()
+  if (!node) return ''
+  return scriptStore.nodeCheckResults[node.id]?.message || ''
 })
 </script>
 
@@ -106,8 +129,9 @@ const nodeErrorText = computed(() => {
   border: 1.5px solid #141414;
   z-index: 2;
 }
-.status-badge.status-done  { background: #52c41a; }
-.status-badge.status-error { background: #ff4d4f; }
+.status-badge.status-done    { background: #52c41a; }
+.status-badge.status-error   { background: #ff4d4f; }
+.status-badge.status-warning { background: #faad14; }
 .draw-node:not(.node-type-condition):hover { box-shadow: 0 0 0 2px rgba(255,255,255,0.1); }
 .draw-node.node-active:not(.node-type-condition) {
   border-color: #52c41a;

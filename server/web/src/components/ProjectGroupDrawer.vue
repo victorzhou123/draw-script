@@ -946,7 +946,7 @@ async function openMarkerPreview(markerName: string) {
   previewLoading.value = true
   try {
     const [screenshot, markerData] = await Promise.all([
-      api.captureClientScreenshot(capturePreviewClientId.value),
+      api.captureClientScreenshot(capturePreviewClientId.value, selectedId.value),
       api.getMarkerCaptureData(selectedId.value, capturePreviewClientId.value),
     ])
     previewScreenshot.value = screenshot
@@ -967,10 +967,10 @@ function onPreviewImgLoad() {
 }
 
 function markerAbsX(m: MarkerCaptureData) {
-  return (m.x ?? 0) + (m.window_x ?? 0)
+  return m.x ?? 0
 }
 function markerAbsY(m: MarkerCaptureData) {
-  return (m.y ?? 0) + (m.window_y ?? 0)
+  return m.y ?? 0
 }
 function pointOverlayStyle(m: MarkerCaptureData) {
   return {

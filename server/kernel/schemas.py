@@ -61,6 +61,7 @@ class TemplateResponse(BaseModel):
     filename: str
     source_w: int | None = None
     source_h: int | None = None
+    window_title: str | None = None
     created_at: datetime
 
     class Config:
@@ -111,6 +112,12 @@ class ScriptUpdate(BaseModel):
     default_client_id: str | None = None
 
 
+class NodeCheckResult(BaseModel):
+    node_id: str
+    status: str  # "ok" | "warning" | "error"
+    message: str = ""
+
+
 class ScriptResponse(BaseModel):
     id: str
     name: str
@@ -120,6 +127,7 @@ class ScriptResponse(BaseModel):
     default_client_id: str | None
     created_at: datetime
     updated_at: datetime
+    checks: list[NodeCheckResult] = []
 
     class Config:
         from_attributes = True

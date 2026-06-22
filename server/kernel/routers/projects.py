@@ -205,6 +205,9 @@ async def get_marker_capture_data(
 ):
     """Return per-marker coordinates for one client (for annotation preview)."""
     rows = await _query_marker_captures(project_id, client_id, db)
+    pcw = await db.get(ProjectClientWindow, (project_id, client_id))
+    win_w = pcw.window_w if pcw else None
+    win_h = pcw.window_h if pcw else None
     return [
         {
             "id": marker.id,
@@ -215,10 +218,10 @@ async def get_marker_capture_data(
             "y": capture.y if capture else None,
             "w": capture.w if capture else None,
             "h": capture.h if capture else None,
-            "window_x": capture.window_x if capture else None,
-            "window_y": capture.window_y if capture else None,
-            "window_w": capture.window_w if capture else None,
-            "window_h": capture.window_h if capture else None,
+            "window_x": 0,
+            "window_y": 0,
+            "window_w": win_w,
+            "window_h": win_h,
         }
         for marker, capture in rows
     ]
@@ -611,6 +614,7 @@ async def _await_and_save_template(
         image_bytes = _b64.b64decode(result["image_b64"])
         window_w = result.get("window_w")
         window_h = result.get("window_h")
+        window_title = result.get("window_title")
 
         template_id = str(uuid.uuid4())
         filename = f"{template_id}.png"
@@ -622,6 +626,7 @@ async def _await_and_save_template(
             tpl = Template(
                 id=template_id, project_id=project_id, name=name,
                 filename=filename, source_w=window_w, source_h=window_h,
+                window_title=window_title,
             )
             db.add(tpl)
             await db.commit()
@@ -701,6 +706,7 @@ async def _await_and_update_template(
         image_bytes = _b64.b64decode(result["image_b64"])
         window_w = result.get("window_w")
         window_h = result.get("window_h")
+        window_title = result.get("window_title")
 
         async with AsyncSessionLocal() as db:
             tpl = await db.get(Template, template_id)
@@ -722,6 +728,7 @@ async def _await_and_update_template(
             tpl.name = name
             tpl.source_w = window_w
             tpl.source_h = window_h
+            tpl.window_title = window_title
             await db.commit()
 
         await ui_ws_manager.broadcast_event("template_capture_done", {

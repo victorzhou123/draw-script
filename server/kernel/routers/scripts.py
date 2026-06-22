@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from database import Execution, Marker, MarkerCapture, Script, get_session
+from database import Execution, Marker, MarkerCapture, ProjectClientWindow, Script, get_session
 from dependencies import get_engine
 from schemas import DebugNodeRequest, ExecutionResponse, RunScriptRequest, ScriptCreate, ScriptResponse, ScriptUpdate
 from ws_manager import client_ws_manager
@@ -55,7 +55,7 @@ async def get_script(script_id: str, db: AsyncSession = Depends(get_session)):
     return script
 
 
-@router.put("/{script_id}", response_model=ScriptResponse)
+@router.put("/{script_id}")
 async def update_script(script_id: str, body: ScriptUpdate, db: AsyncSession = Depends(get_session)):
     script = await db.get(Script, script_id)
     if not script:
@@ -65,7 +65,22 @@ async def update_script(script_id: str, body: ScriptUpdate, db: AsyncSession = D
     script.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(script)
-    return script
+
+    checks: list[dict] = []
+    if body.flow_json is not None:
+        from engine.static_check import run_flow_checks
+        results = await run_flow_checks(
+            body.flow_json,
+            script.project_id,
+            script.default_client_id,
+            db,
+        )
+        checks = [{"node_id": r.node_id, "status": r.status, "message": r.message} for r in results]
+
+    from schemas import ScriptResponse, NodeCheckResult
+    resp = ScriptResponse.model_validate(script)
+    resp.checks = [NodeCheckResult(**c) for c in checks]
+    return resp
 
 
 @router.delete("/{script_id}")
@@ -104,28 +119,18 @@ async def run_script(
     await db.refresh(execution)
 
     # restore the bound window once before execution starts
-    _cap_result = await db.execute(
-        select(MarkerCapture)
-        .join(Marker, MarkerCapture.marker_id == Marker.id)
-        .where(
-            Marker.project_id == script.project_id,
-            MarkerCapture.client_id == body.client_id,
-            MarkerCapture.window_title.isnot(None),
-            MarkerCapture.window_w.isnot(None),
-        )
-        .limit(1)
-    )
-    _cap = _cap_result.scalar_one_or_none()
-    if _cap:
-        await client_ws_manager.send_to_client(body.client_id, {
-            "type": "restore_window",
-            "title": _cap.window_title,
-            "process": _cap.window_process or "",
-            "x": _cap.window_x or 0,
-            "y": _cap.window_y or 0,
-            "w": _cap.window_w,
-            "h": _cap.window_h,
-        })
+    if script.project_id:
+        _pcw = await db.get(ProjectClientWindow, (script.project_id, body.client_id))
+        if _pcw and _pcw.window_title and _pcw.window_w:
+            await client_ws_manager.send_to_client(body.client_id, {
+                "type": "restore_window",
+                "title": _pcw.window_title,
+                "process": _pcw.window_process or "",
+                "x": _pcw.window_x or 0,
+                "y": _pcw.window_y or 0,
+                "w": _pcw.window_w,
+                "h": _pcw.window_h,
+            })
 
     logger.debug(
         f"run_script request: script_id={script_id} client_id={body.client_id} "

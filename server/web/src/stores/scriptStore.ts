@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, type Script } from '@/services/api'
+import { api, type Script, type NodeCheckResult } from '@/services/api'
 
 export const useScriptStore = defineStore('script', () => {
   const scripts = ref<Script[]>([])
   const currentScript = ref<Script | null>(null)
   const loading = ref(false)
+  const nodeCheckResults = ref<Record<string, NodeCheckResult>>({})
 
   async function fetchScripts() {
     loading.value = true
@@ -37,6 +38,13 @@ export const useScriptStore = defineStore('script', () => {
     currentScript.value = updated
     const idx = scripts.value.findIndex(s => s.id === updated.id)
     if (idx !== -1) scripts.value[idx] = updated
+
+    const checks: NodeCheckResult[] = updated.checks ?? []
+    const byNode: Record<string, NodeCheckResult> = {}
+    for (const c of checks) byNode[c.node_id] = c
+    nodeCheckResults.value = byNode
+
+    return checks
   }
 
   async function deleteScript(id: string) {
@@ -73,5 +81,5 @@ export const useScriptStore = defineStore('script', () => {
     return copy
   }
 
-  return { scripts, currentScript, loading, fetchScripts, selectScript, createScript, saveScript, deleteScript, duplicateScript, renameScript, setDefaultClient }
+  return { scripts, currentScript, loading, nodeCheckResults, fetchScripts, selectScript, createScript, saveScript, deleteScript, duplicateScript, renameScript, setDefaultClient }
 })

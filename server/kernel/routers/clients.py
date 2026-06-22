@@ -72,20 +72,36 @@ async def stop_client_execution(client_id: str, request: Request, db: AsyncSessi
 
 
 @router.post("/{client_id}/screenshot")
-async def capture_client_screenshot(client_id: str):
-    """Request a screenshot from a connected client and return it as base64."""
+async def capture_client_screenshot(
+    client_id: str,
+    project_id: str | None = None,
+    db: AsyncSession = Depends(get_session),
+):
+    """Request a screenshot from a connected client and return it as base64.
+
+    If project_id is provided the client will screenshot only the window area
+    bound to that project, instead of the full screen.
+    """
     if not client_ws_manager.is_connected(client_id):
         raise HTTPException(400, f"Client {client_id} is not connected")
 
-    request_id = str(uuid.uuid4())
+    msg: dict = {"type": "capture_screenshot", "request_id": str(uuid.uuid4())}
+
+    if project_id:
+        from database import ProjectClientWindow
+        pcw = await db.get(ProjectClientWindow, (project_id, client_id))
+        if pcw and pcw.window_title:
+            msg["params"] = {
+                "window_title":   pcw.window_title,
+                "window_process": pcw.window_process or "",
+            }
+
+    request_id = msg["request_id"]
     loop = asyncio.get_running_loop()
     future: asyncio.Future = loop.create_future()
     client_ws_manager.pending_requests[request_id] = future
 
-    sent = await client_ws_manager.send_to_client(client_id, {
-        "type": "capture_screenshot",
-        "request_id": request_id,
-    })
+    sent = await client_ws_manager.send_to_client(client_id, msg)
     if not sent:
         client_ws_manager.pending_requests.pop(request_id, None)
         raise HTTPException(500, "Failed to send screenshot request to client")

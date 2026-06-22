@@ -127,6 +127,7 @@ class Template(Base):
     filename: Mapped[str] = mapped_column(String, nullable=False)
     source_w: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_h: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    window_title: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -254,9 +255,9 @@ async def init_db() -> None:
                 await conn.execute(text(f"ALTER TABLE app_logs ADD COLUMN {col} {coltype}"))
             except Exception:
                 pass
-        # templates source dimensions (added for window-size-aware template scaling)
+        # templates source dimensions + window title
         for col, coltype in [
-            ("source_w", "INTEGER"), ("source_h", "INTEGER"),
+            ("source_w", "INTEGER"), ("source_h", "INTEGER"), ("window_title", "TEXT"),
         ]:
             try:
                 await conn.execute(text(f"ALTER TABLE templates ADD COLUMN {col} {coltype}"))

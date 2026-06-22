@@ -223,11 +223,12 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
         request_id = msg.get("request_id")
         if request_id:
             client_ws_manager.resolve_pending(request_id, {
-                "success":   msg.get("success", False),
-                "image_b64": msg.get("image_b64"),
-                "window_w":  msg.get("window_w"),
-                "window_h":  msg.get("window_h"),
-                "error":     msg.get("error"),
+                "success":      msg.get("success", False),
+                "image_b64":    msg.get("image_b64"),
+                "window_w":     msg.get("window_w"),
+                "window_h":     msg.get("window_h"),
+                "window_title": msg.get("window_title"),
+                "error":        msg.get("error"),
             })
 
     elif msg_type == "error":

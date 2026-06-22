@@ -5,6 +5,12 @@ const http = axios.create({
   timeout: 15000,
 })
 
+export interface NodeCheckResult {
+  node_id: string
+  status: string  // "ok" | "warning" | "error"
+  message: string
+}
+
 export interface Script {
   id: string
   name: string
@@ -14,6 +20,7 @@ export interface Script {
   default_client_id: string | null
   created_at: string
   updated_at: string
+  checks?: NodeCheckResult[]
 }
 
 export interface Client {
@@ -81,6 +88,7 @@ export interface Template {
   filename: string
   source_w: number | null
   source_h: number | null
+  window_title: string | null
   created_at: string
 }
 
@@ -194,8 +202,8 @@ export const api = {
     http.get<MarkerCapture[]>(`/projects/${projectId}/markers/captures`, { params: { client_id: clientId } }).then(r => r.data),
   getMarkerCaptureData: (projectId: string, clientId: string) =>
     http.get<MarkerCaptureData[]>(`/projects/${projectId}/markers/captures/data`, { params: { client_id: clientId } }).then(r => r.data),
-  captureClientScreenshot: (clientId: string) =>
-    http.post<{ data: string }>(`/clients/${clientId}/screenshot`).then(r => r.data.data),
+  captureClientScreenshot: (clientId: string, projectId?: string) =>
+    http.post<{ data: string }>(`/clients/${clientId}/screenshot`, null, { params: projectId ? { project_id: projectId } : undefined }).then(r => r.data.data),
   getWindowBinding: (projectId: string, clientId: string) =>
     http.get<WindowBinding>(`/projects/${projectId}/window-binding`, { params: { client_id: clientId } })
       .then(r => r.data)

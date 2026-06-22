@@ -135,6 +135,7 @@ import { useExecutionStore } from '@/stores/executionStore'
 import { useServiceKeyStore } from '@/stores/serviceKeyStore'
 import { analyzeContextAtNode, analyzeContextEvolution } from '@/utils/contextAnalysis'
 import { FORM_CTX } from './node-forms/useFormContext'
+import { api, type WindowBinding } from '@/services/api'
 import ActionForm from './node-forms/ActionForm.vue'
 import VisionForm from './node-forms/VisionForm.vue'
 import ConditionForm from './node-forms/ConditionForm.vue'
@@ -289,6 +290,21 @@ const aiModels = computed(() => modelStore.enabledAIModels)
 const otherScripts = computed(() => scriptStore.scripts.filter(s => s.id !== scriptStore.currentScript?.id))
 const serviceKeys = computed(() => serviceKeyStore.keys)
 
+const defaultClientWindowBinding = ref<WindowBinding | null>(null)
+
+async function fetchWindowBinding() {
+  const pid = scriptStore.currentScript?.project_id
+  const cid = scriptStore.currentScript?.default_client_id
+  if (!pid || !cid) { defaultClientWindowBinding.value = null; return }
+  defaultClientWindowBinding.value = await api.getWindowBinding(pid, cid)
+}
+
+watch(
+  () => [scriptStore.currentScript?.project_id, scriptStore.currentScript?.default_client_id],
+  () => fetchWindowBinding(),
+  { immediate: true },
+)
+
 const nodeType = computed(() => localData.value.type || '')
 const nodeLabel = computed(() => {
   const map: Record<string, string> = {
@@ -314,6 +330,7 @@ provide(FORM_CTX, {
   otherScripts,
   availableGlobalVars,
   serviceKeys,
+  defaultClientWindowBinding,
   emitUpdate,
 })
 

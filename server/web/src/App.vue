@@ -144,7 +144,18 @@ function triggerAutoSave() {
   saveTimer = setTimeout(async () => {
     saveStatus.value = 'saving'
     const json = graphEditor.value?.getJSON()
-    if (json) await scriptStore.saveScript(json)
+    if (json) {
+      const checks = await scriptStore.saveScript(json)
+      if (checks && checks.length > 0) {
+        const warnings = checks.filter(c => c.status === 'warning')
+        const errors = checks.filter(c => c.status === 'error')
+        if (errors.length > 0) {
+          message.error({ content: errors.map(c => c.message).join('\n'), duration: 5 })
+        } else if (warnings.length > 0) {
+          message.warning({ content: warnings.map(c => c.message).join('\n'), duration: 5 })
+        }
+      }
+    }
     saveStatus.value = 'saved'
     setTimeout(() => { if (saveStatus.value === 'saved') saveStatus.value = '' }, 2000)
   }, 800)
