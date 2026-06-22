@@ -59,6 +59,8 @@ class TemplateResponse(BaseModel):
     project_id: str
     name: str
     filename: str
+    source_w: int | None = None
+    source_h: int | None = None
     created_at: datetime
 
     class Config:

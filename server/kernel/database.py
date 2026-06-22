@@ -125,6 +125,8 @@ class Template(Base):
     project_id: Mapped[str] = mapped_column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     filename: Mapped[str] = mapped_column(String, nullable=False)
+    source_w: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_h: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -235,6 +237,14 @@ async def init_db() -> None:
         ]:
             try:
                 await conn.execute(text(f"ALTER TABLE app_logs ADD COLUMN {col} {coltype}"))
+            except Exception:
+                pass
+        # templates source dimensions (added for window-size-aware template scaling)
+        for col, coltype in [
+            ("source_w", "INTEGER"), ("source_h", "INTEGER"),
+        ]:
+            try:
+                await conn.execute(text(f"ALTER TABLE templates ADD COLUMN {col} {coltype}"))
             except Exception:
                 pass
         # service_api_keys is created via metadata.create_all above;
