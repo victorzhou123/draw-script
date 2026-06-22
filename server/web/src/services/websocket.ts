@@ -1,3 +1,4 @@
+import { message } from 'ant-design-vue'
 import { useClientStore } from '@/stores/clientStore'
 import { useExecutionStore } from '@/stores/executionStore'
 import { useScriptStore } from '@/stores/scriptStore'
@@ -114,6 +115,11 @@ class UIWebSocket {
           )
         }
         break
+      case 'window_resize_applied': {
+        const scaled = msg.scaled as number
+        message.success(`窗口大小已调整，${scaled} 个标注坐标已自动缩放`)
+        break
+      }
     }
   }
 

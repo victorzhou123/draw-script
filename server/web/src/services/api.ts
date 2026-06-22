@@ -170,6 +170,8 @@ export const api = {
     }).then(r => r.data),
   restoreWindow: (projectId: string, clientId: string) =>
     http.post(`/projects/${projectId}/markers/restore-window`, { client_id: clientId }).then(r => r.data),
+  resizeWindowInteractive: (projectId: string, clientId: string) =>
+    http.post(`/projects/${projectId}/markers/resize-window-interactive`, { client_id: clientId }).then(r => r.data),
 
   // Templates
   getTemplates: (projectId: string) =>

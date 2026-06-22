@@ -349,6 +349,12 @@ def _overlay_mainloop() -> None:
                         except Exception:
                             res = ("cancel", None)
                         cmd["_result"].put(res)
+                    elif cmd["action"] == "resize_modal":
+                        try:
+                            res = _run_resize_window_modal(root, **cmd["kwargs"])
+                        except Exception:
+                            res = None
+                        cmd["_result"].put(res)
                     elif cmd["action"] == "quit":
                         root.quit()
                         return
@@ -360,6 +366,124 @@ def _overlay_mainloop() -> None:
         root.mainloop()
     except Exception:
         pass
+
+
+def _run_resize_window_modal(
+    root,
+    window_title: str,
+    window_process: str,
+    old_w: int,
+    old_h: int,
+) -> tuple[int, int] | None:
+    """Small floating dialog: user resizes target window, then confirms."""
+    import tkinter as tk
+
+    result = [None]
+
+    dialog = tk.Toplevel(root)
+    dialog.title("自定义窗口大小")
+    dialog.attributes("-topmost", True)
+    dialog.configure(bg="#1a1a2e")
+    dialog.resizable(False, False)
+
+    sw = root.winfo_screenwidth()
+    sh = root.winfo_screenheight()
+    ww, wh = 400, 210
+    dialog.geometry(f"{ww}x{wh}+{(sw - ww) // 2}+{sh - wh - 80}")
+
+    tk.Label(
+        dialog, text="调整目标窗口大小",
+        bg="#1a1a2e", fg="#d9d9d9",
+        font=("Microsoft YaHei UI", 12, "bold"),
+    ).pack(pady=(18, 4))
+
+    short_title = window_title[:45] + "…" if len(window_title) > 45 else window_title
+    tk.Label(
+        dialog, text=f"窗口: {short_title}",
+        bg="#1a1a2e", fg="#666",
+        font=("Microsoft YaHei UI", 9),
+        wraplength=370,
+    ).pack(pady=(0, 6))
+
+    tk.Label(
+        dialog, text="请手动拖拽窗口边缘调整大小，完成后点击确认",
+        bg="#1a1a2e", fg="#888",
+        font=("Microsoft YaHei UI", 9),
+    ).pack(pady=(0, 6))
+
+    size_var = tk.StringVar(value=f"当前大小: {old_w} × {old_h}")
+    size_label = tk.Label(
+        dialog, textvariable=size_var,
+        bg="#1a1a2e", fg="#1890ff",
+        font=("Consolas", 11, "bold"),
+    )
+    size_label.pack(pady=(0, 14))
+
+    def _poll_size():
+        if not dialog.winfo_exists():
+            return
+        win = _find_window(window_title, window_process)
+        if win:
+            size_var.set(f"当前大小: {win['w']} × {win['h']}")
+        dialog.after(200, _poll_size)
+
+    dialog.after(200, _poll_size)
+
+    btn_frame = tk.Frame(dialog, bg="#1a1a2e")
+    btn_frame.pack()
+
+    def _confirm():
+        win = _find_window(window_title, window_process)
+        result[0] = (win["w"], win["h"]) if win else None
+        dialog.destroy()
+
+    def _cancel():
+        dialog.destroy()
+
+    tk.Button(
+        btn_frame, text="确认 (Enter)",
+        command=_confirm,
+        bg="#1d6b3e", fg="white",
+        font=("Microsoft YaHei UI", 10, "bold"),
+        relief="flat", cursor="hand2", padx=20, pady=5,
+    ).pack(side="left", padx=8)
+
+    tk.Button(
+        btn_frame, text="取消 (ESC)",
+        command=_cancel,
+        bg="#2a2a2a", fg="#888",
+        font=("Microsoft YaHei UI", 10),
+        relief="flat", cursor="hand2", padx=20, pady=5,
+    ).pack(side="left", padx=8)
+
+    dialog.bind("<Return>", lambda e: _confirm())
+    dialog.bind("<Escape>", lambda e: _cancel())
+
+    dialog.deiconify()
+    dialog.focus_force()
+    root.wait_window(dialog)
+    return result[0]
+
+
+def _show_resize_window_dialog(
+    window_title: str,
+    window_process: str,
+    old_w: int,
+    old_h: int,
+) -> tuple[int, int] | None:
+    _ensure_overlay_thread()
+    result_q: _queue.Queue = _queue.Queue()
+    _overlay_queue.put({
+        "action": "resize_modal",
+        "kwargs": {
+            "window_title": window_title,
+            "window_process": window_process,
+            "old_w": old_w,
+            "old_h": old_h,
+        },
+        "_result": result_q,
+    })
+    return result_q.get()
 
 
 def _dismiss_all_overlays() -> None:
@@ -976,13 +1100,14 @@ class CommandHandler:
     def __init__(self, send_fn: Callable):
         self._send = send_fn
         self._handlers: dict[str, Callable] = {
-            "capture_screenshot": self.handle_capture_screenshot,
-            "execute_node":       self.handle_execute_node,
-            "set_markers":        self.handle_set_markers,
-            "restore_window":     self.handle_restore_window,
-            "stop":               self.handle_stop,
-            "get_status":         self.handle_get_status,
-            "compute_node":       self.handle_compute_node,
+            "capture_screenshot":         self.handle_capture_screenshot,
+            "execute_node":               self.handle_execute_node,
+            "set_markers":                self.handle_set_markers,
+            "restore_window":             self.handle_restore_window,
+            "resize_window_interactive":  self.handle_resize_window_interactive,
+            "stop":                       self.handle_stop,
+            "get_status":                 self.handle_get_status,
+            "compute_node":               self.handle_compute_node,
         }
         self._stop_flag = False
         self._active_tasks = 0
@@ -1046,6 +1171,38 @@ class CommandHandler:
             logger.info(f"restore_window: moved '{title}' to ({x},{y}) size {w}×{h}")
         except Exception as e:
             logger.error(f"restore_window: MoveWindow failed: {e}")
+
+    async def handle_resize_window_interactive(self, msg: dict) -> None:
+        project_id     = msg.get("project_id", "")
+        window_title   = msg.get("window_title", "")
+        window_process = msg.get("window_process", "")
+        old_w          = int(msg.get("window_w") or 0)
+        old_h          = int(msg.get("window_h") or 0)
+
+        if not window_title:
+            logger.warning("resize_window_interactive: missing window_title")
+            return
+
+        logger.info(f"resize_window_interactive: '{window_title}' current {old_w}×{old_h}")
+        result = await _run_blocking(
+            _show_resize_window_dialog,
+            window_title, window_process, old_w, old_h,
+        )
+
+        if result is None:
+            logger.info("resize_window_interactive: cancelled by user")
+            return
+
+        new_w, new_h = result
+        logger.info(f"resize_window_interactive: new size {new_w}×{new_h}")
+        await self._send({
+            "type":           "window_resized",
+            "project_id":     project_id,
+            "window_title":   window_title,
+            "window_process": window_process,
+            "new_w":          new_w,
+            "new_h":          new_h,
+        })
 
     async def handle_capture_screenshot(self, msg: dict) -> None:
         request_id = msg.get("request_id")

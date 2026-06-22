@@ -206,13 +206,23 @@
                     @click="refreshCaptureStatus"
                     title="刷新标注状态"
                   ><ReloadOutlined /></a-button>
+                </div>
+                <div class="window-ctrl-row">
                   <a-tooltip title="还原窗口到标注时的位置和大小">
                     <a-button
-                      size="small" class="icon-btn"
+                      size="small" class="icon-btn window-ctrl-btn"
                       :disabled="!capturePreviewClientId"
                       :loading="restoringWindow"
                       @click="restoreWindow"
                     >还原窗口</a-button>
+                  </a-tooltip>
+                  <a-tooltip title="在客户端调整窗口大小，标注坐标自动按比例缩放">
+                    <a-button
+                      size="small" class="icon-btn resize-window-btn"
+                      :disabled="!capturePreviewClientId"
+                      :loading="resizingWindow"
+                      @click="resizeWindowInteractive"
+                    >自定义大小</a-button>
                   </a-tooltip>
                 </div>
                 <div v-if="projectClientIds.length === 0" class="empty-hint">暂无客户端</div>
@@ -449,6 +459,7 @@ const sendResult = ref<{ ok: boolean; text: string } | null>(null)
 // Marker capture status preview
 const capturePreviewClientId = ref<string | null>(null)
 const restoringWindow = ref(false)
+const resizingWindow = ref(false)
 const markerCaptureMap = ref<Record<string, boolean>>({})  // name → captured
 const selectedMarkerNames = ref<Set<string>>(new Set())
 const refreshingCaptures = ref(false)
@@ -538,6 +549,19 @@ async function restoreWindow() {
     message.error(e?.response?.data?.detail ?? '还原失败')
   } finally {
     restoringWindow.value = false
+  }
+}
+
+async function resizeWindowInteractive() {
+  if (!capturePreviewClientId.value || !selectedId.value) return
+  resizingWindow.value = true
+  try {
+    await api.resizeWindowInteractive(selectedId.value, capturePreviewClientId.value)
+    message.info('已发送指令，请在客户端调整窗口大小后确认')
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail ?? '发送失败')
+  } finally {
+    resizingWindow.value = false
   }
 }
 
@@ -926,6 +950,10 @@ watch(currentMarkers, (markers) => {
 .subsection-title { font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 5px; }
 .preview-client-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .preview-label { font-size: 11px; color: #555; flex-shrink: 0; }
+.window-ctrl-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.window-ctrl-btn { color: #888 !important; }
+.resize-window-btn { color: #fa8c16 !important; border-color: transparent !important; }
+.resize-window-btn:hover:not(:disabled) { color: #ffa940 !important; background: #2b1b07 !important; }
 .send-client-row { padding: 4px 0; }
 .send-result { margin-top: 8px; font-size: 12px; padding: 5px 10px; border-radius: 4px; }
 .send-result.ok  { color: #52c41a; background: #162312; border: 1px solid #52c41a33; }

@@ -266,6 +266,47 @@ async def restore_window(
     return {"ok": True}
 
 
+# ── Resize window interactive ─────────────────────────────────────────────────
+
+class ResizeWindowInteractiveRequest(BaseModel):
+    client_id: str
+
+
+@router.post("/{project_id}/markers/resize-window-interactive")
+async def resize_window_interactive(
+    project_id: str,
+    body: ResizeWindowInteractiveRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    result = await db.execute(
+        select(MarkerCapture)
+        .join(Marker, MarkerCapture.marker_id == Marker.id)
+        .where(
+            Marker.project_id == project_id,
+            MarkerCapture.client_id == body.client_id,
+            MarkerCapture.window_title.isnot(None),
+            MarkerCapture.window_w.isnot(None),
+        )
+        .limit(1)
+    )
+    cap = result.scalar_one_or_none()
+    if not cap:
+        raise HTTPException(400, "No window info recorded for this client — please annotate markers first")
+
+    from ws_manager import client_ws_manager
+    sent = await client_ws_manager.send_to_client(body.client_id, {
+        "type":           "resize_window_interactive",
+        "project_id":     project_id,
+        "window_title":   cap.window_title,
+        "window_process": cap.window_process or "",
+        "window_w":       cap.window_w,
+        "window_h":       cap.window_h,
+    })
+    if not sent:
+        raise HTTPException(400, f"Client {body.client_id} is not connected")
+    return {"ok": True}
+
+
 # ── Templates ─────────────────────────────────────────────────────────────────
 
 @router.get("/{project_id}/templates", response_model=list[TemplateResponse])

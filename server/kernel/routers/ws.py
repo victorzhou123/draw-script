@@ -134,6 +134,56 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
             "count": count,
         })
 
+    elif msg_type == "window_resized":
+        project_id     = msg.get("project_id")
+        window_title   = msg.get("window_title")
+        new_w          = msg.get("new_w")
+        new_h          = msg.get("new_h")
+
+        if project_id and window_title and new_w and new_h:
+            from database import Marker, MarkerCapture
+            from sqlalchemy import select
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(MarkerCapture)
+                    .join(Marker, MarkerCapture.marker_id == Marker.id)
+                    .where(
+                        Marker.project_id == project_id,
+                        MarkerCapture.client_id == client_id,
+                        MarkerCapture.x.isnot(None),
+                    )
+                )
+                captures = result.scalars().all()
+                scaled = 0
+                for cap in captures:
+                    old_w = cap.window_w
+                    old_h = cap.window_h
+                    if not old_w or not old_h or old_w <= 0 or old_h <= 0:
+                        continue
+                    if cap.x is not None:
+                        cap.x = round(cap.x * new_w / old_w)
+                    if cap.y is not None:
+                        cap.y = round(cap.y * new_h / old_h)
+                    if cap.w is not None:
+                        cap.w = round(cap.w * new_w / old_w)
+                    if cap.h is not None:
+                        cap.h = round(cap.h * new_h / old_h)
+                    cap.window_w = new_w
+                    cap.window_h = new_h
+                    scaled += 1
+                await db.commit()
+            logger.info(
+                f"window_resized: scaled {scaled} captures for client {client_id} "
+                f"/ project {project_id} to {new_w}×{new_h}"
+            )
+            await ui_ws_manager.broadcast_event("window_resize_applied", {
+                "client_id":  client_id,
+                "project_id": project_id,
+                "new_w":      new_w,
+                "new_h":      new_h,
+                "scaled":     scaled,
+            })
+
     elif msg_type == "error":
         logger.warning(f"Client {client_id} error: {msg.get('message')}")
 
