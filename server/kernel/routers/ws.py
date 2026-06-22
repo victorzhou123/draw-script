@@ -82,22 +82,44 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
         window = msg.get("window")  # {title, process, x, y, w, h} or None
 
         if project_id and markers:
-            from database import Marker, MarkerCapture
+            from database import Marker, MarkerCapture, ProjectClientWindow
             from sqlalchemy import select
             async with AsyncSessionLocal() as db:
+                # Upsert per-client window binding (canonical source)
+                if window and window.get("title") and window.get("w") and window.get("h"):
+                    pcw = await db.get(ProjectClientWindow, (project_id, client_id))
+                    if pcw:
+                        pcw.window_title = window["title"]
+                        pcw.window_process = window.get("process")
+                        pcw.window_x = window.get("x")
+                        pcw.window_y = window.get("y")
+                        pcw.window_w = window["w"]
+                        pcw.window_h = window["h"]
+                        pcw.updated_at = datetime.now(timezone.utc)
+                    else:
+                        db.add(ProjectClientWindow(
+                            project_id=project_id,
+                            client_id=client_id,
+                            window_title=window["title"],
+                            window_process=window.get("process"),
+                            window_x=window.get("x"),
+                            window_y=window.get("y"),
+                            window_w=window["w"],
+                            window_h=window["h"],
+                        ))
+
+                # Upsert marker coordinates (no longer storing window_* per capture)
                 for m in markers:
                     name = m.get("name")
                     x, y = m.get("x"), m.get("y")
                     if not name or x is None or y is None:
                         continue
-                    # Look up marker definition
                     result = await db.execute(
                         select(Marker).where(Marker.project_id == project_id, Marker.name == name)
                     )
                     marker_row = result.scalar_one_or_none()
                     if not marker_row:
                         continue
-                    # Upsert: one capture row per (marker_id, client_id)
                     cap_result = await db.execute(
                         select(MarkerCapture).where(
                             MarkerCapture.marker_id == marker_row.id,
@@ -117,13 +139,6 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                             x=x, y=y, w=m.get("w"), h=m.get("h"),
                         )
                         db.add(capture)
-                    if window:
-                        capture.window_title = window.get("title")
-                        capture.window_process = window.get("process")
-                        capture.window_x = window.get("x")
-                        capture.window_y = window.get("y")
-                        capture.window_w = window.get("w")
-                        capture.window_h = window.get("h")
                 await db.commit()
             logger.info(f"Saved {len(markers)} captures for client {client_id} / project {project_id}")
 
@@ -143,9 +158,14 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
         new_y          = msg.get("new_y")
 
         if project_id and window_title and new_w and new_h:
-            from database import Marker, MarkerCapture
+            from database import Marker, MarkerCapture, ProjectClientWindow
             from sqlalchemy import select
             async with AsyncSessionLocal() as db:
+                # Read old window size from project_client_windows (canonical source)
+                pcw = await db.get(ProjectClientWindow, (project_id, client_id))
+                old_w = pcw.window_w if pcw else None
+                old_h = pcw.window_h if pcw else None
+
                 result = await db.execute(
                     select(MarkerCapture)
                     .join(Marker, MarkerCapture.marker_id == Marker.id)
@@ -158,8 +178,6 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                 captures = result.scalars().all()
                 scaled = 0
                 for cap in captures:
-                    old_w = cap.window_w
-                    old_h = cap.window_h
                     if not old_w or not old_h or old_w <= 0 or old_h <= 0:
                         continue
                     if cap.x is not None:
@@ -170,13 +188,17 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                         cap.w = round(cap.w * new_w / old_w)
                     if cap.h is not None:
                         cap.h = round(cap.h * new_h / old_h)
-                    cap.window_w = new_w
-                    cap.window_h = new_h
-                    if new_x is not None:
-                        cap.window_x = new_x
-                    if new_y is not None:
-                        cap.window_y = new_y
                     scaled += 1
+
+                # Update canonical window binding
+                if pcw:
+                    pcw.window_w = new_w
+                    pcw.window_h = new_h
+                    if new_x is not None:
+                        pcw.window_x = new_x
+                    if new_y is not None:
+                        pcw.window_y = new_y
+                    pcw.updated_at = datetime.now(timezone.utc)
                 await db.commit()
             logger.info(
                 f"window_resized: scaled {scaled} captures for client {client_id} "

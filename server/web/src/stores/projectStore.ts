@@ -9,6 +9,13 @@ export const useProjectStore = defineStore('project', () => {
   const globalVars = ref<Record<string, GlobalVariable[]>>({})
   const loading = ref(false)
 
+  // Fires when a client reports markers_captured; watched by ProjectGroupDrawer
+  const captureNotification = ref<{ projectId: string; clientId: string } | null>(null)
+
+  function onMarkersCaptured(projectId: string, clientId: string) {
+    captureNotification.value = { projectId, clientId }
+  }
+
   async function fetchProjects() {
     loading.value = true
     try {
@@ -116,6 +123,7 @@ export const useProjectStore = defineStore('project', () => {
 
   return {
     projects, markers, templates, globalVars, loading,
+    captureNotification, onMarkersCaptured,
     fetchProjects, createProject, deleteProject,
     fetchMarkers, createMarker, deleteMarker, sendMarkers,
     fetchTemplates, uploadTemplate, renameTemplate, deleteTemplate, updateTemplateImage,

@@ -4,6 +4,8 @@ import { useExecutionStore } from '@/stores/executionStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { useScriptStore } from '@/stores/scriptStore'
 
+
+
 function isBoundClient(clientId: string | undefined): boolean {
   if (!clientId) return false
   const scriptStore = useScriptStore()
@@ -116,9 +118,16 @@ class UIWebSocket {
           )
         }
         break
+      case 'markers_captured': {
+        const projectStore = useProjectStore()
+        projectStore.onMarkersCaptured(msg.project_id as string, msg.client_id as string)
+        break
+      }
       case 'window_resize_applied': {
         const scaled = msg.scaled as number
         message.success(`窗口大小已调整，${scaled} 个标注坐标已自动缩放`)
+        const projectStore = useProjectStore()
+        projectStore.onMarkersCaptured(msg.project_id as string, msg.client_id as string)
         break
       }
       case 'template_capture_done': {

@@ -8,11 +8,11 @@ import asyncio
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from database import GlobalVariable, Marker, MarkerCapture, Project, ProjectClient, Script, Template, get_session
+from database import GlobalVariable, Marker, MarkerCapture, Project, ProjectClient, ProjectClientWindow, Script, Template, get_session
 from schemas import (
     GlobalVariableResponse, GlobalVariableUpsert,
     MarkerCreate, MarkerResponse,
@@ -236,31 +236,20 @@ async def restore_window(
     body: RestoreWindowRequest,
     db: AsyncSession = Depends(get_session),
 ):
-    result = await db.execute(
-        select(MarkerCapture)
-        .join(Marker, MarkerCapture.marker_id == Marker.id)
-        .where(
-            Marker.project_id == project_id,
-            MarkerCapture.client_id == body.client_id,
-            MarkerCapture.window_title.isnot(None),
-            MarkerCapture.window_w.isnot(None),
-        )
-        .limit(1)
-    )
-    cap = result.scalar_one_or_none()
-    if not cap:
+    pcw = await db.get(ProjectClientWindow, (project_id, body.client_id))
+    if not pcw:
         logger.warning(f"restore_window: no window info for client {body.client_id} in project {project_id}")
         raise HTTPException(400, "No window info recorded for this client")
 
     from ws_manager import client_ws_manager
     sent = await client_ws_manager.send_to_client(body.client_id, {
         "type": "restore_window",
-        "title": cap.window_title,
-        "process": cap.window_process or "",
-        "x": cap.window_x or 0,
-        "y": cap.window_y or 0,
-        "w": cap.window_w,
-        "h": cap.window_h,
+        "title": pcw.window_title,
+        "process": pcw.window_process or "",
+        "x": pcw.window_x or 0,
+        "y": pcw.window_y or 0,
+        "w": pcw.window_w,
+        "h": pcw.window_h,
     })
     if not sent:
         logger.warning(f"restore_window: client {body.client_id} is not connected")
@@ -268,12 +257,70 @@ async def restore_window(
     return {"ok": True}
 
 
+# ── Marker windows (distinct windows with captures across project clients) ────
+
+@router.get("/{project_id}/marker-windows")
+async def list_marker_windows(project_id: str, db: AsyncSession = Depends(get_session)):
+    """Return distinct window bindings (with capture counts) across all project clients."""
+    pc_result = await db.execute(
+        select(ProjectClient.client_id).where(ProjectClient.project_id == project_id)
+    )
+    project_client_ids = {row[0] for row in pc_result.all()}
+    if not project_client_ids:
+        return []
+
+    pcw_result = await db.execute(
+        select(ProjectClientWindow).where(
+            ProjectClientWindow.project_id == project_id,
+            ProjectClientWindow.client_id.in_(project_client_ids),
+        )
+    )
+    pcws = pcw_result.scalars().all()
+
+    # Group by (window_title, window_w, window_h)
+    window_map: dict[tuple, list[str]] = {}
+    for pcw in pcws:
+        key = (pcw.window_title, pcw.window_w, pcw.window_h)
+        window_map.setdefault(key, []).append(pcw.client_id)
+
+    marker_result = await db.execute(select(Marker).where(Marker.project_id == project_id))
+    marker_ids = [m.id for m in marker_result.scalars().all()]
+
+    result = []
+    for (title, w, h), client_ids in window_map.items():
+        if not marker_ids:
+            break
+        cap_count_result = await db.execute(
+            select(func.count()).select_from(MarkerCapture).where(
+                MarkerCapture.marker_id.in_(marker_ids),
+                MarkerCapture.client_id.in_(client_ids),
+                MarkerCapture.x.isnot(None),
+            )
+        )
+        if (cap_count_result.scalar() or 0) > 0:
+            result.append({
+                "window_title": title,
+                "window_w": w,
+                "window_h": h,
+                "client_count": len(client_ids),
+                "client_ids": client_ids,
+            })
+
+    return result
+
+
 # ── Copy captures between clients ────────────────────────────────────────────
 
 class CopyCapturesRequest(BaseModel):
-    source_client_id: str
+    # Window-based source (preferred): identify source by window binding
+    source_window_title: str | None = None
+    source_window_w: int | None = None
+    source_window_h: int | None = None
+    # Legacy fallback: explicit source client
+    source_client_id: str | None = None
     target_client_ids: list[str]
     mode: str = "overwrite"  # "overwrite" | "fill_missing"
+    auto_scale: bool = True
 
 
 @router.post("/{project_id}/markers/copy-captures")
@@ -291,24 +338,81 @@ async def copy_captures(
     markers = marker_result.scalars().all()
     if not markers:
         raise HTTPException(400, "Project has no markers")
-
     marker_ids = [m.id for m in markers]
 
+    # ── Resolve source client ──────────────────────────────────────────────
+    if body.source_window_title and body.source_window_w and body.source_window_h:
+        # Find all project clients bound to this window
+        pcw_result = await db.execute(
+            select(ProjectClientWindow).where(
+                ProjectClientWindow.project_id == project_id,
+                ProjectClientWindow.window_title == body.source_window_title,
+                ProjectClientWindow.window_w == body.source_window_w,
+                ProjectClientWindow.window_h == body.source_window_h,
+            )
+        )
+        window_client_ids = [pcw.client_id for pcw in pcw_result.scalars().all()]
+        if not window_client_ids:
+            raise HTTPException(400, "No clients found for the specified window")
+
+        # Pick the client with most captures
+        best_client_id, best_count = None, -1
+        for cid in window_client_ids:
+            cnt_result = await db.execute(
+                select(func.count()).select_from(MarkerCapture).where(
+                    MarkerCapture.marker_id.in_(marker_ids),
+                    MarkerCapture.client_id == cid,
+                    MarkerCapture.x.isnot(None),
+                )
+            )
+            cnt = cnt_result.scalar() or 0
+            if cnt > best_count:
+                best_count, best_client_id = cnt, cid
+
+        if not best_client_id or best_count == 0:
+            raise HTTPException(400, "No captures found for the specified window")
+
+        source_client_id = best_client_id
+        source_w: int | None = body.source_window_w
+        source_h: int | None = body.source_window_h
+    elif body.source_client_id:
+        source_client_id = body.source_client_id
+        # Look up source window for auto-scaling
+        if body.auto_scale:
+            src_pcw = await db.get(ProjectClientWindow, (project_id, source_client_id))
+            source_w = src_pcw.window_w if src_pcw else None
+            source_h = src_pcw.window_h if src_pcw else None
+        else:
+            source_w = source_h = None
+    else:
+        raise HTTPException(400, "Provide source_window_title/w/h or source_client_id")
+
+    # ── Load source captures ───────────────────────────────────────────────
     src_result = await db.execute(
         select(MarkerCapture).where(
             MarkerCapture.marker_id.in_(marker_ids),
-            MarkerCapture.client_id == body.source_client_id,
+            MarkerCapture.client_id == source_client_id,
             MarkerCapture.x.isnot(None),
         )
     )
     source_captures = src_result.scalars().all()
     if not source_captures:
-        raise HTTPException(400, "Source client has no captures for this project")
+        raise HTTPException(400, "Source has no captures for this project")
 
+    # ── Copy (with optional proportional scaling) ──────────────────────────
     copied = 0
     for target_id in body.target_client_ids:
-        if target_id == body.source_client_id:
+        if target_id == source_client_id:
             continue
+
+        # Compute scale factors for this target
+        sw, sh = 1.0, 1.0
+        if body.auto_scale and source_w and source_h:
+            target_pcw = await db.get(ProjectClientWindow, (project_id, target_id))
+            if target_pcw and target_pcw.window_w and target_pcw.window_h:
+                sw = target_pcw.window_w / source_w
+                sh = target_pcw.window_h / source_h
+
         for src in source_captures:
             existing_result = await db.execute(
                 select(MarkerCapture).where(
@@ -321,35 +425,28 @@ async def copy_captures(
             if body.mode == "fill_missing" and existing and existing.x is not None:
                 continue
 
+            scaled_x = round(src.x * sw) if src.x is not None else None
+            scaled_y = round(src.y * sh) if src.y is not None else None
+            scaled_w = round(src.w * sw) if src.w is not None else None
+            scaled_h = round(src.h * sh) if src.h is not None else None
+
             if existing:
-                existing.x = src.x
-                existing.y = src.y
-                existing.w = src.w
-                existing.h = src.h
-                existing.window_title = src.window_title
-                existing.window_process = src.window_process
-                existing.window_x = src.window_x
-                existing.window_y = src.window_y
-                existing.window_w = src.window_w
-                existing.window_h = src.window_h
+                existing.x = scaled_x
+                existing.y = scaled_y
+                existing.w = scaled_w
+                existing.h = scaled_h
                 existing.captured_at = datetime.now(timezone.utc)
             else:
                 db.add(MarkerCapture(
                     marker_id=src.marker_id,
                     client_id=target_id,
-                    x=src.x, y=src.y, w=src.w, h=src.h,
-                    window_title=src.window_title,
-                    window_process=src.window_process,
-                    window_x=src.window_x,
-                    window_y=src.window_y,
-                    window_w=src.window_w,
-                    window_h=src.window_h,
+                    x=scaled_x, y=scaled_y, w=scaled_w, h=scaled_h,
                 ))
             copied += 1
 
     await db.commit()
     logger.info(
-        f"copy_captures: {copied} captures copied from {body.source_client_id} "
+        f"copy_captures: {copied} captures from client {source_client_id} "
         f"to {body.target_client_ids} in project {project_id} (mode={body.mode})"
     )
     return {"ok": True, "copied": copied}
@@ -367,33 +464,42 @@ async def resize_window_interactive(
     body: ResizeWindowInteractiveRequest,
     db: AsyncSession = Depends(get_session),
 ):
-    result = await db.execute(
-        select(MarkerCapture)
-        .join(Marker, MarkerCapture.marker_id == Marker.id)
-        .where(
-            Marker.project_id == project_id,
-            MarkerCapture.client_id == body.client_id,
-            MarkerCapture.window_title.isnot(None),
-            MarkerCapture.window_w.isnot(None),
-        )
-        .limit(1)
-    )
-    cap = result.scalar_one_or_none()
-    if not cap:
+    pcw = await db.get(ProjectClientWindow, (project_id, body.client_id))
+    if not pcw:
         raise HTTPException(400, "No window info recorded for this client — please annotate markers first")
 
     from ws_manager import client_ws_manager
     sent = await client_ws_manager.send_to_client(body.client_id, {
         "type":           "resize_window_interactive",
         "project_id":     project_id,
-        "window_title":   cap.window_title,
-        "window_process": cap.window_process or "",
-        "window_w":       cap.window_w,
-        "window_h":       cap.window_h,
+        "window_title":   pcw.window_title,
+        "window_process": pcw.window_process or "",
+        "window_w":       pcw.window_w,
+        "window_h":       pcw.window_h,
     })
     if not sent:
         raise HTTPException(400, f"Client {body.client_id} is not connected")
     return {"ok": True}
+
+
+@router.get("/{project_id}/window-binding")
+async def get_window_binding(
+    project_id: str,
+    client_id: str,
+    db: AsyncSession = Depends(get_session),
+):
+    pcw = await db.get(ProjectClientWindow, (project_id, client_id))
+    if not pcw:
+        raise HTTPException(404, "No window binding found")
+    return {
+        "window_title": pcw.window_title,
+        "window_process": pcw.window_process,
+        "window_x": pcw.window_x,
+        "window_y": pcw.window_y,
+        "window_w": pcw.window_w,
+        "window_h": pcw.window_h,
+        "updated_at": pcw.updated_at.isoformat() if pcw.updated_at else None,
+    }
 
 
 # ── Templates ─────────────────────────────────────────────────────────────────

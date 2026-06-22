@@ -137,6 +137,12 @@
                       class="capture-badge"
                       :class="markerCaptureMap[m.name] ? 'badge-ok' : 'badge-missing'"
                     >{{ markerCaptureMap[m.name] ? '已标注' : '未标注' }}</span>
+                    <a-tooltip
+                      v-if="capturePreviewClientId && windowBinding && markerCaptureMap[m.name]"
+                      :title="`绑定窗口: ${windowBinding.window_title} · ${windowBinding.window_w}×${windowBinding.window_h}`"
+                    >
+                      <span class="marker-window-tag"><DesktopOutlined /></span>
+                    </a-tooltip>
                     <!-- Preview button -->
                     <a-tooltip :title="capturePreviewClientId ? '预览标注' : '请先选择预览客户端'">
                       <a-button
@@ -202,19 +208,31 @@
                       title="刷新标注状态"
                     ><ReloadOutlined /></a-button>
                   </div>
+                  <!-- Window binding display -->
+                  <div v-if="capturePreviewClientId" class="window-binding-row">
+                    <a-spin v-if="loadingWindowBinding" size="small" style="margin-right:6px" />
+                    <template v-else-if="windowBinding">
+                      <DesktopOutlined class="window-binding-icon" />
+                      <a-tooltip :title="`进程: ${windowBinding.window_process || '未知'} · 位置: (${windowBinding.window_x ?? '?'}, ${windowBinding.window_y ?? '?'})`">
+                        <span class="window-binding-title">{{ windowBinding.window_title }}</span>
+                      </a-tooltip>
+                      <span class="window-binding-size">{{ windowBinding.window_w }}×{{ windowBinding.window_h }}</span>
+                    </template>
+                    <span v-else class="window-binding-none">未绑定窗口</span>
+                  </div>
                   <div class="ops-row" style="gap:6px">
-                    <a-tooltip title="还原窗口到标注时的位置和大小">
+                    <a-tooltip :title="windowBinding ? '还原窗口到标注时的位置和大小' : '请先标注以记录窗口绑定'">
                       <a-button
                         size="small" class="icon-btn window-ctrl-btn"
-                        :disabled="!capturePreviewClientId"
+                        :disabled="!capturePreviewClientId || !windowBinding"
                         :loading="restoringWindow"
                         @click="restoreWindow"
                       >还原窗口</a-button>
                     </a-tooltip>
-                    <a-tooltip title="在客户端调整窗口大小，标注坐标自动按比例缩放">
+                    <a-tooltip :title="windowBinding ? '在客户端调整窗口大小，标注坐标自动按比例缩放' : '请先标注以记录窗口绑定'">
                       <a-button
                         size="small" class="icon-btn resize-window-btn"
-                        :disabled="!capturePreviewClientId"
+                        :disabled="!capturePreviewClientId || !windowBinding"
                         :loading="resizingWindow"
                         @click="resizeWindowInteractive"
                       >自定义大小</a-button>
@@ -272,8 +290,23 @@
                       placeholder="选择来源客户端"
                       style="flex:1;min-width:0"
                       allow-clear
-                      :options="projectClientIds.map(cid => ({ label: clientName(cid), value: cid }))"
+                      :options="copySourceOptions"
                     />
+                  </div>
+                  <!-- 来源客户端的窗口绑定展示 -->
+                  <div v-if="copySourceClientId" class="ops-row copy-source-window-row">
+                    <span class="ops-label">窗口</span>
+                    <div class="copy-source-window-display">
+                      <a-spin v-if="loadingCopySourceWindow" size="small" />
+                      <template v-else-if="copySourceClientWindow">
+                        <DesktopOutlined class="window-binding-icon" />
+                        <a-tooltip :title="`进程: ${copySourceClientWindow.window_process || '未知'}`">
+                          <span class="window-binding-title">{{ copySourceClientWindow.window_title }}</span>
+                        </a-tooltip>
+                        <span class="window-binding-size">{{ copySourceClientWindow.window_w }}×{{ copySourceClientWindow.window_h }}</span>
+                      </template>
+                      <span v-else class="window-binding-none">该客户端无窗口绑定（坐标不缩放）</span>
+                    </div>
                   </div>
                   <div class="ops-row">
                     <span class="ops-label">目标</span>
@@ -293,6 +326,9 @@
                       <a-radio-button value="overwrite">覆盖已有</a-radio-button>
                       <a-radio-button value="fill_missing">仅补充缺失</a-radio-button>
                     </a-radio-group>
+                  </div>
+                  <div class="copy-scale-hint">
+                    <InfoCircleOutlined style="margin-right:4px;color:#444" />目标窗口尺寸不同时自动按比例缩放坐标
                   </div>
                   <a-button
                     type="primary" size="small" block style="margin-top:6px"
@@ -465,11 +501,19 @@
     <!-- 标注预览 Modal -->
     <a-modal
       v-model:open="previewOpen"
-      :title="`标注预览 — ${previewFocusMarker}`"
       :width="900"
       :footer="null"
       :body-style="{ padding: '12px', background: '#141414' }"
     >
+      <template #title>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <span>标注预览 — {{ previewFocusMarker }}</span>
+          <span v-if="windowBinding" class="preview-modal-window-sub">
+            <DesktopOutlined style="margin-right:4px" />{{ windowBinding.window_title }}
+            <span style="margin-left:6px;color:#444">{{ windowBinding.window_w }}×{{ windowBinding.window_h }}</span>
+          </span>
+        </div>
+      </template>
       <div v-if="previewLoading" style="text-align:center;padding:40px">
         <a-spin tip="获取截图中..." />
       </div>
@@ -522,13 +566,13 @@ import {
   PlusOutlined, EditOutlined, DeleteOutlined, MinusOutlined,
   LaptopOutlined, TagsOutlined, FileTextOutlined, PictureOutlined, UploadOutlined,
   AimOutlined, BorderOutlined, FolderOpenOutlined, SendOutlined, ReloadOutlined,
-  InfoCircleOutlined, EyeOutlined, CopyOutlined,
+  InfoCircleOutlined, EyeOutlined, CopyOutlined, DesktopOutlined,
 } from '@ant-design/icons-vue'
 import { useProjectStore } from '@/stores/projectStore'
 import { useClientStore } from '@/stores/clientStore'
 import { useScriptStore } from '@/stores/scriptStore'
 import { api } from '@/services/api'
-import type { Project, MarkerCapture, MarkerCaptureData } from '@/services/api'
+import type { Project, MarkerCapture, MarkerCaptureData, MarkerWindow, WindowBinding } from '@/services/api'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -566,8 +610,13 @@ const sendResult = ref<{ ok: boolean; text: string } | null>(null)
 const capturePreviewClientId = ref<string | null>(null)
 const restoringWindow = ref(false)
 const resizingWindow = ref(false)
-// Copy captures between clients
+const windowBinding = ref<WindowBinding | null>(null)
+const loadingWindowBinding = ref(false)
+// Copy captures
+const markerWindows = ref<MarkerWindow[]>([])
 const copySourceClientId = ref<string | null>(null)
+const copySourceClientWindow = ref<WindowBinding | null>(null)
+const loadingCopySourceWindow = ref(false)
 const copyTargetClientIds = ref<string[]>([])
 const copyMode = ref<'overwrite' | 'fill_missing'>('overwrite')
 const copying = ref(false)
@@ -662,6 +711,17 @@ async function refreshCaptureStatus() {
   }
 }
 
+async function fetchWindowBinding(projectId: string, clientId: string) {
+  loadingWindowBinding.value = true
+  try {
+    windowBinding.value = await api.getWindowBinding(projectId, clientId)
+  } catch {
+    windowBinding.value = null
+  } finally {
+    loadingWindowBinding.value = false
+  }
+}
+
 async function restoreWindow() {
   if (!capturePreviewClientId.value || !selectedId.value) return
   restoringWindow.value = true
@@ -688,11 +748,24 @@ async function resizeWindowInteractive() {
   }
 }
 
+const copySourceOptions = computed(() =>
+  projectClientIds.value.map(cid => ({ label: clientName(cid), value: cid }))
+)
+
 const copyTargetOptions = computed(() =>
   projectClientIds.value
     .filter(cid => cid !== copySourceClientId.value)
     .map(cid => ({ label: clientName(cid), value: cid }))
 )
+
+async function refreshMarkerWindows() {
+  if (!selectedId.value) return
+  try {
+    markerWindows.value = await api.getMarkerWindows(selectedId.value)
+  } catch {
+    markerWindows.value = []
+  }
+}
 
 async function copyCaptures() {
   if (!copySourceClientId.value || copyTargetClientIds.value.length === 0 || !selectedId.value) return
@@ -706,6 +779,7 @@ async function copyCaptures() {
       copyMode.value,
     )
     copyResult.value = { ok: true, text: `已复制 ${res.copied} 条标注数据到 ${copyTargetClientIds.value.length} 个客户端` }
+    await refreshMarkerWindows()
   } catch (e: any) {
     copyResult.value = { ok: false, text: e?.response?.data?.detail ?? '复制失败' }
   } finally {
@@ -722,12 +796,15 @@ async function selectProject(id: string) {
   sendResult.value = null
   capturePreviewClientId.value = null
   copyResult.value = null
+  copySourceClientId.value = null
+  copySourceClientWindow.value = null
+  copyTargetClientIds.value = []
   markerCaptureMap.value = {}
   selectedMarkerNames.value = new Set(currentMarkers.value.map(m => m.name))
-  // Fetch members
   await Promise.all([
     projectStore.fetchMarkers(id),
     projectStore.fetchTemplates(id),
+    refreshMarkerWindows(),
   ])
   const result = await fetch(`/api/projects/${id}/clients`).then(r => r.json())
   projectClientIds.value = result
@@ -1040,10 +1117,40 @@ watch(() => props.open, async (v) => {
 
 watch(capturePreviewClientId, async (cid) => {
   if (cid && selectedId.value) {
-    await fetchCaptureStatus(selectedId.value, cid)
+    await Promise.all([
+      fetchCaptureStatus(selectedId.value, cid),
+      fetchWindowBinding(selectedId.value, cid),
+    ])
   } else {
     markerCaptureMap.value = {}
+    windowBinding.value = null
     selectedMarkerNames.value = new Set(currentMarkers.value.map(m => m.name))
+  }
+})
+
+watch(() => projectStore.captureNotification, (notif) => {
+  if (notif && notif.projectId === selectedId.value) {
+    refreshMarkerWindows()
+    if (capturePreviewClientId.value === notif.clientId) {
+      fetchCaptureStatus(selectedId.value, capturePreviewClientId.value)
+      fetchWindowBinding(selectedId.value, capturePreviewClientId.value)
+    }
+  }
+}, { deep: true })
+
+watch(copySourceClientId, async (cid) => {
+  copyTargetClientIds.value = copyTargetClientIds.value.filter(id => id !== cid)
+  if (cid && selectedId.value) {
+    loadingCopySourceWindow.value = true
+    try {
+      copySourceClientWindow.value = await api.getWindowBinding(selectedId.value, cid)
+    } catch {
+      copySourceClientWindow.value = null
+    } finally {
+      loadingCopySourceWindow.value = false
+    }
+  } else {
+    copySourceClientWindow.value = null
   }
 })
 
@@ -1161,6 +1268,9 @@ watch(currentMarkers, (markers) => {
 .window-ctrl-btn { color: #888 !important; }
 .resize-window-btn { color: #fa8c16 !important; border-color: transparent !important; }
 .resize-window-btn:hover:not(:disabled) { color: #ffa940 !important; background: #2b1b07 !important; }
+.copy-source-window-row { margin-bottom: 4px; }
+.copy-source-window-display { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; padding: 3px 6px; background: #161616; border: 1px solid #2a2a2a; border-radius: 4px; }
+.copy-scale-hint { font-size: 10px; color: #444; padding: 2px 0 4px; display: flex; align-items: center; }
 .send-client-row { padding: 4px 0; }
 .send-result { margin-top: 8px; font-size: 12px; padding: 5px 10px; border-radius: 4px; }
 .send-result.ok  { color: #52c41a; background: #162312; border: 1px solid #52c41a33; }
@@ -1169,6 +1279,30 @@ watch(currentMarkers, (markers) => {
 /* Marker preview button */
 .preview-marker-btn { color: #444 !important; padding: 0 3px !important; height: 20px !important; flex-shrink: 0; }
 .preview-marker-btn:hover:not(:disabled) { color: #1890ff !important; }
+
+/* Window binding row (in ops-section) */
+.window-binding-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  margin-bottom: 8px;
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  min-height: 24px;
+}
+.window-binding-icon { font-size: 11px; color: #444; flex-shrink: 0; }
+.window-binding-title { font-size: 11px; color: #888; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
+.window-binding-size { font-size: 10px; color: #444; flex-shrink: 0; }
+.window-binding-none { font-size: 11px; color: #333; font-style: italic; }
+
+/* Marker row window tag */
+.marker-window-tag { font-size: 11px; color: #444; cursor: default; flex-shrink: 0; }
+.marker-window-tag:hover { color: #666; }
+
+/* Preview modal window subtitle */
+.preview-modal-window-sub { font-size: 11px; color: #555; font-weight: 400; display: flex; align-items: center; }
 
 /* Annotation preview modal */
 .annotation-preview-wrapper { position: relative; display: block; width: 100%; line-height: 0; }

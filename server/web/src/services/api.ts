@@ -93,6 +93,24 @@ export interface ClientWindow {
   h: number
 }
 
+export interface MarkerWindow {
+  window_title: string
+  window_w: number
+  window_h: number
+  client_count: number
+  client_ids: string[]
+}
+
+export interface WindowBinding {
+  window_title: string
+  window_process: string | null
+  window_x: number | null
+  window_y: number | null
+  window_w: number
+  window_h: number
+  updated_at: string | null
+}
+
 export interface GlobalVariable {
   id: string
   project_id: string
@@ -178,6 +196,11 @@ export const api = {
     http.get<MarkerCaptureData[]>(`/projects/${projectId}/markers/captures/data`, { params: { client_id: clientId } }).then(r => r.data),
   captureClientScreenshot: (clientId: string) =>
     http.post<{ data: string }>(`/clients/${clientId}/screenshot`).then(r => r.data.data),
+  getWindowBinding: (projectId: string, clientId: string) =>
+    http.get<WindowBinding>(`/projects/${projectId}/window-binding`, { params: { client_id: clientId } })
+      .then(r => r.data)
+      .catch((e: any) => e?.response?.status === 404 ? null : Promise.reject(e)) as Promise<WindowBinding | null>,
+
   sendMarkers: (projectId: string, clientId: string, markerNames?: string[]) =>
     http.post(`/projects/${projectId}/markers/send`, {
       client_id: clientId,
@@ -187,16 +210,38 @@ export const api = {
     http.post(`/projects/${projectId}/markers/restore-window`, { client_id: clientId }).then(r => r.data),
   resizeWindowInteractive: (projectId: string, clientId: string) =>
     http.post(`/projects/${projectId}/markers/resize-window-interactive`, { client_id: clientId }).then(r => r.data),
+  getMarkerWindows: (projectId: string) =>
+    http.get<MarkerWindow[]>(`/projects/${projectId}/marker-windows`).then(r => r.data),
+
+  copyCapturesByWindow: (
+    projectId: string,
+    sourceWindowTitle: string,
+    sourceWindowW: number,
+    sourceWindowH: number,
+    targetClientIds: string[],
+    mode: 'overwrite' | 'fill_missing',
+  ) =>
+    http.post(`/projects/${projectId}/markers/copy-captures`, {
+      source_window_title: sourceWindowTitle,
+      source_window_w: sourceWindowW,
+      source_window_h: sourceWindowH,
+      target_client_ids: targetClientIds,
+      mode,
+      auto_scale: true,
+    }).then(r => r.data),
+
   copyCapturesBetweenClients: (
     projectId: string,
     sourceClientId: string,
     targetClientIds: string[],
     mode: 'overwrite' | 'fill_missing',
+    autoScale = true,
   ) =>
     http.post(`/projects/${projectId}/markers/copy-captures`, {
       source_client_id: sourceClientId,
       target_client_ids: targetClientIds,
       mode,
+      auto_scale: autoScale,
     }).then(r => r.data),
 
   // Templates
