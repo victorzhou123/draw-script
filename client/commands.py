@@ -1108,6 +1108,8 @@ class CommandHandler:
             "stop":                       self.handle_stop,
             "get_status":                 self.handle_get_status,
             "compute_node":               self.handle_compute_node,
+            "get_window_list":            self.handle_get_window_list,
+            "capture_template_region":    self.handle_capture_template_region,
         }
         self._stop_flag = False
         self._active_tasks = 0
@@ -1554,6 +1556,70 @@ class CommandHandler:
                 "output": {},
                 "error": str(e),
             })
+
+    async def handle_get_window_list(self, msg: dict) -> None:
+        request_id = msg.get("request_id")
+        windows = await _run_blocking(_list_windows)
+        await self._send({
+            "type": "window_list_response",
+            "request_id": request_id,
+            "windows": [
+                {"title": w["title"], "process": w["process"],
+                 "x": w["x"], "y": w["y"], "w": w["w"], "h": w["h"]}
+                for w in windows
+            ],
+        })
+
+    async def handle_capture_template_region(self, msg: dict) -> None:
+        request_id = msg.get("request_id")
+        window_title   = msg.get("window_title", "")
+        window_process = msg.get("window_process", "")
+        window_w       = int(msg.get("window_w") or 0)
+        window_h       = int(msg.get("window_h") or 0)
+
+        win = await _run_blocking(_find_window, window_title, window_process)
+        if win:
+            try:
+                await _run_blocking(_activate_window, win["hwnd"])
+            except Exception:
+                pass
+            win_x, win_y = win["x"], win["y"]
+            current_w, current_h = win["w"], win["h"]
+        else:
+            win_x, win_y = 0, 0
+            current_w, current_h = window_w, window_h
+
+        action, box = await _run_blocking(
+            _show_box_overlay,
+            "__template__", win_x, win_y, None, 0, 0,
+        )
+        if action == "cancel" or box is None:
+            await self._send({
+                "type": "template_region_response",
+                "request_id": request_id,
+                "success": False,
+                "error": "用户取消截图",
+            })
+            return
+
+        import pyautogui
+        abs_x = box["x"] + win_x
+        abs_y = box["y"] + win_y
+        screenshot = await _run_blocking(
+            pyautogui.screenshot, region=(abs_x, abs_y, box["w"], box["h"])
+        )
+        buf = io.BytesIO()
+        screenshot.save(buf, format="PNG")
+        image_b64 = base64.b64encode(buf.getvalue()).decode()
+
+        await self._send({
+            "type": "template_region_response",
+            "request_id": request_id,
+            "success": True,
+            "image_b64": image_b64,
+            "window_w": current_w,
+            "window_h": current_h,
+        })
 
     async def handle_stop(self, msg: dict) -> None:
         logger.info(f"Stop signal received: {msg.get('reason')}")

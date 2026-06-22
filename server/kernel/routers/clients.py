@@ -100,6 +100,77 @@ async def capture_client_screenshot(client_id: str):
         raise HTTPException(408, "Screenshot request timed out")
 
 
+@router.get("/{client_id}/windows")
+async def get_client_windows(client_id: str):
+    """Request the list of open windows from a connected client."""
+    if not client_ws_manager.is_connected(client_id):
+        raise HTTPException(400, f"Client {client_id} is not connected")
+
+    request_id = str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future = loop.create_future()
+    client_ws_manager.pending_requests[request_id] = future
+
+    sent = await client_ws_manager.send_to_client(client_id, {
+        "type": "get_window_list",
+        "request_id": request_id,
+    })
+    if not sent:
+        client_ws_manager.pending_requests.pop(request_id, None)
+        raise HTTPException(500, "Failed to send window list request to client")
+
+    try:
+        result = await asyncio.wait_for(future, timeout=10.0)
+        return {"windows": result.get("windows", [])}
+    except asyncio.TimeoutError:
+        client_ws_manager.pending_requests.pop(request_id, None)
+        raise HTTPException(408, "Window list request timed out")
+
+
+class CaptureTemplateRegionRequest(BaseModel):
+    window_title: str
+    window_process: str
+    window_w: int
+    window_h: int
+
+
+@router.post("/{client_id}/capture_template_region")
+async def capture_template_region(client_id: str, body: CaptureTemplateRegionRequest):
+    """Ask client to let user draw a region and return it as a base64 PNG."""
+    if not client_ws_manager.is_connected(client_id):
+        raise HTTPException(400, f"Client {client_id} is not connected")
+
+    request_id = str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future = loop.create_future()
+    client_ws_manager.pending_requests[request_id] = future
+
+    sent = await client_ws_manager.send_to_client(client_id, {
+        "type":           "capture_template_region",
+        "request_id":     request_id,
+        "window_title":   body.window_title,
+        "window_process": body.window_process,
+        "window_w":       body.window_w,
+        "window_h":       body.window_h,
+    })
+    if not sent:
+        client_ws_manager.pending_requests.pop(request_id, None)
+        raise HTTPException(500, "Failed to send capture request to client")
+
+    try:
+        result = await asyncio.wait_for(future, timeout=120.0)
+        if not result.get("success"):
+            raise HTTPException(400, result.get("error") or "Capture failed")
+        return {
+            "image_b64": result["image_b64"],
+            "window_w":  result["window_w"],
+            "window_h":  result["window_h"],
+        }
+    except asyncio.TimeoutError:
+        client_ws_manager.pending_requests.pop(request_id, None)
+        raise HTTPException(408, "Template region capture timed out")
+
+
 class GpuUpdateRequest(BaseModel):
     gpu_enabled: bool
 

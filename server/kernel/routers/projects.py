@@ -412,6 +412,8 @@ async def upload_template(
     project_id: str,
     name: str = Form(...),
     file: UploadFile = File(...),
+    source_w: int | None = Form(None),
+    source_h: int | None = Form(None),
     db: AsyncSession = Depends(get_session),
 ):
     project = await db.get(Project, project_id)
@@ -429,7 +431,45 @@ async def upload_template(
     with open(dest, "wb") as f:
         f.write(content)
 
-    template = Template(id=template_id, project_id=project_id, name=name, filename=filename)
+    template = Template(id=template_id, project_id=project_id, name=name, filename=filename,
+                        source_w=source_w, source_h=source_h)
+    db.add(template)
+    await db.commit()
+    await db.refresh(template)
+    return template
+
+
+class TemplateFromCaptureRequest(BaseModel):
+    name: str
+    image_b64: str
+    source_w: int | None = None
+    source_h: int | None = None
+
+
+@router.post("/{project_id}/templates/from_capture", response_model=TemplateResponse)
+async def create_template_from_capture(
+    project_id: str,
+    body: TemplateFromCaptureRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    import base64 as _b64
+    try:
+        image_bytes = _b64.b64decode(body.image_b64)
+    except Exception:
+        raise HTTPException(400, "Invalid base64 image data")
+
+    template_id = str(uuid.uuid4())
+    filename = f"{template_id}.png"
+    dest = os.path.join(settings.templates_dir, filename)
+    with open(dest, "wb") as f:
+        f.write(image_bytes)
+
+    template = Template(id=template_id, project_id=project_id, name=body.name,
+                        filename=filename, source_w=body.source_w, source_h=body.source_h)
     db.add(template)
     await db.commit()
     await db.refresh(template)

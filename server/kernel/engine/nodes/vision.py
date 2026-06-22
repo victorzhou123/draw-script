@@ -54,14 +54,43 @@ class VisionNodeHandler(BaseNodeHandler):
                     params["template_b64"] = raw
             elif template_id:
                 import os
-                from database import Template
+                from database import Marker, MarkerCapture, Template
+                from sqlalchemy import select as _select
                 async with self.ctx.session_factory() as session:
                     tpl = await session.get(Template, template_id)
                     if tpl:
                         tpl_path = os.path.join(settings.templates_dir, tpl.filename)
                         if os.path.isfile(tpl_path):
                             with open(tpl_path, "rb") as fh:
-                                params["template_b64"] = base64.b64encode(fh.read()).decode()
+                                raw_bytes = fh.read()
+                            # Scale template if source dimensions differ from current window
+                            if tpl.source_w and tpl.source_h and self.ctx.project_id:
+                                cap_result = await session.execute(
+                                    _select(MarkerCapture)
+                                    .join(Marker, MarkerCapture.marker_id == Marker.id)
+                                    .where(
+                                        Marker.project_id == self.ctx.project_id,
+                                        MarkerCapture.client_id == self.ctx.client_id,
+                                        MarkerCapture.window_w.isnot(None),
+                                    )
+                                    .limit(1)
+                                )
+                                cap = cap_result.scalar_one_or_none()
+                                if cap and cap.window_w and cap.window_h:
+                                    scale_x = cap.window_w / tpl.source_w
+                                    scale_y = cap.window_h / tpl.source_h
+                                    if abs(scale_x - 1.0) > 0.001 or abs(scale_y - 1.0) > 0.001:
+                                        import cv2
+                                        import numpy as np
+                                        arr = np.frombuffer(raw_bytes, np.uint8)
+                                        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                                        if img is not None:
+                                            new_w = max(1, round(img.shape[1] * scale_x))
+                                            new_h = max(1, round(img.shape[0] * scale_y))
+                                            img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+                                            _, buf = cv2.imencode(".png", img)
+                                            raw_bytes = buf.tobytes()
+                            params["template_b64"] = base64.b64encode(raw_bytes).decode()
 
         # ocr shortcut: use context image directly, skip client screenshot
         if vision_type == "ocr":

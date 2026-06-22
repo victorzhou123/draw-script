@@ -190,6 +190,24 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                 "scaled":     scaled,
             })
 
+    elif msg_type == "window_list_response":
+        request_id = msg.get("request_id")
+        if request_id:
+            client_ws_manager.resolve_pending(request_id, {
+                "windows": msg.get("windows", []),
+            })
+
+    elif msg_type == "template_region_response":
+        request_id = msg.get("request_id")
+        if request_id:
+            client_ws_manager.resolve_pending(request_id, {
+                "success":   msg.get("success", False),
+                "image_b64": msg.get("image_b64"),
+                "window_w":  msg.get("window_w"),
+                "window_h":  msg.get("window_h"),
+                "error":     msg.get("error"),
+            })
+
     elif msg_type == "error":
         logger.warning(f"Client {client_id} error: {msg.get('message')}")
 
