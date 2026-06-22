@@ -178,16 +178,19 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                 captures = result.scalars().all()
                 scaled = 0
                 for cap in captures:
-                    if not old_w or not old_h or old_w <= 0 or old_h <= 0:
-                        continue
-                    if cap.x is not None:
-                        cap.x = round(cap.x * new_w / old_w)
-                    if cap.y is not None:
-                        cap.y = round(cap.y * new_h / old_h)
-                    if cap.w is not None:
-                        cap.w = round(cap.w * new_w / old_w)
-                    if cap.h is not None:
-                        cap.h = round(cap.h * new_h / old_h)
+                    if old_w and old_h and old_w > 0 and old_h > 0:
+                        if cap.x is not None:
+                            cap.x = round(cap.x * new_w / old_w)
+                        if cap.y is not None:
+                            cap.y = round(cap.y * new_h / old_h)
+                        if cap.w is not None:
+                            cap.w = round(cap.w * new_w / old_w)
+                        if cap.h is not None:
+                            cap.h = round(cap.h * new_h / old_h)
+                    cap.window_x = new_x
+                    cap.window_y = new_y
+                    cap.window_w = new_w
+                    cap.window_h = new_h
                     scaled += 1
 
                 # Update canonical window binding

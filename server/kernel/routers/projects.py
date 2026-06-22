@@ -408,13 +408,17 @@ async def copy_captures(
         if target_id == source_client_id:
             continue
 
-        # Compute scale factors for this target
+        # Compute scale factors and target window size for this target
         sw, sh = 1.0, 1.0
-        if body.auto_scale and source_w and source_h:
-            target_pcw = await db.get(ProjectClientWindow, (project_id, target_id))
-            if target_pcw and target_pcw.window_w and target_pcw.window_h:
-                sw = target_pcw.window_w / source_w
-                sh = target_pcw.window_h / source_h
+        target_window_w: int | None = None
+        target_window_h: int | None = None
+        target_pcw = await db.get(ProjectClientWindow, (project_id, target_id))
+        if target_pcw and target_pcw.window_w and target_pcw.window_h:
+            target_window_w = target_pcw.window_w
+            target_window_h = target_pcw.window_h
+            if body.auto_scale and source_w and source_h:
+                sw = target_window_w / source_w
+                sh = target_window_h / source_h
 
         for src in source_captures:
             existing_result = await db.execute(
@@ -438,12 +442,15 @@ async def copy_captures(
                 existing.y = scaled_y
                 existing.w = scaled_w
                 existing.h = scaled_h
+                existing.window_w = target_window_w
+                existing.window_h = target_window_h
                 existing.captured_at = datetime.now(timezone.utc)
             else:
                 db.add(MarkerCapture(
                     marker_id=src.marker_id,
                     client_id=target_id,
                     x=scaled_x, y=scaled_y, w=scaled_w, h=scaled_h,
+                    window_w=target_window_w, window_h=target_window_h,
                 ))
             copied += 1
 

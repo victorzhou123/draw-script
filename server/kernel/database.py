@@ -266,64 +266,6 @@ async def init_db() -> None:
         # service_api_keys is created via metadata.create_all above;
         # no ALTER needed for new installs. Existing DBs get it on next startup.
 
-        # Migrate window info from marker_captures into project_client_windows.
-        # Uses ROW_NUMBER() to pick the most-recent capture row as a unit,
-        # avoiding the per-column MAX() bug that could mix fields from different rows.
-        try:
-            await conn.execute(text("""
-                INSERT OR IGNORE INTO project_client_windows
-                    (project_id, client_id, window_title, window_process,
-                     window_x, window_y, window_w, window_h, updated_at)
-                SELECT project_id, client_id, window_title, window_process,
-                       window_x, window_y, window_w, window_h, CURRENT_TIMESTAMP
-                FROM (
-                    SELECT m.project_id, mc.client_id,
-                           mc.window_title, mc.window_process,
-                           mc.window_x, mc.window_y, mc.window_w, mc.window_h,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY m.project_id, mc.client_id
-                               ORDER BY mc.captured_at DESC
-                           ) AS rn
-                    FROM marker_captures mc
-                    JOIN markers m ON mc.marker_id = m.id
-                    WHERE mc.window_title IS NOT NULL AND mc.window_w IS NOT NULL
-                ) WHERE rn = 1
-            """))
-        except Exception:
-            pass
-
-        # Fix existing rows that may have been populated by the old MAX()-based migration.
-        # For each (project, client) in project_client_windows that has NOT been updated
-        # by a real annotation (i.e., still has the stale migrated value), re-populate
-        # from the most-recent marker_capture row so title/process/size come from the
-        # same annotation event.
-        try:
-            await conn.execute(text("""
-                UPDATE project_client_windows
-                SET window_title   = latest.window_title,
-                    window_process = latest.window_process,
-                    window_x       = latest.window_x,
-                    window_y       = latest.window_y,
-                    window_w       = latest.window_w,
-                    window_h       = latest.window_h
-                FROM (
-                    SELECT m.project_id, mc.client_id,
-                           mc.window_title, mc.window_process,
-                           mc.window_x, mc.window_y, mc.window_w, mc.window_h,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY m.project_id, mc.client_id
-                               ORDER BY mc.captured_at DESC
-                           ) AS rn
-                    FROM marker_captures mc
-                    JOIN markers m ON mc.marker_id = m.id
-                    WHERE mc.window_title IS NOT NULL AND mc.window_w IS NOT NULL
-                ) AS latest
-                WHERE project_client_windows.project_id = latest.project_id
-                  AND project_client_windows.client_id  = latest.client_id
-                  AND latest.rn = 1
-            """))
-        except Exception:
-            pass
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
