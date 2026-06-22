@@ -1271,9 +1271,10 @@ class CommandHandler:
             logger.warning(f"restore_window: window '{title}' not found")
             return
         try:
-            if ctypes.windll.user32.IsIconic(win["hwnd"]):
-                ctypes.windll.user32.ShowWindow(win["hwnd"], 9)  # SW_RESTORE
-            ctypes.windll.user32.MoveWindow(win["hwnd"], x, y, w, h, True)
+            hwnd = win["hwnd"]
+            if ctypes.windll.user32.IsIconic(hwnd) or ctypes.windll.user32.IsZoomed(hwnd):
+                ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE before MoveWindow
+            ctypes.windll.user32.MoveWindow(hwnd, x, y, w, h, True)
             logger.info(f"restore_window: moved '{title}' to ({x},{y}) size {w}×{h}")
         except Exception as e:
             logger.error(f"restore_window: MoveWindow failed: {e}")
