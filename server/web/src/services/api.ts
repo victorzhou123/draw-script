@@ -148,13 +148,8 @@ export const api = {
     http.post(`/clients/${clientId}/stop`).then(r => r.data),
   updateClientGpu: (clientId: string, gpuEnabled: boolean) =>
     http.patch(`/clients/${clientId}/gpu`, { gpu_enabled: gpuEnabled }).then(r => r.data),
-  getClientWindows: (clientId: string) =>
-    http.get<{ windows: ClientWindow[] }>(`/clients/${clientId}/windows`).then(r => r.data.windows),
-  captureTemplateRegion: (clientId: string, win: ClientWindow) =>
-    http.post<{ image_b64: string; window_w: number; window_h: number }>(
-      `/clients/${clientId}/capture_template_region`,
-      { window_title: win.title, window_process: win.process, window_w: win.w, window_h: win.h },
-    ).then(r => r.data),
+  captureTemplateAsync: (projectId: string, clientId: string, name: string) =>
+    http.post(`/projects/${projectId}/templates/capture_async`, { client_id: clientId, name }).then(r => r.data),
   addClientToProject: (projectId: string, clientId: string) =>
     http.post(`/projects/${projectId}/clients/${clientId}`).then(r => r.data),
   removeClientFromProject: (projectId: string, clientId: string) =>

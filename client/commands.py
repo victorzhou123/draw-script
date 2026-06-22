@@ -355,6 +355,12 @@ def _overlay_mainloop() -> None:
                         except Exception:
                             res = None
                         cmd["_result"].put(res)
+                    elif cmd["action"] == "window_select_modal":
+                        try:
+                            res = _run_window_select_modal(root)
+                        except Exception:
+                            res = None
+                        cmd["_result"].put(res)
                     elif cmd["action"] == "quit":
                         root.quit()
                         return
@@ -481,6 +487,104 @@ def _show_resize_window_dialog(
             "old_w": old_w,
             "old_h": old_h,
         },
+        "_result": result_q,
+    })
+    return result_q.get()
+
+
+def _run_window_select_modal(root) -> dict | None:
+    """Tkinter dialog: list all open windows, user picks one."""
+    import tkinter as tk
+
+    windows = _list_windows()
+    result = [None]
+
+    dialog = tk.Toplevel(root)
+    dialog.title("选择目标窗口")
+    dialog.attributes("-topmost", True)
+    dialog.configure(bg="#1a1a2e")
+    dialog.resizable(True, True)
+
+    sw = root.winfo_screenwidth()
+    sh = root.winfo_screenheight()
+    ww, wh = 540, 360
+    dialog.geometry(f"{ww}x{wh}+{(sw - ww) // 2}+{(sh - wh) // 2}")
+
+    tk.Label(
+        dialog, text="选择要截图的目标窗口",
+        bg="#1a1a2e", fg="#d9d9d9",
+        font=("Microsoft YaHei UI", 12, "bold"),
+    ).pack(pady=(14, 6))
+
+    frame = tk.Frame(dialog, bg="#1a1a2e")
+    frame.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+
+    scrollbar = tk.Scrollbar(frame, orient="vertical", bg="#2a2a3e", troughcolor="#1a1a2e")
+    scrollbar.pack(side="right", fill="y")
+
+    listbox = tk.Listbox(
+        frame,
+        yscrollcommand=scrollbar.set,
+        bg="#0d0d1a", fg="#d9d9d9",
+        selectbackground="#1890ff", selectforeground="white",
+        font=("Consolas", 10),
+        activestyle="none",
+        borderwidth=0, highlightthickness=1, highlightcolor="#1890ff",
+    )
+    listbox.pack(side="left", fill="both", expand=True)
+    scrollbar.config(command=listbox.yview)
+
+    for w in windows:
+        label = f"{w['process']:<20}  {w['title'][:40]:<40}  {w['w']}×{w['h']}"
+        listbox.insert("end", label)
+
+    btn_frame = tk.Frame(dialog, bg="#1a1a2e")
+    btn_frame.pack(pady=(0, 12))
+
+    def _confirm():
+        sel = listbox.curselection()
+        if sel:
+            result[0] = windows[sel[0]]
+        dialog.destroy()
+
+    def _cancel():
+        dialog.destroy()
+
+    tk.Button(
+        btn_frame, text="确认 (Enter)",
+        command=_confirm,
+        bg="#1d6b3e", fg="white",
+        font=("Microsoft YaHei UI", 10, "bold"),
+        relief="flat", cursor="hand2", padx=20, pady=5,
+    ).pack(side="left", padx=8)
+
+    tk.Button(
+        btn_frame, text="取消 (ESC)",
+        command=_cancel,
+        bg="#2a2a2a", fg="#888",
+        font=("Microsoft YaHei UI", 10),
+        relief="flat", cursor="hand2", padx=20, pady=5,
+    ).pack(side="left", padx=8)
+
+    listbox.bind("<Double-Button-1>", lambda e: _confirm())
+    dialog.bind("<Return>", lambda e: _confirm())
+    dialog.bind("<Escape>", lambda e: _cancel())
+
+    if windows:
+        listbox.selection_set(0)
+        listbox.activate(0)
+
+    dialog.deiconify()
+    dialog.focus_force()
+    root.wait_window(dialog)
+    return result[0]
+
+
+def _show_window_select_modal() -> dict | None:
+    _ensure_overlay_thread()
+    result_q: _queue.Queue = _queue.Queue()
+    _overlay_queue.put({
+        "action": "window_select_modal",
         "_result": result_q,
     })
     return result_q.get()
@@ -1572,22 +1676,22 @@ class CommandHandler:
 
     async def handle_capture_template_region(self, msg: dict) -> None:
         request_id = msg.get("request_id")
-        window_title   = msg.get("window_title", "")
-        window_process = msg.get("window_process", "")
-        window_w       = int(msg.get("window_w") or 0)
-        window_h       = int(msg.get("window_h") or 0)
 
-        win = await _run_blocking(_find_window, window_title, window_process)
-        if win:
-            try:
-                await _run_blocking(_activate_window, win["hwnd"])
-            except Exception:
-                pass
-            win_x, win_y = win["x"], win["y"]
-            current_w, current_h = win["w"], win["h"]
-        else:
-            win_x, win_y = 0, 0
-            current_w, current_h = window_w, window_h
+        win = await _run_blocking(_show_window_select_modal)
+        if win is None:
+            await self._send({
+                "type": "template_region_response",
+                "request_id": request_id,
+                "success": False,
+                "error": "用户取消选择窗口",
+            })
+            return
+
+        try:
+            await _run_blocking(_activate_window, win["hwnd"])
+        except Exception:
+            pass
+        win_x, win_y = win["x"], win["y"]
 
         action, box = await _run_blocking(
             _show_box_overlay,
@@ -1617,8 +1721,8 @@ class CommandHandler:
             "request_id": request_id,
             "success": True,
             "image_b64": image_b64,
-            "window_w": current_w,
-            "window_h": current_h,
+            "window_w": win["w"],
+            "window_h": win["h"],
         })
 
     async def handle_stop(self, msg: dict) -> None:

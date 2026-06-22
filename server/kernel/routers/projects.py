@@ -3,7 +3,9 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+import asyncio
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from sqlalchemy import select
@@ -474,6 +476,100 @@ async def create_template_from_capture(
     await db.commit()
     await db.refresh(template)
     return template
+
+
+class CaptureTemplateAsyncRequest(BaseModel):
+    client_id: str
+    name: str
+
+
+async def _await_and_save_template(
+    future: asyncio.Future,
+    project_id: str,
+    name: str,
+    request_id: str,
+) -> None:
+    from database import AsyncSessionLocal, Template
+    from ws_manager import client_ws_manager, ui_ws_manager
+    try:
+        result = await asyncio.wait_for(future, timeout=300.0)
+        if not result.get("success"):
+            await ui_ws_manager.broadcast_event("template_capture_done", {
+                "project_id": project_id,
+                "success": False,
+                "error": result.get("error") or "截图失败",
+            })
+            return
+
+        import base64 as _b64
+        image_bytes = _b64.b64decode(result["image_b64"])
+        window_w = result.get("window_w")
+        window_h = result.get("window_h")
+
+        template_id = str(uuid.uuid4())
+        filename = f"{template_id}.png"
+        dest = os.path.join(settings.templates_dir, filename)
+        with open(dest, "wb") as f:
+            f.write(image_bytes)
+
+        async with AsyncSessionLocal() as db:
+            tpl = Template(
+                id=template_id, project_id=project_id, name=name,
+                filename=filename, source_w=window_w, source_h=window_h,
+            )
+            db.add(tpl)
+            await db.commit()
+
+        await ui_ws_manager.broadcast_event("template_capture_done", {
+            "project_id": project_id,
+            "success": True,
+            "template_id": template_id,
+            "name": name,
+        })
+    except asyncio.TimeoutError:
+        client_ws_manager.pending_requests.pop(request_id, None)
+        await ui_ws_manager.broadcast_event("template_capture_done", {
+            "project_id": project_id,
+            "success": False,
+            "error": "截图超时",
+        })
+    except Exception as e:
+        await ui_ws_manager.broadcast_event("template_capture_done", {
+            "project_id": project_id,
+            "success": False,
+            "error": str(e),
+        })
+
+
+@router.post("/{project_id}/templates/capture_async", status_code=202)
+async def capture_template_async(
+    project_id: str,
+    body: CaptureTemplateAsyncRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_session),
+):
+    from ws_manager import client_ws_manager
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    if not client_ws_manager.is_connected(body.client_id):
+        raise HTTPException(400, "Client is not connected")
+
+    request_id = str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future = loop.create_future()
+    client_ws_manager.pending_requests[request_id] = future
+
+    sent = await client_ws_manager.send_to_client(body.client_id, {
+        "type": "capture_template_region",
+        "request_id": request_id,
+    })
+    if not sent:
+        client_ws_manager.pending_requests.pop(request_id, None)
+        raise HTTPException(500, "Failed to send capture request to client")
+
+    background_tasks.add_task(_await_and_save_template, future, project_id, body.name, request_id)
+    return {"ok": True}
 
 
 @router.patch("/{project_id}/templates/{template_id}", response_model=TemplateResponse)

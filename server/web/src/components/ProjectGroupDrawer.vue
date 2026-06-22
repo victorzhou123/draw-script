@@ -422,74 +422,32 @@
     <a-modal
       v-model:open="captureModalOpen"
       title="从客户端截图创建模板"
-      :width="480"
+      :width="400"
       :footer="null"
       :body-style="{ padding: '16px' }"
       @cancel="resetCaptureModal"
     >
-      <!-- Step 1: select client -->
-      <template v-if="captureStep === 'select_client'">
-        <a-form layout="vertical">
-          <a-form-item label="选择客户端">
-            <a-select
-              v-model:value="captureClientId"
-              :style="{ width: '100%' }"
-              placeholder="请选择在线客户端"
-              @change="onCaptureClientChange"
-            >
-              <a-select-option
-                v-for="c in onlineClients"
-                :key="c.id"
-                :value="c.id"
-              >{{ c.name }}</a-select-option>
-            </a-select>
-          </a-form-item>
-          <a-form-item v-if="captureClientId" label="选择目标窗口">
-            <a-spin v-if="loadingWindows" size="small" />
-            <a-select
-              v-else
-              v-model:value="captureSelectedWindow"
-              :style="{ width: '100%' }"
-              placeholder="请选择窗口"
-            >
-              <a-select-option
-                v-for="w in captureWindowList"
-                :key="w.title + w.process"
-                :value="w.title"
-              >
-                <span style="color:#888;margin-right:6px;font-size:11px">{{ w.process }}</span>{{ w.title }}
-                <span style="color:#555;font-size:10px;margin-left:6px">{{ w.w }}×{{ w.h }}</span>
-              </a-select-option>
-            </a-select>
-          </a-form-item>
-          <a-button
-            type="primary"
-            :disabled="!captureSelectedWindow"
-            :loading="capturingRegion"
-            block
-            @click="startRegionCapture"
-          >在客户端框选截图区域</a-button>
-        </a-form>
-      </template>
-
-      <!-- Step 2: name + preview after capture -->
-      <template v-else-if="captureStep === 'name'">
-        <div style="text-align:center;margin-bottom:12px">
-          <img
-            :src="'data:image/png;base64,' + captureImageB64"
-            style="max-width:100%;max-height:300px;border:1px solid #333;border-radius:4px"
-          />
-        </div>
-        <a-form layout="vertical">
-          <a-form-item label="模板名称">
-            <a-input v-model:value="captureTemplateName" placeholder="请输入模板名称" @press-enter="saveCapturedTemplate" />
-          </a-form-item>
-          <div style="display:flex;gap:8px">
-            <a-button style="flex:1" @click="captureStep = 'select_client'">重新截图</a-button>
-            <a-button type="primary" style="flex:1" :loading="savingCapturedTemplate" :disabled="!captureTemplateName.trim()" @click="saveCapturedTemplate">保存模板</a-button>
-          </div>
-        </a-form>
-      </template>
+      <a-form layout="vertical">
+        <a-form-item label="模板名称">
+          <a-input v-model:value="captureTemplateName" placeholder="请输入模板名称" />
+        </a-form-item>
+        <a-form-item label="客户端">
+          <a-select
+            v-model:value="captureClientId"
+            :style="{ width: '100%' }"
+            placeholder="请选择在线客户端"
+          >
+            <a-select-option v-for="c in onlineClients" :key="c.id" :value="c.id">{{ c.name }}</a-select-option>
+          </a-select>
+        </a-form-item>
+        <div class="hint-text" style="margin-bottom:10px">点击后客户端将弹出窗口选择，框选区域后自动保存</div>
+        <a-button
+          type="primary"
+          :disabled="!captureTemplateName.trim() || !captureClientId"
+          block
+          @click="startRegionCapture"
+        >在客户端截图</a-button>
+      </a-form>
     </a-modal>
 
     <!-- 标注预览 Modal -->
@@ -558,7 +516,7 @@ import { useProjectStore } from '@/stores/projectStore'
 import { useClientStore } from '@/stores/clientStore'
 import { useScriptStore } from '@/stores/scriptStore'
 import { api } from '@/services/api'
-import type { Project, MarkerCapture, MarkerCaptureData, ClientWindow } from '@/services/api'
+import type { Project, MarkerCapture, MarkerCaptureData } from '@/services/api'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -629,17 +587,8 @@ const imageTimestamps = ref<Record<string, number>>({})
 
 // Capture-from-client template flow
 const captureModalOpen = ref(false)
-const captureStep = ref<'select_client' | 'name'>('select_client')
 const captureClientId = ref<string | null>(null)
-const captureWindowList = ref<ClientWindow[]>([])
-const captureSelectedWindow = ref<string | null>(null)
-const loadingWindows = ref(false)
-const capturingRegion = ref(false)
-const captureImageB64 = ref('')
-const captureWindowW = ref<number | null>(null)
-const captureWindowH = ref<number | null>(null)
 const captureTemplateName = ref('')
-const savingCapturedTemplate = ref(false)
 
 // ── Computed ──────────────────────────────────────────────────────────
 
@@ -1026,13 +975,7 @@ async function removeTemplate(templateId: string) {
 }
 
 function openClientCaptureModal() {
-  captureStep.value = 'select_client'
   captureClientId.value = null
-  captureWindowList.value = []
-  captureSelectedWindow.value = null
-  captureImageB64.value = ''
-  captureWindowW.value = null
-  captureWindowH.value = null
   captureTemplateName.value = ''
   captureModalOpen.value = true
 }
@@ -1041,56 +984,14 @@ function resetCaptureModal() {
   captureModalOpen.value = false
 }
 
-async function onCaptureClientChange(clientId: string) {
-  captureWindowList.value = []
-  captureSelectedWindow.value = null
-  if (!clientId) return
-  loadingWindows.value = true
-  try {
-    captureWindowList.value = await api.getClientWindows(clientId)
-    if (captureWindowList.value.length === 0) message.warning('该客户端未检测到可用窗口')
-  } catch (e: any) {
-    message.error(e?.response?.data?.detail ?? '获取窗口列表失败')
-  } finally {
-    loadingWindows.value = false
-  }
-}
-
 async function startRegionCapture() {
-  if (!captureClientId.value || !captureSelectedWindow.value) return
-  const win = captureWindowList.value.find(w => w.title === captureSelectedWindow.value)
-  if (!win) return
-  capturingRegion.value = true
+  if (!selectedId.value || !captureClientId.value || !captureTemplateName.value.trim()) return
   try {
-    const result = await api.captureTemplateRegion(captureClientId.value, win)
-    captureImageB64.value = result.image_b64
-    captureWindowW.value = result.window_w
-    captureWindowH.value = result.window_h
-    captureStep.value = 'name'
-  } catch (e: any) {
-    message.error(e?.response?.data?.detail ?? '截图失败')
-  } finally {
-    capturingRegion.value = false
-  }
-}
-
-async function saveCapturedTemplate() {
-  if (!selectedId.value || !captureTemplateName.value.trim()) return
-  savingCapturedTemplate.value = true
-  try {
-    await api.createTemplateFromCapture(selectedId.value, {
-      name: captureTemplateName.value.trim(),
-      image_b64: captureImageB64.value,
-      source_w: captureWindowW.value,
-      source_h: captureWindowH.value,
-    })
-    await projectStore.fetchTemplates(selectedId.value)
-    message.success('模板已保存')
+    await api.captureTemplateAsync(selectedId.value, captureClientId.value, captureTemplateName.value.trim())
+    message.info('已发送截图指令，请在客户端操作')
     captureModalOpen.value = false
   } catch (e: any) {
-    message.error(e?.response?.data?.detail ?? '保存失败')
-  } finally {
-    savingCapturedTemplate.value = false
+    message.error(e?.response?.data?.detail ?? '发送截图指令失败')
   }
 }
 

@@ -1,6 +1,7 @@
 import { message } from 'ant-design-vue'
 import { useClientStore } from '@/stores/clientStore'
 import { useExecutionStore } from '@/stores/executionStore'
+import { useProjectStore } from '@/stores/projectStore'
 import { useScriptStore } from '@/stores/scriptStore'
 
 function isBoundClient(clientId: string | undefined): boolean {
@@ -118,6 +119,17 @@ class UIWebSocket {
       case 'window_resize_applied': {
         const scaled = msg.scaled as number
         message.success(`窗口大小已调整，${scaled} 个标注坐标已自动缩放`)
+        break
+      }
+      case 'template_capture_done': {
+        const projectId = msg.project_id as string
+        if (msg.success) {
+          const projectStore = useProjectStore()
+          projectStore.fetchTemplates(projectId)
+          message.success(`模板「${msg.name}」已保存`)
+        } else {
+          message.error(`模板截图失败：${msg.error || '未知错误'}`)
+        }
         break
       }
     }
