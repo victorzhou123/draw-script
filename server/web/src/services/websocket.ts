@@ -126,7 +126,7 @@ class UIWebSocket {
         if (msg.success) {
           const projectStore = useProjectStore()
           projectStore.fetchTemplates(projectId)
-          message.success(`模板「${msg.name}」已保存`)
+          message.success(msg.updated ? `模板「${msg.name}」已更新` : `模板「${msg.name}」已保存`)
         } else {
           message.error(`模板截图失败：${msg.error || '未知错误'}`)
         }

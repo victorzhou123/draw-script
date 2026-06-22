@@ -354,37 +354,16 @@
                 </div>
                 <div v-if="currentTemplates.length === 0" class="empty-hint">暂无模板，输入名称后上传图片</div>
                 <div v-for="t in currentTemplates" :key="t.id" class="template-row">
-                  <a-upload
-                    :show-upload-list="false"
-                    accept="image/*"
-                    :before-upload="(f: File) => { handleTemplateImageUpdate(t.id, f); return false }"
-                  >
-                    <a-tooltip title="点击替换图片" placement="right">
-                      <div class="template-thumb-wrap">
-                        <img :src="templateImageUrl(t.id)" class="template-thumb" />
-                        <div v-if="updatingTemplateId === t.id" class="template-thumb-overlay">
-                          <a-spin size="small" />
-                        </div>
-                        <div v-else class="template-thumb-hover">替换</div>
-                      </div>
-                    </a-tooltip>
-                  </a-upload>
-                  <template v-if="renamingTemplateId === t.id">
-                    <a-input
-                      v-model:value="renameTemplateValue"
-                      size="small"
-                      style="flex:1"
-                      @press-enter="confirmTemplateRename(t.id)"
-                      @blur="confirmTemplateRename(t.id)"
-                      autofocus
-                    />
-                  </template>
-                  <template v-else>
-                    <span class="member-name">{{ t.name }}</span>
-                    <a-button type="text" size="small" class="icon-btn" @click="startTemplateRename(t)">
-                      <EditOutlined />
-                    </a-button>
-                  </template>
+                  <div class="template-thumb-wrap">
+                    <img :src="templateImageUrl(t.id)" class="template-thumb" />
+                    <div v-if="updatingTemplateId === t.id" class="template-thumb-overlay">
+                      <a-spin size="small" />
+                    </div>
+                  </div>
+                  <span class="member-name">{{ t.name }}</span>
+                  <a-button type="text" size="small" class="icon-btn" @click="openTemplateEditModal(t)">
+                    <EditOutlined />
+                  </a-button>
                   <a-popconfirm title="删除此模板？" @confirm="removeTemplate(t.id)">
                     <a-button type="text" size="small" class="icon-btn danger-btn"><DeleteOutlined /></a-button>
                   </a-popconfirm>
@@ -447,6 +426,37 @@
           block
           @click="startRegionCapture"
         >在客户端截图</a-button>
+      </a-form>
+    </a-modal>
+
+    <!-- 编辑模板 Modal -->
+    <a-modal
+      v-model:open="editTemplateModalOpen"
+      title="编辑模板"
+      :width="400"
+      :footer="null"
+      :body-style="{ padding: '16px' }"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="模板名称">
+          <a-input v-model:value="editTemplateName" placeholder="模板名称" />
+        </a-form-item>
+        <a-button block :loading="savingTemplateName" :disabled="!editTemplateName.trim()" style="margin-bottom:8px" @click="saveTemplateName">
+          保存名称
+        </a-button>
+        <a-divider style="margin:12px 0;color:#555;font-size:12px">重新截图</a-divider>
+        <a-form-item label="客户端">
+          <a-select v-model:value="editCaptureClientId" :style="{ width: '100%' }" placeholder="请选择在线客户端">
+            <a-select-option v-for="c in onlineClients" :key="c.id" :value="c.id">{{ c.name }}</a-select-option>
+          </a-select>
+        </a-form-item>
+        <div class="hint-text" style="margin-bottom:10px">点击后客户端将弹出窗口选择，框选区域后自动更新</div>
+        <a-button
+          type="primary"
+          block
+          :disabled="!editTemplateName.trim() || !editCaptureClientId"
+          @click="recaptureTemplate"
+        >在客户端重新截图</a-button>
       </a-form>
     </a-modal>
 
@@ -580,8 +590,6 @@ const addScriptId = ref<string | null>(null)
 // Templates tab
 const newTemplateName = ref('')
 const uploadingTemplate = ref(false)
-const renamingTemplateId = ref<string | null>(null)
-const renameTemplateValue = ref('')
 const updatingTemplateId = ref<string | null>(null)
 const imageTimestamps = ref<Record<string, number>>({})
 
@@ -589,6 +597,13 @@ const imageTimestamps = ref<Record<string, number>>({})
 const captureModalOpen = ref(false)
 const captureClientId = ref<string | null>(null)
 const captureTemplateName = ref('')
+
+// Edit template modal
+const editTemplateModalOpen = ref(false)
+const editingTemplateId = ref<string | null>(null)
+const editTemplateName = ref('')
+const editCaptureClientId = ref<string | null>(null)
+const savingTemplateName = ref(false)
 
 // ── Computed ──────────────────────────────────────────────────────────
 
@@ -951,22 +966,6 @@ async function handleTemplateImageUpdate(templateId: string, file: File) {
   }
 }
 
-function startTemplateRename(t: { id: string; name: string }) {
-  renamingTemplateId.value = t.id
-  renameTemplateValue.value = t.name
-}
-
-async function confirmTemplateRename(templateId: string) {
-  if (!selectedId.value || !renameTemplateValue.value.trim()) return
-  try {
-    await projectStore.renameTemplate(selectedId.value, templateId, renameTemplateValue.value.trim())
-    message.success('模板已重命名')
-  } catch {
-    message.error('重命名失败')
-  } finally {
-    renamingTemplateId.value = null
-  }
-}
 
 async function removeTemplate(templateId: string) {
   if (!selectedId.value) return
@@ -990,6 +989,38 @@ async function startRegionCapture() {
     await api.captureTemplateAsync(selectedId.value, captureClientId.value, captureTemplateName.value.trim())
     message.info('已发送截图指令，请在客户端操作')
     captureModalOpen.value = false
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail ?? '发送截图指令失败')
+  }
+}
+
+function openTemplateEditModal(t: { id: string; name: string }) {
+  editingTemplateId.value = t.id
+  editTemplateName.value = t.name
+  editCaptureClientId.value = null
+  editTemplateModalOpen.value = true
+}
+
+async function saveTemplateName() {
+  if (!selectedId.value || !editingTemplateId.value || !editTemplateName.value.trim()) return
+  savingTemplateName.value = true
+  try {
+    await projectStore.renameTemplate(selectedId.value, editingTemplateId.value, editTemplateName.value.trim())
+    message.success('模板已重命名')
+    editTemplateModalOpen.value = false
+  } catch {
+    message.error('重命名失败')
+  } finally {
+    savingTemplateName.value = false
+  }
+}
+
+async function recaptureTemplate() {
+  if (!selectedId.value || !editingTemplateId.value || !editCaptureClientId.value || !editTemplateName.value.trim()) return
+  try {
+    await api.recaptureTemplateAsync(selectedId.value, editingTemplateId.value, editCaptureClientId.value, editTemplateName.value.trim())
+    message.info('已发送截图指令，请在客户端操作')
+    editTemplateModalOpen.value = false
   } catch (e: any) {
     message.error(e?.response?.data?.detail ?? '发送截图指令失败')
   }
