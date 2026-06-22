@@ -79,7 +79,18 @@ export interface Template {
   project_id: string
   name: string
   filename: string
+  source_w: number | null
+  source_h: number | null
   created_at: string
+}
+
+export interface ClientWindow {
+  title: string
+  process: string
+  x: number
+  y: number
+  w: number
+  h: number
 }
 
 export interface GlobalVariable {
@@ -137,6 +148,13 @@ export const api = {
     http.post(`/clients/${clientId}/stop`).then(r => r.data),
   updateClientGpu: (clientId: string, gpuEnabled: boolean) =>
     http.patch(`/clients/${clientId}/gpu`, { gpu_enabled: gpuEnabled }).then(r => r.data),
+  getClientWindows: (clientId: string) =>
+    http.get<{ windows: ClientWindow[] }>(`/clients/${clientId}/windows`).then(r => r.data.windows),
+  captureTemplateRegion: (clientId: string, win: ClientWindow) =>
+    http.post<{ image_b64: string; window_w: number; window_h: number }>(
+      `/clients/${clientId}/capture_template_region`,
+      { window_title: win.title, window_process: win.process, window_w: win.w, window_h: win.h },
+    ).then(r => r.data),
   addClientToProject: (projectId: string, clientId: string) =>
     http.post(`/projects/${projectId}/clients/${clientId}`).then(r => r.data),
   removeClientFromProject: (projectId: string, clientId: string) =>
@@ -207,6 +225,11 @@ export const api = {
   },
   templateImageUrl: (projectId: string, templateId: string) =>
     `/api/projects/${projectId}/templates/${templateId}/image`,
+  createTemplateFromCapture: (
+    projectId: string,
+    data: { name: string; image_b64: string; source_w: number | null; source_h: number | null },
+  ) =>
+    http.post<Template>(`/projects/${projectId}/templates/from_capture`, data).then(r => r.data),
 
   // Global Variables
   getGlobalVars: (projectId: string) =>
