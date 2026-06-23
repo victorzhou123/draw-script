@@ -1358,6 +1358,9 @@ watch(capturePreviewClientId, async (cid) => {
 watch(() => projectStore.captureNotification, (notif) => {
   if (notif && notif.projectId === selectedId.value) {
     refreshMarkerWindows()
+    if (expandedClientId.value === notif.clientId) {
+      loadClientWindows(notif.clientId)
+    }
     if (capturePreviewClientId.value === notif.clientId) {
       fetchCaptureStatus(selectedId.value, capturePreviewClientId.value)
       fetchWindowBinding(selectedId.value, capturePreviewClientId.value)
