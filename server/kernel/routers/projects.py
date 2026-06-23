@@ -202,12 +202,15 @@ async def get_marker_captures(
 async def get_marker_capture_data(
     project_id: str,
     client_id: str,
+    window_title: Optional[str] = None,
     db: AsyncSession = Depends(get_session),
 ):
     """Return per-marker coordinates for one client (for annotation preview).
 
     x/y/w/h are scaled from the capture-time window size to the window's current
     size so the overlay lands on the correct spot in the live screenshot.
+    If window_title is given, only captures belonging to that window are returned;
+    markers without a capture for that window are omitted entirely.
     """
     result = await db.execute(
         select(Marker, MarkerCapture, ProjectClientWindow)
@@ -223,14 +226,20 @@ async def get_marker_capture_data(
 
     out = []
     for marker, capture, pcw in rows:
+        belongs_to_window = pcw and pcw.window_title == window_title if window_title else True
         if capture is None or capture.x is None:
+            if window_title:
+                continue  # omit uncaptured markers when a specific window is selected
             out.append({
                 "id": marker.id, "name": marker.name, "type": marker.type,
                 "captured": False,
                 "x": None, "y": None, "w": None, "h": None,
                 "window_w": None, "window_h": None,
+                "window_title": None,
             })
             continue
+        if window_title and not belongs_to_window:
+            continue  # skip captures from other windows
         cur_w = pcw.window_w if pcw else None
         cur_h = pcw.window_h if pcw else None
         cap_w, cap_h = capture.window_w, capture.window_h
@@ -247,6 +256,7 @@ async def get_marker_capture_data(
             "h": round(capture.h * sy) if capture.h is not None else None,
             "window_w": cur_w,
             "window_h": cur_h,
+            "window_title": pcw.window_title if pcw else None,
         })
     return out
 

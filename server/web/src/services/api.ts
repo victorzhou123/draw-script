@@ -77,6 +77,7 @@ export interface MarkerCaptureData {
   h: number | null
   window_w: number | null
   window_h: number | null
+  window_title: string | null
 }
 
 export interface Template {
@@ -204,10 +205,10 @@ export const api = {
     http.delete(`/projects/${projectId}/markers/${markerId}`).then(r => r.data),
   getMarkerCaptures: (projectId: string, clientId: string) =>
     http.get<MarkerCapture[]>(`/projects/${projectId}/markers/captures`, { params: { client_id: clientId } }).then(r => r.data),
-  getMarkerCaptureData: (projectId: string, clientId: string) =>
-    http.get<MarkerCaptureData[]>(`/projects/${projectId}/markers/captures/data`, { params: { client_id: clientId } }).then(r => r.data),
-  captureClientScreenshot: (clientId: string, projectId?: string) =>
-    http.post<{ data: string }>(`/clients/${clientId}/screenshot`, null, { params: projectId ? { project_id: projectId } : undefined }).then(r => r.data.data),
+  getMarkerCaptureData: (projectId: string, clientId: string, windowTitle?: string) =>
+    http.get<MarkerCaptureData[]>(`/projects/${projectId}/markers/captures/data`, { params: { client_id: clientId, ...(windowTitle ? { window_title: windowTitle } : {}) } }).then(r => r.data),
+  captureClientScreenshot: (clientId: string, projectId?: string, windowTitle?: string) =>
+    http.post<{ data: string }>(`/clients/${clientId}/screenshot`, null, { params: { ...(projectId ? { project_id: projectId } : {}), ...(windowTitle ? { window_title: windowTitle } : {}) } }).then(r => r.data.data),
   getWindowBinding: (projectId: string, clientId: string) =>
     http.get<WindowBinding>(`/projects/${projectId}/window-binding`, { params: { client_id: clientId } })
       .then(r => r.data)

@@ -75,12 +75,17 @@ async def stop_client_execution(client_id: str, request: Request, db: AsyncSessi
 async def capture_client_screenshot(
     client_id: str,
     project_id: str | None = None,
+    window_title: str | None = None,
     db: AsyncSession = Depends(get_session),
 ):
     """Request a screenshot from a connected client and return it as base64.
 
     If project_id is provided the client will screenshot only the window area
     bound to that project, instead of the full screen.
+    If window_title is also provided, that specific window is used directly.
+    If project_id is provided but window_title is not and there is exactly one
+    bound window, that single window is used; with multiple windows the full
+    screen is captured to avoid picking the wrong title.
     """
     if not client_ws_manager.is_connected(client_id):
         raise HTTPException(400, f"Client {client_id} is not connected")
@@ -94,14 +99,26 @@ async def capture_client_screenshot(
             _select(ProjectClientWindow).where(
                 ProjectClientWindow.project_id == project_id,
                 ProjectClientWindow.client_id == client_id,
-            ).order_by(ProjectClientWindow.updated_at.desc()).limit(1)
+            )
         )
-        pcw = _pcw_result.scalar_one_or_none()
-        if pcw:
+        pcws = _pcw_result.scalars().all()
+        if window_title:
+            # Caller specified an explicit window — use it directly
+            matched = next((p for p in pcws if p.window_title == window_title), None)
+            pcw = matched or (pcws[0] if pcws else None)
+            if pcw:
+                msg["params"] = {
+                    "window_title":   window_title,
+                    "window_process": pcw.window_process or "",
+                }
+        elif len(pcws) == 1:
+            # Single window — safe to filter
+            pcw = pcws[0]
             msg["params"] = {
                 "window_title":   pcw.window_title,
                 "window_process": pcw.window_process or "",
             }
+        # else: multiple windows and no explicit selection → full-screen screenshot
 
     request_id = msg["request_id"]
     loop = asyncio.get_running_loop()
