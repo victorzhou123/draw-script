@@ -77,16 +77,59 @@
                   </a-button>
                 </div>
                 <div v-if="projectClientIds.length === 0" class="empty-hint">暂无客户端，从上方添加</div>
-                <div v-for="cid in projectClientIds" :key="cid" class="member-row">
-                  <span class="status-dot" :class="`dot-${clientStatus(cid)}`" />
-                  <div class="member-info">
-                    <span class="member-name">{{ clientName(cid) }}</span>
-                    <span class="member-meta">{{ cid }}</span>
+                <div v-for="cid in projectClientIds" :key="cid" class="client-expand-card">
+                  <!-- 头部行（可点击展开） -->
+                  <div class="client-expand-header" @click="toggleExpandedClient(cid)">
+                    <span class="status-dot" :class="`dot-${clientStatus(cid)}`" />
+                    <div class="member-info">
+                      <span class="member-name">{{ clientName(cid) }}</span>
+                      <span class="member-meta">{{ cid }}</span>
+                    </div>
+                    <span class="member-status">{{ statusLabel(clientStatus(cid)) }}</span>
+                    <CaretDownOutlined class="cec-expand-icon" :class="{ expanded: expandedClientId === cid }" />
+                    <a-popconfirm title="从此项目组移除？" @confirm="removeClient(cid)" @click.stop>
+                      <a-button type="text" size="small" class="icon-btn danger-btn" @click.stop><MinusOutlined /></a-button>
+                    </a-popconfirm>
                   </div>
-                  <span class="member-status">{{ statusLabel(clientStatus(cid)) }}</span>
-                  <a-popconfirm title="从此项目组移除？" @confirm="removeClient(cid)">
-                    <a-button type="text" size="small" class="icon-btn danger-btn"><MinusOutlined /></a-button>
-                  </a-popconfirm>
+
+                  <!-- 展开：窗口信息 -->
+                  <div v-if="expandedClientId === cid" class="client-window-section">
+                    <div v-if="loadingClientWindows.has(cid)" style="padding:6px 0"><a-spin size="small" /></div>
+                    <template v-else>
+                      <div v-if="(clientWindowMap[cid] ?? []).length === 0" class="window-empty">
+                        暂无窗口绑定
+                      </div>
+                      <template v-else>
+                        <div v-for="w in (clientWindowMap[cid] ?? [])" :key="w.window_title" class="window-item">
+                          <DesktopOutlined class="window-item-icon" />
+                          <span class="window-item-title">{{ w.window_title }}</span>
+                          <span v-if="w.window_w && w.window_h" class="window-item-size">{{ w.window_w }}×{{ w.window_h }}</span>
+                        </div>
+                        <div class="window-action-row">
+                          <a-tooltip title="还原窗口到标注时的位置和大小">
+                            <a-button size="small" class="icon-btn"
+                              :disabled="clientStatus(cid) === 'disconnected'"
+                              :loading="restoringWindow && resizeModalClientId === cid"
+                              @click="restoreClientWindow(cid)">还原窗口</a-button>
+                          </a-tooltip>
+                          <a-tooltip title="拖拽调节窗口大小，标注坐标自动按比例缩放">
+                            <a-button size="small" class="icon-btn resize-window-btn"
+                              :disabled="clientStatus(cid) === 'disconnected'"
+                              :loading="resizingWindow && resizeModalClientId === cid"
+                              @click="resizeClientWindowInteractive(cid)">拖拽调节</a-button>
+                          </a-tooltip>
+                          <a-tooltip title="输入目标宽高，标注坐标自动按比例缩放">
+                            <a-button size="small" class="icon-btn resize-window-btn"
+                              :disabled="clientStatus(cid) === 'disconnected'"
+                              @click="openClientResizeModal(cid)">数字调节</a-button>
+                          </a-tooltip>
+                          <a-button size="small" type="link" class="goto-markers-btn" @click="navigateToMarkersFor(cid)">
+                            <TagsOutlined /> 查看标注
+                          </a-button>
+                        </div>
+                      </template>
+                    </template>
+                  </div>
                 </div>
               </div>
             </a-tab-pane>
@@ -184,14 +227,14 @@
                   </div>
                 </div>
 
-                <!-- ── 预览 / 窗口管理 ── -->
+                <!-- ── 预览 ── -->
                 <div class="ops-section">
                   <div class="ops-section-header">
                     <EyeOutlined class="ops-icon" />
-                    <span>预览 / 窗口</span>
+                    <span>预览</span>
                   </div>
                   <div class="ops-row">
-                    <span class="ops-label">预览客户端</span>
+                    <span class="ops-label">客户端</span>
                     <a-select
                       v-model:value="capturePreviewClientId"
                       size="small"
@@ -208,42 +251,23 @@
                       title="刷新标注状态"
                     ><ReloadOutlined /></a-button>
                   </div>
-                  <!-- Window binding display -->
-                  <div v-if="capturePreviewClientId" class="window-binding-row">
-                    <a-spin v-if="loadingWindowBinding" size="small" style="margin-right:6px" />
-                    <template v-else-if="windowBinding">
-                      <DesktopOutlined class="window-binding-icon" />
-                      <a-tooltip :title="`进程: ${windowBinding.window_process || '未知'} · 位置: (${windowBinding.window_x ?? '?'}, ${windowBinding.window_y ?? '?'})`">
-                        <span class="window-binding-title">{{ windowBinding.window_title }}</span>
-                      </a-tooltip>
-                      <span class="window-binding-size">{{ windowBinding.window_w }}×{{ windowBinding.window_h }}</span>
+                  <!-- Window binding display - all capture windows -->
+                  <div v-if="capturePreviewClientId">
+                    <div v-if="loadingWindowBinding" style="padding:4px 0"><a-spin size="small" /></div>
+                    <template v-else>
+                      <div v-if="previewCaptureWindows.length === 0" class="window-binding-row">
+                        <span class="window-binding-none">未绑定窗口</span>
+                      </div>
+                      <div
+                        v-for="w in previewCaptureWindows"
+                        :key="w.window_title"
+                        class="window-binding-row"
+                      >
+                        <DesktopOutlined class="window-binding-icon" />
+                        <span class="window-binding-title">{{ w.window_title }}</span>
+                        <span v-if="w.window_w && w.window_h" class="window-binding-size">{{ w.window_w }}×{{ w.window_h }}</span>
+                      </div>
                     </template>
-                    <span v-else class="window-binding-none">未绑定窗口</span>
-                  </div>
-                  <div class="ops-row" style="gap:6px">
-                    <a-tooltip :title="windowBinding ? '还原窗口到标注时的位置和大小' : '请先标注以记录窗口绑定'">
-                      <a-button
-                        size="small" class="icon-btn window-ctrl-btn"
-                        :disabled="!capturePreviewClientId || !windowBinding"
-                        :loading="restoringWindow"
-                        @click="restoreWindow"
-                      >还原窗口</a-button>
-                    </a-tooltip>
-                    <a-tooltip :title="windowBinding ? '在客户端拖拽调整窗口大小，标注坐标自动按比例缩放' : '请先标注以记录窗口绑定'">
-                      <a-button
-                        size="small" class="icon-btn resize-window-btn"
-                        :disabled="!capturePreviewClientId || !windowBinding"
-                        :loading="resizingWindow"
-                        @click="resizeWindowInteractive"
-                      >拖拽调节</a-button>
-                    </a-tooltip>
-                    <a-tooltip :title="windowBinding ? '输入目标宽高，标注坐标自动按比例缩放' : '请先标注以记录窗口绑定'">
-                      <a-button
-                        size="small" class="icon-btn resize-window-btn"
-                        :disabled="!capturePreviewClientId || !windowBinding"
-                        @click="openResizeSizeModal"
-                      >数字调节</a-button>
-                    </a-tooltip>
                   </div>
                 </div>
 
@@ -536,36 +560,30 @@
       <img :src="previewTemplateUrl" style="max-width:100%;max-height:75vh;object-fit:contain;border-radius:4px;" />
     </a-modal>
 
-    <!-- 自定义窗口大小 Modal -->
+    <!-- 客户端窗口 数字调节 Modal -->
     <a-modal
       v-model:open="resizeSizeModalOpen"
       title="自定义窗口大小"
       :width="320"
-      :ok-button-props="{ loading: resizingWindow }"
+      :ok-button-props="{ loading: resizeSizeConfirming }"
       ok-text="确认调整"
-      @ok="confirmResizeToSize"
+      @ok="confirmClientResize"
     >
       <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
         <a-input-number
           v-model:value="resizeSizeW"
-          :min="100"
-          :max="9999"
-          size="small"
-          style="flex:1"
-          addonBefore="宽"
-          addonAfter="px"
-          @pressEnter="confirmResizeToSize"
+          :min="100" :max="9999"
+          size="small" style="flex:1"
+          addonBefore="宽" addonAfter="px"
+          @pressEnter="confirmClientResize"
         />
         <span style="color:#555;flex-shrink:0">×</span>
         <a-input-number
           v-model:value="resizeSizeH"
-          :min="100"
-          :max="9999"
-          size="small"
-          style="flex:1"
-          addonBefore="高"
-          addonAfter="px"
-          @pressEnter="confirmResizeToSize"
+          :min="100" :max="9999"
+          size="small" style="flex:1"
+          addonBefore="高" addonAfter="px"
+          @pressEnter="confirmClientResize"
         />
       </div>
     </a-modal>
@@ -638,7 +656,7 @@ import {
   PlusOutlined, EditOutlined, DeleteOutlined, MinusOutlined,
   LaptopOutlined, TagsOutlined, FileTextOutlined, PictureOutlined, UploadOutlined,
   AimOutlined, BorderOutlined, FolderOpenOutlined, SendOutlined, ReloadOutlined,
-  InfoCircleOutlined, EyeOutlined, CopyOutlined, DesktopOutlined,
+  InfoCircleOutlined, EyeOutlined, CopyOutlined, DesktopOutlined, CaretDownOutlined,
 } from '@ant-design/icons-vue'
 import { useProjectStore } from '@/stores/projectStore'
 import { useClientStore } from '@/stores/clientStore'
@@ -671,6 +689,16 @@ const renaming = ref(false)
 // Clients tab
 const addClientId = ref<string | null>(null)
 const projectClientIds = ref<string[]>([])
+const expandedClientId = ref<string | null>(null)
+const clientWindowMap = ref<Record<string, CaptureWindow[]>>({})
+const loadingClientWindows = ref(new Set<string>())
+const restoringWindow = ref(false)
+const resizingWindow = ref(false)
+const resizeSizeModalOpen = ref(false)
+const resizeSizeW = ref<number>(800)
+const resizeSizeH = ref<number>(600)
+const resizeSizeConfirming = ref(false)
+const resizeModalClientId = ref<string | null>(null)
 
 // Markers tab
 const newMarkerName = ref('')
@@ -680,14 +708,9 @@ const sending = ref(false)
 const sendResult = ref<{ ok: boolean; text: string } | null>(null)
 // Marker capture status preview
 const capturePreviewClientId = ref<string | null>(null)
-const restoringWindow = ref(false)
-const resizingWindow = ref(false)
 const windowBinding = ref<WindowBinding | null>(null)
 const loadingWindowBinding = ref(false)
-// Custom resize modal
-const resizeSizeModalOpen = ref(false)
-const resizeSizeW = ref<number>(800)
-const resizeSizeH = ref<number>(600)
+const previewCaptureWindows = ref<CaptureWindow[]>([])
 // Copy captures
 const markerWindows = ref<MarkerWindow[]>([])
 const copySourceClientId = ref<string | null>(null)
@@ -796,59 +819,14 @@ async function refreshCaptureStatus() {
 async function fetchWindowBinding(projectId: string, clientId: string) {
   loadingWindowBinding.value = true
   try {
-    windowBinding.value = await api.getWindowBinding(projectId, clientId)
-  } catch {
-    windowBinding.value = null
+    const [wb, wins] = await Promise.all([
+      api.getWindowBinding(projectId, clientId).catch(() => null),
+      api.getClientCaptureWindows(projectId, clientId).catch(() => []),
+    ])
+    windowBinding.value = wb
+    previewCaptureWindows.value = wins
   } finally {
     loadingWindowBinding.value = false
-  }
-}
-
-async function restoreWindow() {
-  if (!capturePreviewClientId.value || !selectedId.value) return
-  restoringWindow.value = true
-  try {
-    await api.restoreWindow(selectedId.value, capturePreviewClientId.value)
-    message.success('已发送还原窗口指令')
-  } catch (e: any) {
-    message.error(e?.response?.data?.detail ?? '还原失败')
-  } finally {
-    restoringWindow.value = false
-  }
-}
-
-async function resizeWindowInteractive() {
-  if (!capturePreviewClientId.value || !selectedId.value) return
-  resizingWindow.value = true
-  try {
-    await api.resizeWindowInteractive(selectedId.value, capturePreviewClientId.value)
-    message.info('已发送指令，请在客户端调整窗口大小后确认')
-  } catch (e: any) {
-    message.error(e?.response?.data?.detail ?? '发送失败')
-  } finally {
-    resizingWindow.value = false
-  }
-}
-
-function openResizeSizeModal() {
-  if (windowBinding.value) {
-    resizeSizeW.value = windowBinding.value.window_w
-    resizeSizeH.value = windowBinding.value.window_h
-  }
-  resizeSizeModalOpen.value = true
-}
-
-async function confirmResizeToSize() {
-  if (!capturePreviewClientId.value || !selectedId.value) return
-  resizingWindow.value = true
-  try {
-    await api.resizeWindowToSize(selectedId.value, capturePreviewClientId.value, resizeSizeW.value, resizeSizeH.value)
-    message.info(`已发送指令，目标大小 ${resizeSizeW.value}×${resizeSizeH.value}`)
-    resizeSizeModalOpen.value = false
-  } catch (e: any) {
-    message.error(e?.response?.data?.detail ?? '发送失败')
-  } finally {
-    resizingWindow.value = false
   }
 }
 
@@ -908,6 +886,8 @@ async function selectProject(id: string) {
   sendClientIds.value = []
   sendResult.value = null
   capturePreviewClientId.value = null
+  expandedClientId.value = null
+  clientWindowMap.value = {}
   copyResult.value = null
   copySourceClientId.value = null
   copySourceClientWindow.value = null
@@ -959,6 +939,87 @@ async function confirmRename() {
     showRename.value = false
     message.success('重命名成功')
   } finally { renaming.value = false }
+}
+
+async function toggleExpandedClient(cid: string) {
+  const wasExpanded = expandedClientId.value === cid
+  expandedClientId.value = wasExpanded ? null : cid
+  if (!wasExpanded && selectedId.value && !clientWindowMap.value[cid]) {
+    await loadClientWindows(cid)
+  }
+}
+
+async function loadClientWindows(cid: string) {
+  if (!selectedId.value) return
+  loadingClientWindows.value.add(cid)
+  loadingClientWindows.value = new Set(loadingClientWindows.value)
+  try {
+    const wins = await api.getClientCaptureWindows(selectedId.value, cid)
+    clientWindowMap.value = { ...clientWindowMap.value, [cid]: wins }
+  } catch {
+    clientWindowMap.value = { ...clientWindowMap.value, [cid]: [] }
+  } finally {
+    loadingClientWindows.value.delete(cid)
+    loadingClientWindows.value = new Set(loadingClientWindows.value)
+  }
+}
+
+async function restoreClientWindow(cid: string) {
+  if (!selectedId.value) return
+  restoringWindow.value = true
+  resizeModalClientId.value = cid
+  try {
+    await api.restoreWindow(selectedId.value, cid)
+    message.success('已发送还原窗口指令')
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail ?? '还原失败')
+  } finally {
+    restoringWindow.value = false
+    resizeModalClientId.value = null
+  }
+}
+
+async function resizeClientWindowInteractive(cid: string) {
+  if (!selectedId.value) return
+  resizingWindow.value = true
+  resizeModalClientId.value = cid
+  try {
+    await api.resizeWindowInteractive(selectedId.value, cid)
+    message.info('已发送指令，请在客户端调整窗口大小后确认')
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail ?? '发送失败')
+  } finally {
+    resizingWindow.value = false
+    resizeModalClientId.value = null
+  }
+}
+
+function openClientResizeModal(cid: string) {
+  const wins = clientWindowMap.value[cid] ?? []
+  const first = wins[0]
+  resizeSizeW.value = first?.window_w ?? 800
+  resizeSizeH.value = first?.window_h ?? 600
+  resizeModalClientId.value = cid
+  resizeSizeModalOpen.value = true
+}
+
+async function confirmClientResize() {
+  if (!resizeModalClientId.value || !selectedId.value) return
+  resizeSizeConfirming.value = true
+  try {
+    await api.resizeWindowToSize(selectedId.value, resizeModalClientId.value, resizeSizeW.value, resizeSizeH.value)
+    message.info(`已发送指令，目标大小 ${resizeSizeW.value}×${resizeSizeH.value}`)
+    resizeSizeModalOpen.value = false
+  } catch (e: any) {
+    message.error(e?.response?.data?.detail ?? '发送失败')
+  } finally {
+    resizeSizeConfirming.value = false
+  }
+}
+
+function navigateToMarkersFor(cid: string) {
+  detailTab.value = 'markers'
+  capturePreviewClientId.value = cid
 }
 
 async function addClient() {
@@ -1244,6 +1305,7 @@ watch(capturePreviewClientId, async (cid) => {
   } else {
     markerCaptureMap.value = {}
     windowBinding.value = null
+    previewCaptureWindows.value = []
     selectedMarkerNames.value = new Set(currentMarkers.value.map(m => m.name))
   }
 })
@@ -1288,6 +1350,7 @@ watch(currentMarkers, (markers) => {
     selectedMarkerNames.value = new Set(markers.map(m => m.name))
   }
 }, { deep: true })
+
 </script>
 
 <style scoped>
@@ -1331,6 +1394,25 @@ watch(currentMarkers, (markers) => {
 .member-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 5px; background: #1f1f1f; border: 1px solid #252525; }
 .member-row:hover .danger-btn { opacity: 1 !important; }
 .member-row .danger-btn { opacity: 0; transition: opacity 0.15s; }
+
+/* Expandable client card (clients tab) */
+.client-expand-card { border: 1px solid #252525; border-radius: 5px; background: #1f1f1f; margin-bottom: 6px; overflow: hidden; }
+.client-expand-header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; user-select: none; transition: background 0.12s; }
+.client-expand-header:hover { background: #252525; }
+.client-expand-header:hover .danger-btn { opacity: 1 !important; }
+.client-expand-header .danger-btn { opacity: 0; transition: opacity 0.15s; }
+.cec-expand-icon { font-size: 10px; color: #3a3a3a; transition: transform 0.2s; margin-left: auto; }
+.cec-expand-icon.expanded { transform: rotate(180deg); }
+.client-window-section { border-top: 1px solid #252525; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; background: #181818; }
+.window-empty { font-size: 11px; color: #333; }
+.window-item { display: flex; align-items: center; gap: 5px; padding: 4px 6px; border-radius: 4px; background: #141414; border: 1px solid #2a2a2a; }
+.window-item-icon { font-size: 11px; color: #444; flex-shrink: 0; }
+.window-item-title { font-size: 11px; color: #888; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.window-item-size { font-size: 10px; color: #444; flex-shrink: 0; }
+.window-action-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.resize-window-btn { color: #fa8c16 !important; border-color: transparent !important; }
+.resize-window-btn:hover:not(:disabled) { color: #ffa940 !important; background: #2b1b07 !important; }
+.goto-markers-btn { font-size: 11px; padding: 0 4px !important; height: 22px !important; margin-left: auto; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .dot-idle { background: #52c41a; }
 .dot-running { background: #1890ff; }
@@ -1393,9 +1475,7 @@ watch(currentMarkers, (markers) => {
 }
 .ops-row:last-child { margin-bottom: 0; }
 .ops-label { font-size: 11px; color: #555; flex-shrink: 0; width: 30px; }
-.window-ctrl-btn { color: #888 !important; }
-.resize-window-btn { color: #fa8c16 !important; border-color: transparent !important; }
-.resize-window-btn:hover:not(:disabled) { color: #ffa940 !important; background: #2b1b07 !important; }
+
 .copy-source-window-row { margin-bottom: 4px; }
 .copy-source-window-display { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; padding: 3px 6px; background: #161616; border: 1px solid #2a2a2a; border-radius: 4px; }
 .copy-scale-hint { font-size: 10px; color: #444; padding: 2px 0 4px; display: flex; align-items: center; }
