@@ -93,14 +93,47 @@ DrawScript is a visual RPA (Robotic Process Automation) system. Design automatio
 
 ## 🚀 Quick Start
 
-### Requirements
+### Option A: Pre-built Release (Recommended)
 
-- **Server**: Python 3.10+, Node.js 18+ (Linux / macOS / Windows)
-- **Client**: Windows 10/11, Python 3.10+
+> No Python or Node.js required on the target machine — download and run.
+
+#### 1. Start the Server (Linux)
+
+Download `draw-script-server-{version}-linux-amd64.tar.gz` from [GitHub Releases](https://github.com/victorzhou123/draw-script/releases/latest), then extract and start it:
+
+```bash
+tar -xzf draw-script-server-{version}-linux-amd64.tar.gz
+cd draw-script-server-{version}
+./start.sh
+```
+
+Open `http://localhost:9001` in your browser.
+
+To customize the port or log level, pass environment variables:
+
+```bash
+DS_PORT=8080 DS_LOG_LEVEL=debug ./start.sh
+```
+
+#### 2. Start the Windows Client
+
+Download `draw-script-client-{version}-windows-amd64.zip` from [GitHub Releases](https://github.com/victorzhou123/draw-script/releases/latest), extract it, and run:
+
+```
+draw-script-client.exe
+```
+
+On first run, an **interactive setup wizard** appears: enter the server IP/port, a unique client ID, and a display name. CUDA DLL directories are detected automatically. The configuration is saved to `config.toml` in the same directory and loaded on subsequent starts.
+
+> **Note:** The release client is built in CPU-only mode; OpenCV GPU acceleration is not available. For CUDA support, use the source-based setup below.
 
 ---
 
-### 1. Start the Server
+### Option B: Run from Source
+
+> Requires Python 3.10+ and Node.js 18+ (server), plus Python 3.10+ on the Windows client.
+
+#### 1. Start the Server
 
 **Step 1 — one-time environment setup**
 
@@ -136,9 +169,7 @@ make dev-bg
 make stop
 ```
 
----
-
-### 2. Start the Windows Client Agent
+#### 2. Start the Windows Client
 
 Copy the `client/` directory to the **Windows machine** and run:
 
@@ -156,7 +187,7 @@ Subsequent runs skip the wizard, update dependencies, and launch immediately.
 
 ---
 
-### 3. Create Your First Script
+### Create Your First Script
 
 1. Open the server URL in your browser (default `http://localhost:9001`)
 2. Create a new script in the left sidebar
