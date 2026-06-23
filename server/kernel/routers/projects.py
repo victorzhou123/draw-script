@@ -203,28 +203,47 @@ async def get_marker_capture_data(
     client_id: str,
     db: AsyncSession = Depends(get_session),
 ):
-    """Return per-marker coordinates for one client (for annotation preview)."""
+    """Return per-marker coordinates for one client (for annotation preview).
+
+    x/y/w/h are scaled from the capture-time window size to the client's current
+    window size so the overlay lands on the correct spot in the live screenshot.
+    """
     rows = await _query_marker_captures(project_id, client_id, db)
     pcw = await db.get(ProjectClientWindow, (project_id, client_id))
-    win_w = pcw.window_w if pcw else None
-    win_h = pcw.window_h if pcw else None
-    return [
-        {
+    cur_w = pcw.window_w if pcw else None
+    cur_h = pcw.window_h if pcw else None
+
+    def _scale(capture: MarkerCapture | None):
+        if capture is None or capture.x is None:
+            return None, None, None, None
+        cap_w, cap_h = capture.window_w, capture.window_h
+        if cap_w and cap_h and cur_w and cur_h:
+            sx, sy = cur_w / cap_w, cur_h / cap_h
+        else:
+            sx = sy = 1.0
+        return (
+            round(capture.x * sx),
+            round(capture.y * sy),
+            round(capture.w * sx) if capture.w is not None else None,
+            round(capture.h * sy) if capture.h is not None else None,
+        )
+
+    result = []
+    for marker, capture in rows:
+        x, y, w, h = _scale(capture)
+        result.append({
             "id": marker.id,
             "name": marker.name,
             "type": marker.type,
             "captured": capture is not None and capture.x is not None,
-            "x": capture.x if capture else None,
-            "y": capture.y if capture else None,
-            "w": capture.w if capture else None,
-            "h": capture.h if capture else None,
-            "window_x": 0,
-            "window_y": 0,
-            "window_w": win_w,
-            "window_h": win_h,
-        }
-        for marker, capture in rows
-    ]
+            "x": x,
+            "y": y,
+            "w": w,
+            "h": h,
+            "window_w": cur_w,
+            "window_h": cur_h,
+        })
+    return result
 
 
 # ── Restore window ────────────────────────────────────────────────────────────
@@ -312,6 +331,50 @@ async def list_marker_windows(project_id: str, db: AsyncSession = Depends(get_se
     return result
 
 
+# ── Capture windows for a specific client ────────────────────────────────────
+
+@router.get("/{project_id}/clients/{client_id}/capture-windows")
+async def list_client_capture_windows(
+    project_id: str,
+    client_id: str,
+    db: AsyncSession = Depends(get_session),
+):
+    """Return distinct windows from this client's actual captures (for filter dropdown)."""
+    marker_result = await db.execute(
+        select(Marker.id).where(Marker.project_id == project_id)
+    )
+    marker_ids = [r[0] for r in marker_result.all()]
+    if not marker_ids:
+        return []
+
+    rows_result = await db.execute(
+        select(MarkerCapture.window_title, MarkerCapture.window_w, MarkerCapture.window_h)
+        .where(
+            MarkerCapture.marker_id.in_(marker_ids),
+            MarkerCapture.client_id == client_id,
+            MarkerCapture.x.isnot(None),
+            MarkerCapture.window_title.isnot(None),
+        )
+        .distinct()
+    )
+    result = [
+        {"window_title": r[0], "window_w": r[1], "window_h": r[2]}
+        for r in rows_result.all()
+    ]
+
+    # Fallback: if no captures have window_title stored, use ProjectClientWindow
+    if not result:
+        pcw = await db.get(ProjectClientWindow, (project_id, client_id))
+        if pcw:
+            result.append({
+                "window_title": pcw.window_title,
+                "window_w": pcw.window_w,
+                "window_h": pcw.window_h,
+            })
+
+    return result
+
+
 # ── Copy captures between clients ────────────────────────────────────────────
 
 class CopyCapturesRequest(BaseModel):
@@ -323,7 +386,7 @@ class CopyCapturesRequest(BaseModel):
     source_client_id: str | None = None
     target_client_ids: list[str]
     mode: str = "overwrite"  # "overwrite" | "fill_missing"
-    auto_scale: bool = True
+    filter_window_title: str | None = None  # if set, only copy captures for this window
 
 
 @router.post("/{project_id}/markers/copy-captures")
@@ -376,19 +439,13 @@ async def copy_captures(
             raise HTTPException(400, "No captures found for the specified window")
 
         source_client_id = best_client_id
-        source_w: int | None = body.source_window_w
-        source_h: int | None = body.source_window_h
     elif body.source_client_id:
         source_client_id = body.source_client_id
-        # Look up source window for auto-scaling
-        if body.auto_scale:
-            src_pcw = await db.get(ProjectClientWindow, (project_id, source_client_id))
-            source_w = src_pcw.window_w if src_pcw else None
-            source_h = src_pcw.window_h if src_pcw else None
-        else:
-            source_w = source_h = None
     else:
         raise HTTPException(400, "Provide source_window_title/w/h or source_client_id")
+
+    # Load source PCW as fallback for window_title/process in old captures
+    src_pcw = await db.get(ProjectClientWindow, (project_id, source_client_id))
 
     # ── Load source captures ───────────────────────────────────────────────
     src_result = await db.execute(
@@ -402,23 +459,21 @@ async def copy_captures(
     if not source_captures:
         raise HTTPException(400, "Source has no captures for this project")
 
-    # ── Copy (with optional proportional scaling) ──────────────────────────
+    # ── Optional window filter ─────────────────────────────────────────────
+    if body.filter_window_title:
+        def _effective_title(cap: MarkerCapture) -> str | None:
+            return cap.window_title or (src_pcw.window_title if src_pcw else None)
+        source_captures = [c for c in source_captures if _effective_title(c) == body.filter_window_title]
+        if not source_captures:
+            raise HTTPException(400, "Source has no captures for the specified window")
+
+    # ── Copy verbatim — runtime scaling handles window size differences ────
+    # Coordinates stay in their original annotation-time window space;
+    # marker_loader applies (current_pcw_w / capture.window_w) at execution time.
     copied = 0
     for target_id in body.target_client_ids:
         if target_id == source_client_id:
             continue
-
-        # Compute scale factors and target window size for this target
-        sw, sh = 1.0, 1.0
-        target_window_w: int | None = None
-        target_window_h: int | None = None
-        target_pcw = await db.get(ProjectClientWindow, (project_id, target_id))
-        if target_pcw and target_pcw.window_w and target_pcw.window_h:
-            target_window_w = target_pcw.window_w
-            target_window_h = target_pcw.window_h
-            if body.auto_scale and source_w and source_h:
-                sw = target_window_w / source_w
-                sh = target_window_h / source_h
 
         for src in source_captures:
             existing_result = await db.execute(
@@ -432,25 +487,28 @@ async def copy_captures(
             if body.mode == "fill_missing" and existing and existing.x is not None:
                 continue
 
-            scaled_x = round(src.x * sw) if src.x is not None else None
-            scaled_y = round(src.y * sh) if src.y is not None else None
-            scaled_w = round(src.w * sw) if src.w is not None else None
-            scaled_h = round(src.h * sh) if src.h is not None else None
+            win_title   = src.window_title   or (src_pcw.window_title   if src_pcw else None)
+            win_process = src.window_process or (src_pcw.window_process if src_pcw else None)
+            win_w       = src.window_w       or (src_pcw.window_w       if src_pcw else None)
+            win_h       = src.window_h       or (src_pcw.window_h       if src_pcw else None)
 
             if existing:
-                existing.x = scaled_x
-                existing.y = scaled_y
-                existing.w = scaled_w
-                existing.h = scaled_h
-                existing.window_w = target_window_w
-                existing.window_h = target_window_h
-                existing.captured_at = datetime.now(timezone.utc)
+                existing.x              = src.x
+                existing.y              = src.y
+                existing.w              = src.w
+                existing.h              = src.h
+                existing.window_title   = win_title
+                existing.window_process = win_process
+                existing.window_w       = win_w
+                existing.window_h       = win_h
+                existing.captured_at    = datetime.now(timezone.utc)
             else:
                 db.add(MarkerCapture(
                     marker_id=src.marker_id,
                     client_id=target_id,
-                    x=scaled_x, y=scaled_y, w=scaled_w, h=scaled_h,
-                    window_w=target_window_w, window_h=target_window_h,
+                    x=src.x, y=src.y, w=src.w, h=src.h,
+                    window_title=win_title, window_process=win_process,
+                    window_w=win_w, window_h=win_h,
                 ))
             copied += 1
 
