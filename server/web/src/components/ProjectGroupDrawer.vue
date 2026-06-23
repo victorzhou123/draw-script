@@ -300,20 +300,37 @@
                       :options="copySourceOptions"
                     />
                   </div>
-                  <!-- 来源客户端的窗口绑定展示 -->
+                  <!-- 来源客户端的窗口：单窗口展示，多窗口可筛选 -->
                   <div v-if="copySourceClientId" class="ops-row copy-source-window-row">
                     <span class="ops-label">窗口</span>
-                    <div class="copy-source-window-display">
-                      <a-spin v-if="loadingCopySourceWindow" size="small" />
-                      <template v-else-if="copySourceClientWindow">
+                    <a-spin v-if="loadingCopySourceWindow" size="small" />
+                    <template v-else-if="copySourceCaptureWindows.length > 1">
+                      <a-select
+                        v-model:value="copyFilterWindowTitle"
+                        size="small"
+                        placeholder="全部窗口"
+                        style="flex:1;min-width:0"
+                        allow-clear
+                        :options="copyWindowFilterOptions"
+                      />
+                    </template>
+                    <template v-else-if="copySourceCaptureWindows.length === 1">
+                      <div class="copy-source-window-display">
+                        <DesktopOutlined class="window-binding-icon" />
+                        <span class="window-binding-title">{{ copySourceCaptureWindows[0].window_title }}</span>
+                        <span v-if="copySourceCaptureWindows[0].window_w && copySourceCaptureWindows[0].window_h" class="window-binding-size">{{ copySourceCaptureWindows[0].window_w }}×{{ copySourceCaptureWindows[0].window_h }}</span>
+                      </div>
+                    </template>
+                    <template v-else-if="copySourceClientWindow">
+                      <div class="copy-source-window-display">
                         <DesktopOutlined class="window-binding-icon" />
                         <a-tooltip :title="`进程: ${copySourceClientWindow.window_process || '未知'}`">
                           <span class="window-binding-title">{{ copySourceClientWindow.window_title }}</span>
                         </a-tooltip>
                         <span class="window-binding-size">{{ copySourceClientWindow.window_w }}×{{ copySourceClientWindow.window_h }}</span>
-                      </template>
-                      <span v-else class="window-binding-none">该客户端无窗口绑定（坐标不缩放）</span>
-                    </div>
+                      </div>
+                    </template>
+                    <span v-else class="window-binding-none">该客户端无窗口绑定（坐标不缩放）</span>
                   </div>
                   <div class="ops-row">
                     <span class="ops-label">目标</span>
@@ -551,7 +568,6 @@
           @pressEnter="confirmResizeToSize"
         />
       </div>
-      <div style="font-size:11px;color:#555;margin-top:8px">标注坐标将按比例自动缩放</div>
     </a-modal>
 
     <!-- 标注预览 Modal -->
@@ -628,7 +644,7 @@ import { useProjectStore } from '@/stores/projectStore'
 import { useClientStore } from '@/stores/clientStore'
 import { useScriptStore } from '@/stores/scriptStore'
 import { api } from '@/services/api'
-import type { Project, MarkerCapture, MarkerCaptureData, MarkerWindow, WindowBinding } from '@/services/api'
+import type { Project, MarkerCapture, MarkerCaptureData, MarkerWindow, CaptureWindow, WindowBinding } from '@/services/api'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -677,6 +693,8 @@ const markerWindows = ref<MarkerWindow[]>([])
 const copySourceClientId = ref<string | null>(null)
 const copySourceClientWindow = ref<WindowBinding | null>(null)
 const loadingCopySourceWindow = ref(false)
+const copySourceCaptureWindows = ref<CaptureWindow[]>([])
+const copyFilterWindowTitle = ref<string | null>(null)
 const copyTargetClientIds = ref<string[]>([])
 const copyMode = ref<'overwrite' | 'fill_missing'>('overwrite')
 const copying = ref(false)
@@ -844,6 +862,14 @@ const copyTargetOptions = computed(() =>
     .map(cid => ({ label: clientName(cid), value: cid }))
 )
 
+const copyWindowFilterOptions = computed(() => {
+  if (!copySourceCaptureWindows.value.length) return []
+  return copySourceCaptureWindows.value.map(w => ({
+    label: `${w.window_title}${w.window_w && w.window_h ? ` (${w.window_w}×${w.window_h})` : ''}`,
+    value: w.window_title,
+  }))
+})
+
 async function refreshMarkerWindows() {
   if (!selectedId.value) return
   try {
@@ -863,6 +889,7 @@ async function copyCaptures() {
       copySourceClientId.value,
       copyTargetClientIds.value,
       copyMode.value,
+      copyFilterWindowTitle.value,
     )
     copyResult.value = { ok: true, text: `已复制 ${res.copied} 条标注数据到 ${copyTargetClientIds.value.length} 个客户端` }
     await refreshMarkerWindows()
@@ -884,6 +911,8 @@ async function selectProject(id: string) {
   copyResult.value = null
   copySourceClientId.value = null
   copySourceClientWindow.value = null
+  copySourceCaptureWindows.value = []
+  copyFilterWindowTitle.value = null
   copyTargetClientIds.value = []
   markerCaptureMap.value = {}
   selectedMarkerNames.value = new Set(currentMarkers.value.map(m => m.name))
@@ -1231,17 +1260,25 @@ watch(() => projectStore.captureNotification, (notif) => {
 
 watch(copySourceClientId, async (cid) => {
   copyTargetClientIds.value = copyTargetClientIds.value.filter(id => id !== cid)
+  copyFilterWindowTitle.value = null
   if (cid && selectedId.value) {
     loadingCopySourceWindow.value = true
     try {
-      copySourceClientWindow.value = await api.getWindowBinding(selectedId.value, cid)
+      const [wb, wins] = await Promise.all([
+        api.getWindowBinding(selectedId.value, cid),
+        api.getClientCaptureWindows(selectedId.value, cid),
+      ])
+      copySourceClientWindow.value = wb
+      copySourceCaptureWindows.value = wins
     } catch {
       copySourceClientWindow.value = null
+      copySourceCaptureWindows.value = []
     } finally {
       loadingCopySourceWindow.value = false
     }
   } else {
     copySourceClientWindow.value = null
+    copySourceCaptureWindows.value = []
   }
 })
 

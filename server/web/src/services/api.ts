@@ -75,8 +75,6 @@ export interface MarkerCaptureData {
   y: number | null
   w: number | null
   h: number | null
-  window_x: number | null
-  window_y: number | null
   window_w: number | null
   window_h: number | null
 }
@@ -107,6 +105,12 @@ export interface MarkerWindow {
   window_h: number
   client_count: number
   client_ids: string[]
+}
+
+export interface CaptureWindow {
+  window_title: string
+  window_w: number | null
+  window_h: number | null
 }
 
 export interface WindowBinding {
@@ -222,6 +226,8 @@ export const api = {
     http.post(`/projects/${projectId}/markers/resize-window-to-size`, { client_id: clientId, target_w: targetW, target_h: targetH }).then(r => r.data),
   getMarkerWindows: (projectId: string) =>
     http.get<MarkerWindow[]>(`/projects/${projectId}/marker-windows`).then(r => r.data),
+  getClientCaptureWindows: (projectId: string, clientId: string) =>
+    http.get<CaptureWindow[]>(`/projects/${projectId}/clients/${clientId}/capture-windows`).then(r => r.data),
 
   copyCapturesByWindow: (
     projectId: string,
@@ -245,13 +251,13 @@ export const api = {
     sourceClientId: string,
     targetClientIds: string[],
     mode: 'overwrite' | 'fill_missing',
-    autoScale = true,
+    filterWindowTitle: string | null = null,
   ) =>
     http.post(`/projects/${projectId}/markers/copy-captures`, {
       source_client_id: sourceClientId,
       target_client_ids: targetClientIds,
       mode,
-      auto_scale: autoScale,
+      ...(filterWindowTitle ? { filter_window_title: filterWindowTitle } : {}),
     }).then(r => r.data),
 
   // Templates
