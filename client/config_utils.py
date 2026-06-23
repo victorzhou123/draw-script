@@ -6,7 +6,14 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.toml")
+def _runtime_dir() -> str:
+    # PyInstaller frozen: write next to the .exe, not inside the bundle
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+CONFIG_PATH = os.path.join(_runtime_dir(), "config.toml")
 
 # Keep references alive so RemoveDllDirectory is never called by GC.
 _dll_dir_handles: list = []

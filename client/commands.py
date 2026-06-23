@@ -8,12 +8,20 @@ import json
 import logging
 import os
 import queue as _queue
+import sys
 import threading
 from typing import Callable
 
 logger = logging.getLogger(__name__)
 
-MARKERS_FILE = os.path.join(os.path.dirname(__file__), "markers.json")
+
+def _runtime_dir() -> str:
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+MARKERS_FILE = os.path.join(_runtime_dir(), "markers.json")
 
 
 # DPI awareness so tkinter coordinates match pyautogui on high-DPI screens
