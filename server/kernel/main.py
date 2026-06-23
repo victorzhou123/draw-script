@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -110,7 +111,8 @@ app.include_router(service_keys.router, prefix="/api")
 app.include_router(logs.router, prefix="/api")
 app.include_router(ws.router)
 
-static_dir = os.path.join(os.path.dirname(__file__), "static")
+_base = sys._MEIPASS if getattr(sys, "frozen", False) else os.path.dirname(__file__)
+static_dir = os.path.join(_base, "static")
 if os.path.isdir(static_dir):
     app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
