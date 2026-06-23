@@ -108,7 +108,12 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                             window_h=window["h"],
                         ))
 
-                # Upsert marker coordinates (no longer storing window_* per capture)
+                # Upsert marker coordinates; store window binding snapshot per capture
+                # so runtime can re-scale if the window is later resized.
+                win_title   = window["title"]          if window and window.get("title") else None
+                win_process = window.get("process")    if window else None
+                win_w       = window["w"]              if window and window.get("w") else None
+                win_h       = window["h"]              if window and window.get("h") else None
                 for m in markers:
                     name = m.get("name")
                     x, y = m.get("x"), m.get("y")
@@ -132,11 +137,17 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                         capture.y = y
                         capture.w = m.get("w")
                         capture.h = m.get("h")
+                        capture.window_title   = win_title
+                        capture.window_process = win_process
+                        capture.window_w       = win_w
+                        capture.window_h       = win_h
                         capture.captured_at = datetime.now(timezone.utc)
                     else:
                         capture = MarkerCapture(
                             marker_id=marker_row.id, client_id=client_id,
                             x=x, y=y, w=m.get("w"), h=m.get("h"),
+                            window_title=win_title, window_process=win_process,
+                            window_w=win_w, window_h=win_h,
                         )
                         db.add(capture)
                 await db.commit()
@@ -158,42 +169,11 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
         new_y          = msg.get("new_y")
 
         if project_id and window_title and new_w and new_h:
-            from database import Marker, MarkerCapture, ProjectClientWindow
-            from sqlalchemy import select
+            from database import ProjectClientWindow
             async with AsyncSessionLocal() as db:
-                # Read old window size from project_client_windows (canonical source)
+                # Only update the canonical window binding; captures keep their
+                # original annotation-time window size for runtime scale calculation.
                 pcw = await db.get(ProjectClientWindow, (project_id, client_id))
-                old_w = pcw.window_w if pcw else None
-                old_h = pcw.window_h if pcw else None
-
-                result = await db.execute(
-                    select(MarkerCapture)
-                    .join(Marker, MarkerCapture.marker_id == Marker.id)
-                    .where(
-                        Marker.project_id == project_id,
-                        MarkerCapture.client_id == client_id,
-                        MarkerCapture.x.isnot(None),
-                    )
-                )
-                captures = result.scalars().all()
-                scaled = 0
-                for cap in captures:
-                    if old_w and old_h and old_w > 0 and old_h > 0:
-                        if cap.x is not None:
-                            cap.x = round(cap.x * new_w / old_w)
-                        if cap.y is not None:
-                            cap.y = round(cap.y * new_h / old_h)
-                        if cap.w is not None:
-                            cap.w = round(cap.w * new_w / old_w)
-                        if cap.h is not None:
-                            cap.h = round(cap.h * new_h / old_h)
-                    cap.window_x = new_x
-                    cap.window_y = new_y
-                    cap.window_w = new_w
-                    cap.window_h = new_h
-                    scaled += 1
-
-                # Update canonical window binding
                 if pcw:
                     pcw.window_w = new_w
                     pcw.window_h = new_h
@@ -204,7 +184,7 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                     pcw.updated_at = datetime.now(timezone.utc)
                 await db.commit()
             logger.info(
-                f"window_resized: scaled {scaled} captures for client {client_id} "
+                f"window_resized: updated PCW for client {client_id} "
                 f"/ project {project_id} to {new_w}×{new_h}"
             )
             await ui_ws_manager.broadcast_event("window_resize_applied", {
@@ -212,7 +192,6 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                 "project_id": project_id,
                 "new_w":      new_w,
                 "new_h":      new_h,
-                "scaled":     scaled,
             })
 
     elif msg_type == "window_list_response":

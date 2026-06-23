@@ -44,8 +44,6 @@ class Marker(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     type: Mapped[str] = mapped_column(String, nullable=False)  # 'point' | 'box'
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    # NOTE: coordinate columns (x/y/w/h/window_*/captured_at) were added then removed;
-    # they may still exist in older DBs but are no longer used — see MarkerCapture.
 
 
 class MarkerCapture(Base):
@@ -60,11 +58,9 @@ class MarkerCapture(Base):
     y: Mapped[int] = mapped_column(Integer, nullable=False)
     w: Mapped[int | None] = mapped_column(Integer, nullable=True)
     h: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Window binding (used by client to compute absolute coords at runtime)
+    # Window binding snapshot at annotation time; used for runtime scale calculation.
     window_title: Mapped[str | None] = mapped_column(String, nullable=True)
     window_process: Mapped[str | None] = mapped_column(String, nullable=True)
-    window_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    window_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
     window_w: Mapped[int | None] = mapped_column(Integer, nullable=True)
     window_h: Mapped[int | None] = mapped_column(Integer, nullable=True)
     captured_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -224,29 +220,11 @@ async def init_db() -> None:
             await conn.execute(text("ALTER TABLE scripts ADD COLUMN default_client_id TEXT"))
         except Exception:
             pass
-        # Legacy: coordinate columns that were once on markers (now on marker_captures)
-        for col, coltype in [
-            ("x", "INTEGER"), ("y", "INTEGER"), ("w", "INTEGER"), ("h", "INTEGER"),
-            ("window_title", "TEXT"), ("window_process", "TEXT"),
-            ("window_x", "INTEGER"), ("window_y", "INTEGER"), ("captured_at", "TEXT"),
-        ]:
-            try:
-                await conn.execute(text(f"ALTER TABLE markers ADD COLUMN {col} {coltype}"))
-            except Exception:
-                pass
         # clients columns
         try:
             await conn.execute(text("ALTER TABLE clients ADD COLUMN gpu_enabled INTEGER DEFAULT 0"))
         except Exception:
             pass
-        # marker_captures columns
-        for col, coltype in [
-            ("window_w", "INTEGER"), ("window_h", "INTEGER"),
-        ]:
-            try:
-                await conn.execute(text(f"ALTER TABLE marker_captures ADD COLUMN {col} {coltype}"))
-            except Exception:
-                pass
         # app_logs columns (added after initial release)
         for col, coltype in [
             ("node_label", "TEXT"), ("node_type", "TEXT"),
