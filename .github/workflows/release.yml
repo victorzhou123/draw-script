@@ -16,17 +16,26 @@ jobs:
   # ── 服务端：Linux 上构建，打包含预编译前端的 tar.gz ─────────────────────────
   build-server:
     name: Build Server (Linux)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    container:
+      image: ubuntu:20.04
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+      - name: Install build tools
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            software-properties-common curl build-essential
+          add-apt-repository -y ppa:deadsnakes/ppa
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            python3.10 python3.10-dev python3.10-distutils
+          curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
+          ln -sf /usr/bin/python3.10 /usr/local/bin/python3
+          ln -sf /usr/local/bin/pip3.10 /usr/local/bin/pip3
+          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+          apt-get install -y nodejs
 
       - name: Build server package
         run: bash server/build.sh ${{ github.event.inputs.version }}
