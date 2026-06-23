@@ -89,8 +89,15 @@ async def capture_client_screenshot(
 
     if project_id:
         from database import ProjectClientWindow
-        pcw = await db.get(ProjectClientWindow, (project_id, client_id))
-        if pcw and pcw.window_title:
+        from sqlalchemy import select as _select
+        _pcw_result = await db.execute(
+            _select(ProjectClientWindow).where(
+                ProjectClientWindow.project_id == project_id,
+                ProjectClientWindow.client_id == client_id,
+            ).order_by(ProjectClientWindow.updated_at.desc()).limit(1)
+        )
+        pcw = _pcw_result.scalar_one_or_none()
+        if pcw:
             msg["params"] = {
                 "window_title":   pcw.window_title,
                 "window_process": pcw.window_process or "",

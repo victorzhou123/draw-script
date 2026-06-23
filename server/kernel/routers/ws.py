@@ -85,11 +85,18 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
             from database import Marker, MarkerCapture, ProjectClientWindow
             from sqlalchemy import select
             async with AsyncSessionLocal() as db:
-                # Upsert per-client window binding (canonical source)
+                # Upsert per-(project, client, window_title) binding
+                pcw: ProjectClientWindow | None = None
                 if window and window.get("title") and window.get("w") and window.get("h"):
-                    pcw = await db.get(ProjectClientWindow, (project_id, client_id))
+                    pcw_result = await db.execute(
+                        select(ProjectClientWindow).where(
+                            ProjectClientWindow.project_id == project_id,
+                            ProjectClientWindow.client_id == client_id,
+                            ProjectClientWindow.window_title == window["title"],
+                        )
+                    )
+                    pcw = pcw_result.scalar_one_or_none()
                     if pcw:
-                        pcw.window_title = window["title"]
                         pcw.window_process = window.get("process")
                         pcw.window_x = window.get("x")
                         pcw.window_y = window.get("y")
@@ -97,7 +104,7 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                         pcw.window_h = window["h"]
                         pcw.updated_at = datetime.now(timezone.utc)
                     else:
-                        db.add(ProjectClientWindow(
+                        pcw = ProjectClientWindow(
                             project_id=project_id,
                             client_id=client_id,
                             window_title=window["title"],
@@ -106,14 +113,12 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                             window_y=window.get("y"),
                             window_w=window["w"],
                             window_h=window["h"],
-                        ))
+                        )
+                        db.add(pcw)
+                        await db.flush()  # populate pcw.id before using it below
 
-                # Upsert marker coordinates; store window binding snapshot per capture
-                # so runtime can re-scale if the window is later resized.
-                win_title   = window["title"]          if window and window.get("title") else None
-                win_process = window.get("process")    if window else None
-                win_w       = window["w"]              if window and window.get("w") else None
-                win_h       = window["h"]              if window and window.get("h") else None
+                win_w = window["w"] if window and window.get("w") else None
+                win_h = window["h"] if window and window.get("h") else None
                 for m in markers:
                     name = m.get("name")
                     x, y = m.get("x"), m.get("y")
@@ -137,16 +142,15 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
                         capture.y = y
                         capture.w = m.get("w")
                         capture.h = m.get("h")
-                        capture.window_title   = win_title
-                        capture.window_process = win_process
-                        capture.window_w       = win_w
-                        capture.window_h       = win_h
+                        capture.client_window_id = pcw.id if pcw else None
+                        capture.window_w         = win_w
+                        capture.window_h         = win_h
                         capture.captured_at = datetime.now(timezone.utc)
                     else:
                         capture = MarkerCapture(
                             marker_id=marker_row.id, client_id=client_id,
                             x=x, y=y, w=m.get("w"), h=m.get("h"),
-                            window_title=win_title, window_process=win_process,
+                            client_window_id=pcw.id if pcw else None,
                             window_w=win_w, window_h=win_h,
                         )
                         db.add(capture)
@@ -170,10 +174,18 @@ async def _handle_client_message(client_id: str, msg: dict) -> None:
 
         if project_id and window_title and new_w and new_h:
             from database import ProjectClientWindow
+            from sqlalchemy import select
             async with AsyncSessionLocal() as db:
-                # Only update the canonical window binding; captures keep their
-                # original annotation-time window size for runtime scale calculation.
-                pcw = await db.get(ProjectClientWindow, (project_id, client_id))
+                # Update the specific window binding by (project_id, client_id, window_title).
+                # Captures keep their annotation-time window size for runtime scale calculation.
+                pcw_result = await db.execute(
+                    select(ProjectClientWindow).where(
+                        ProjectClientWindow.project_id == project_id,
+                        ProjectClientWindow.client_id == client_id,
+                        ProjectClientWindow.window_title == window_title,
+                    )
+                )
+                pcw = pcw_result.scalar_one_or_none()
                 if pcw:
                     pcw.window_w = new_w
                     pcw.window_h = new_h

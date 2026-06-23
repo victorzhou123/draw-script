@@ -61,6 +61,7 @@ async def _check_vision_node(
         return None
 
     from database import Template, ProjectClientWindow
+    from sqlalchemy import select
 
     tpl = await session.get(Template, template_id)
     if not tpl or not tpl.window_title:
@@ -69,25 +70,32 @@ async def _check_vision_node(
     if not project_id or not client_id:
         return None
 
-    pcw = await session.get(ProjectClientWindow, (project_id, client_id))
-    if not pcw or not pcw.window_title:
+    pcw_result = await session.execute(
+        select(ProjectClientWindow).where(
+            ProjectClientWindow.project_id == project_id,
+            ProjectClientWindow.client_id == client_id,
+        )
+    )
+    pcws = pcw_result.scalars().all()
+    if not pcws:
         return NodeCheckResult(
             node_id=node_id,
             status="warning",
             message="客户端无窗口绑定，无法验证检测范围与模板是否来自同一窗口",
         )
 
-    if pcw.window_title != tpl.window_title:
-        return NodeCheckResult(
-            node_id=node_id,
-            status="warning",
-            message=(
-                f"检测范围绑定窗口「{pcw.window_title}」"
-                f"与模板来源窗口「{tpl.window_title}」不一致"
-            ),
-        )
+    # Pass if any of the client's bound windows matches the template's source window
+    if any(pcw.window_title == tpl.window_title for pcw in pcws):
+        return None
 
-    return None
+    titles = "、".join(f"「{p.window_title}」" for p in pcws)
+    return NodeCheckResult(
+        node_id=node_id,
+        status="warning",
+        message=(
+            f"客户端绑定窗口 {titles} 均与模板来源窗口「{tpl.window_title}」不一致"
+        ),
+    )
 
 
 # ── Batch helper ──────────────────────────────────────────────────────────────

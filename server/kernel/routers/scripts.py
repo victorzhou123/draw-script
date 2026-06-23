@@ -118,10 +118,16 @@ async def run_script(
     await db.commit()
     await db.refresh(execution)
 
-    # restore the bound window once before execution starts
+    # restore all bound windows once before execution starts
     if script.project_id:
-        _pcw = await db.get(ProjectClientWindow, (script.project_id, body.client_id))
-        if _pcw and _pcw.window_title and _pcw.window_w:
+        from sqlalchemy import select as _select
+        _pcw_result = await db.execute(
+            _select(ProjectClientWindow).where(
+                ProjectClientWindow.project_id == script.project_id,
+                ProjectClientWindow.client_id == body.client_id,
+            )
+        )
+        for _pcw in _pcw_result.scalars().all():
             await client_ws_manager.send_to_client(body.client_id, {
                 "type": "restore_window",
                 "title": _pcw.window_title,

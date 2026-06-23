@@ -205,45 +205,49 @@ async def get_marker_capture_data(
 ):
     """Return per-marker coordinates for one client (for annotation preview).
 
-    x/y/w/h are scaled from the capture-time window size to the client's current
-    window size so the overlay lands on the correct spot in the live screenshot.
+    x/y/w/h are scaled from the capture-time window size to the window's current
+    size so the overlay lands on the correct spot in the live screenshot.
     """
-    rows = await _query_marker_captures(project_id, client_id, db)
-    pcw = await db.get(ProjectClientWindow, (project_id, client_id))
-    cur_w = pcw.window_w if pcw else None
-    cur_h = pcw.window_h if pcw else None
+    result = await db.execute(
+        select(Marker, MarkerCapture, ProjectClientWindow)
+        .outerjoin(
+            MarkerCapture,
+            (MarkerCapture.marker_id == Marker.id) & (MarkerCapture.client_id == client_id),
+        )
+        .outerjoin(ProjectClientWindow, MarkerCapture.client_window_id == ProjectClientWindow.id)
+        .where(Marker.project_id == project_id)
+        .order_by(Marker.created_at)
+    )
+    rows = result.all()
 
-    def _scale(capture: MarkerCapture | None):
+    out = []
+    for marker, capture, pcw in rows:
         if capture is None or capture.x is None:
-            return None, None, None, None
+            out.append({
+                "id": marker.id, "name": marker.name, "type": marker.type,
+                "captured": False,
+                "x": None, "y": None, "w": None, "h": None,
+                "window_w": None, "window_h": None,
+            })
+            continue
+        cur_w = pcw.window_w if pcw else None
+        cur_h = pcw.window_h if pcw else None
         cap_w, cap_h = capture.window_w, capture.window_h
         if cap_w and cap_h and cur_w and cur_h:
             sx, sy = cur_w / cap_w, cur_h / cap_h
         else:
             sx = sy = 1.0
-        return (
-            round(capture.x * sx),
-            round(capture.y * sy),
-            round(capture.w * sx) if capture.w is not None else None,
-            round(capture.h * sy) if capture.h is not None else None,
-        )
-
-    result = []
-    for marker, capture in rows:
-        x, y, w, h = _scale(capture)
-        result.append({
-            "id": marker.id,
-            "name": marker.name,
-            "type": marker.type,
-            "captured": capture is not None and capture.x is not None,
-            "x": x,
-            "y": y,
-            "w": w,
-            "h": h,
+        out.append({
+            "id": marker.id, "name": marker.name, "type": marker.type,
+            "captured": True,
+            "x": round(capture.x * sx),
+            "y": round(capture.y * sy),
+            "w": round(capture.w * sx) if capture.w is not None else None,
+            "h": round(capture.h * sy) if capture.h is not None else None,
             "window_w": cur_w,
             "window_h": cur_h,
         })
-    return result
+    return out
 
 
 # ── Restore window ────────────────────────────────────────────────────────────
@@ -258,24 +262,31 @@ async def restore_window(
     body: RestoreWindowRequest,
     db: AsyncSession = Depends(get_session),
 ):
-    pcw = await db.get(ProjectClientWindow, (project_id, body.client_id))
-    if not pcw:
+    pcw_result = await db.execute(
+        select(ProjectClientWindow).where(
+            ProjectClientWindow.project_id == project_id,
+            ProjectClientWindow.client_id == body.client_id,
+        )
+    )
+    pcws = pcw_result.scalars().all()
+    if not pcws:
         logger.warning(f"restore_window: no window info for client {body.client_id} in project {project_id}")
         raise HTTPException(400, "No window info recorded for this client")
 
     from ws_manager import client_ws_manager
-    sent = await client_ws_manager.send_to_client(body.client_id, {
-        "type": "restore_window",
-        "title": pcw.window_title,
-        "process": pcw.window_process or "",
-        "x": pcw.window_x or 0,
-        "y": pcw.window_y or 0,
-        "w": pcw.window_w,
-        "h": pcw.window_h,
-    })
-    if not sent:
-        logger.warning(f"restore_window: client {body.client_id} is not connected")
-        raise HTTPException(400, f"Client {body.client_id} is not connected")
+    for pcw in pcws:
+        sent = await client_ws_manager.send_to_client(body.client_id, {
+            "type": "restore_window",
+            "title": pcw.window_title,
+            "process": pcw.window_process or "",
+            "x": pcw.window_x or 0,
+            "y": pcw.window_y or 0,
+            "w": pcw.window_w,
+            "h": pcw.window_h,
+        })
+        if not sent:
+            logger.warning(f"restore_window: client {body.client_id} is not connected")
+            raise HTTPException(400, f"Client {body.client_id} is not connected")
     return {"ok": True}
 
 
@@ -339,40 +350,17 @@ async def list_client_capture_windows(
     client_id: str,
     db: AsyncSession = Depends(get_session),
 ):
-    """Return distinct windows from this client's actual captures (for filter dropdown)."""
-    marker_result = await db.execute(
-        select(Marker.id).where(Marker.project_id == project_id)
-    )
-    marker_ids = [r[0] for r in marker_result.all()]
-    if not marker_ids:
-        return []
-
-    rows_result = await db.execute(
-        select(MarkerCapture.window_title, MarkerCapture.window_w, MarkerCapture.window_h)
-        .where(
-            MarkerCapture.marker_id.in_(marker_ids),
-            MarkerCapture.client_id == client_id,
-            MarkerCapture.x.isnot(None),
-            MarkerCapture.window_title.isnot(None),
+    """Return all windows bound to this client in the project."""
+    pcw_result = await db.execute(
+        select(ProjectClientWindow).where(
+            ProjectClientWindow.project_id == project_id,
+            ProjectClientWindow.client_id == client_id,
         )
-        .distinct()
     )
-    result = [
-        {"window_title": r[0], "window_w": r[1], "window_h": r[2]}
-        for r in rows_result.all()
+    return [
+        {"window_title": pcw.window_title, "window_w": pcw.window_w, "window_h": pcw.window_h}
+        for pcw in pcw_result.scalars().all()
     ]
-
-    # Fallback: if no captures have window_title stored, use ProjectClientWindow
-    if not result:
-        pcw = await db.get(ProjectClientWindow, (project_id, client_id))
-        if pcw:
-            result.append({
-                "window_title": pcw.window_title,
-                "window_w": pcw.window_w,
-                "window_h": pcw.window_h,
-            })
-
-    return result
 
 
 # ── Copy captures between clients ────────────────────────────────────────────
@@ -444,38 +432,68 @@ async def copy_captures(
     else:
         raise HTTPException(400, "Provide source_window_title/w/h or source_client_id")
 
-    # Load source PCW as fallback for window_title/process in old captures
-    src_pcw = await db.get(ProjectClientWindow, (project_id, source_client_id))
-
-    # ── Load source captures ───────────────────────────────────────────────
+    # ── Load source captures with their window info ────────────────────────
     src_result = await db.execute(
-        select(MarkerCapture).where(
+        select(MarkerCapture, ProjectClientWindow)
+        .outerjoin(ProjectClientWindow, MarkerCapture.client_window_id == ProjectClientWindow.id)
+        .where(
             MarkerCapture.marker_id.in_(marker_ids),
             MarkerCapture.client_id == source_client_id,
             MarkerCapture.x.isnot(None),
         )
     )
-    source_captures = src_result.scalars().all()
-    if not source_captures:
+    source_rows = src_result.all()
+    if not source_rows:
         raise HTTPException(400, "Source has no captures for this project")
 
     # ── Optional window filter ─────────────────────────────────────────────
     if body.filter_window_title:
-        def _effective_title(cap: MarkerCapture) -> str | None:
-            return cap.window_title or (src_pcw.window_title if src_pcw else None)
-        source_captures = [c for c in source_captures if _effective_title(c) == body.filter_window_title]
-        if not source_captures:
+        source_rows = [(c, p) for c, p in source_rows if p and p.window_title == body.filter_window_title]
+        if not source_rows:
             raise HTTPException(400, "Source has no captures for the specified window")
 
     # ── Copy verbatim — runtime scaling handles window size differences ────
     # Coordinates stay in their original annotation-time window space;
     # marker_loader applies (current_pcw_w / capture.window_w) at execution time.
+    # For the target, find or create a PCW for the same window_title so client_window_id
+    # resolves to the target client's own window record.
     copied = 0
     for target_id in body.target_client_ids:
         if target_id == source_client_id:
             continue
 
-        for src in source_captures:
+        # Cache target PCWs to avoid repeated DB queries per capture
+        target_pcw_cache: dict[str, ProjectClientWindow] = {}
+
+        async def _get_or_create_target_pcw(src_pcw: ProjectClientWindow | None) -> ProjectClientWindow | None:
+            if src_pcw is None:
+                return None
+            title = src_pcw.window_title
+            if title in target_pcw_cache:
+                return target_pcw_cache[title]
+            result = await db.execute(
+                select(ProjectClientWindow).where(
+                    ProjectClientWindow.project_id == project_id,
+                    ProjectClientWindow.client_id == target_id,
+                    ProjectClientWindow.window_title == title,
+                )
+            )
+            tpcw = result.scalar_one_or_none()
+            if not tpcw:
+                tpcw = ProjectClientWindow(
+                    project_id=project_id,
+                    client_id=target_id,
+                    window_title=title,
+                    window_process=src_pcw.window_process,
+                    window_w=src_pcw.window_w,
+                    window_h=src_pcw.window_h,
+                )
+                db.add(tpcw)
+                await db.flush()
+            target_pcw_cache[title] = tpcw
+            return tpcw
+
+        for src, src_pcw in source_rows:
             existing_result = await db.execute(
                 select(MarkerCapture).where(
                     MarkerCapture.marker_id == src.marker_id,
@@ -487,28 +505,24 @@ async def copy_captures(
             if body.mode == "fill_missing" and existing and existing.x is not None:
                 continue
 
-            win_title   = src.window_title   or (src_pcw.window_title   if src_pcw else None)
-            win_process = src.window_process or (src_pcw.window_process if src_pcw else None)
-            win_w       = src.window_w       or (src_pcw.window_w       if src_pcw else None)
-            win_h       = src.window_h       or (src_pcw.window_h       if src_pcw else None)
+            tpcw = await _get_or_create_target_pcw(src_pcw)
 
             if existing:
-                existing.x              = src.x
-                existing.y              = src.y
-                existing.w              = src.w
-                existing.h              = src.h
-                existing.window_title   = win_title
-                existing.window_process = win_process
-                existing.window_w       = win_w
-                existing.window_h       = win_h
-                existing.captured_at    = datetime.now(timezone.utc)
+                existing.x               = src.x
+                existing.y               = src.y
+                existing.w               = src.w
+                existing.h               = src.h
+                existing.client_window_id = tpcw.id if tpcw else None
+                existing.window_w        = src.window_w
+                existing.window_h        = src.window_h
+                existing.captured_at     = datetime.now(timezone.utc)
             else:
                 db.add(MarkerCapture(
                     marker_id=src.marker_id,
                     client_id=target_id,
                     x=src.x, y=src.y, w=src.w, h=src.h,
-                    window_title=win_title, window_process=win_process,
-                    window_w=win_w, window_h=win_h,
+                    client_window_id=tpcw.id if tpcw else None,
+                    window_w=src.window_w, window_h=src.window_h,
                 ))
             copied += 1
 
@@ -532,21 +546,28 @@ async def resize_window_interactive(
     body: ResizeWindowInteractiveRequest,
     db: AsyncSession = Depends(get_session),
 ):
-    pcw = await db.get(ProjectClientWindow, (project_id, body.client_id))
-    if not pcw:
+    pcw_result = await db.execute(
+        select(ProjectClientWindow).where(
+            ProjectClientWindow.project_id == project_id,
+            ProjectClientWindow.client_id == body.client_id,
+        )
+    )
+    pcws = pcw_result.scalars().all()
+    if not pcws:
         raise HTTPException(400, "No window info recorded for this client — please annotate markers first")
 
     from ws_manager import client_ws_manager
-    sent = await client_ws_manager.send_to_client(body.client_id, {
-        "type":           "resize_window_interactive",
-        "project_id":     project_id,
-        "window_title":   pcw.window_title,
-        "window_process": pcw.window_process or "",
-        "window_w":       pcw.window_w,
-        "window_h":       pcw.window_h,
-    })
-    if not sent:
-        raise HTTPException(400, f"Client {body.client_id} is not connected")
+    for pcw in pcws:
+        sent = await client_ws_manager.send_to_client(body.client_id, {
+            "type":           "resize_window_interactive",
+            "project_id":     project_id,
+            "window_title":   pcw.window_title,
+            "window_process": pcw.window_process or "",
+            "window_w":       pcw.window_w,
+            "window_h":       pcw.window_h,
+        })
+        if not sent:
+            raise HTTPException(400, f"Client {body.client_id} is not connected")
     return {"ok": True}
 
 
@@ -564,21 +585,28 @@ async def resize_window_to_size(
     body: ResizeWindowToSizeRequest,
     db: AsyncSession = Depends(get_session),
 ):
-    pcw = await db.get(ProjectClientWindow, (project_id, body.client_id))
-    if not pcw:
+    pcw_result = await db.execute(
+        select(ProjectClientWindow).where(
+            ProjectClientWindow.project_id == project_id,
+            ProjectClientWindow.client_id == body.client_id,
+        )
+    )
+    pcws = pcw_result.scalars().all()
+    if not pcws:
         raise HTTPException(400, "No window info recorded for this client — please annotate markers first")
 
     from ws_manager import client_ws_manager
-    sent = await client_ws_manager.send_to_client(body.client_id, {
-        "type":           "resize_window_to_size",
-        "project_id":     project_id,
-        "window_title":   pcw.window_title,
-        "window_process": pcw.window_process or "",
-        "target_w":       body.target_w,
-        "target_h":       body.target_h,
-    })
-    if not sent:
-        raise HTTPException(400, f"Client {body.client_id} is not connected")
+    for pcw in pcws:
+        sent = await client_ws_manager.send_to_client(body.client_id, {
+            "type":           "resize_window_to_size",
+            "project_id":     project_id,
+            "window_title":   pcw.window_title,
+            "window_process": pcw.window_process or "",
+            "target_w":       body.target_w,
+            "target_h":       body.target_h,
+        })
+        if not sent:
+            raise HTTPException(400, f"Client {body.client_id} is not connected")
     return {"ok": True}
 
 
@@ -588,18 +616,28 @@ async def get_window_binding(
     client_id: str,
     db: AsyncSession = Depends(get_session),
 ):
-    pcw = await db.get(ProjectClientWindow, (project_id, client_id))
-    if not pcw:
+    pcw_result = await db.execute(
+        select(ProjectClientWindow).where(
+            ProjectClientWindow.project_id == project_id,
+            ProjectClientWindow.client_id == client_id,
+        )
+    )
+    pcws = pcw_result.scalars().all()
+    if not pcws:
         raise HTTPException(404, "No window binding found")
-    return {
-        "window_title": pcw.window_title,
-        "window_process": pcw.window_process,
-        "window_x": pcw.window_x,
-        "window_y": pcw.window_y,
-        "window_w": pcw.window_w,
-        "window_h": pcw.window_h,
-        "updated_at": pcw.updated_at.isoformat() if pcw.updated_at else None,
-    }
+    return [
+        {
+            "id": pcw.id,
+            "window_title": pcw.window_title,
+            "window_process": pcw.window_process,
+            "window_x": pcw.window_x,
+            "window_y": pcw.window_y,
+            "window_w": pcw.window_w,
+            "window_h": pcw.window_h,
+            "updated_at": pcw.updated_at.isoformat() if pcw.updated_at else None,
+        }
+        for pcw in pcws
+    ]
 
 
 # ── Templates ─────────────────────────────────────────────────────────────────

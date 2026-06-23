@@ -63,14 +63,21 @@ class VisionNodeHandler(BaseNodeHandler):
                             with open(tpl_path, "rb") as fh:
                                 raw_bytes = fh.read()
                             # Scale template to match current client's window size.
-                            # project_client_windows is the canonical source; marker_captures.window_w
-                            # is no longer written for new annotations (only on resize/copy).
+                            # Use the PCW matching the template's source window for the right dimensions.
                             if tpl.source_w and tpl.source_h and self.ctx.project_id:
                                 from database import ProjectClientWindow
-                                pcw = await session.get(
-                                    ProjectClientWindow,
-                                    (self.ctx.project_id, self.ctx.client_id),
+                                from sqlalchemy import select as _sel
+                                _pcw_q = await session.execute(
+                                    _sel(ProjectClientWindow).where(
+                                        ProjectClientWindow.project_id == self.ctx.project_id,
+                                        ProjectClientWindow.client_id == self.ctx.client_id,
+                                        *(
+                                            [ProjectClientWindow.window_title == tpl.window_title]
+                                            if tpl.window_title else []
+                                        ),
+                                    ).limit(1)
                                 )
+                                pcw = _pcw_q.scalar_one_or_none()
                                 if pcw and pcw.window_w and pcw.window_h:
                                     scale_x = pcw.window_w / tpl.source_w
                                     scale_y = pcw.window_h / tpl.source_h

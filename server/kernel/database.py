@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import AsyncGenerator
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, event, func, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, event, func, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -58,9 +58,9 @@ class MarkerCapture(Base):
     y: Mapped[int] = mapped_column(Integer, nullable=False)
     w: Mapped[int | None] = mapped_column(Integer, nullable=True)
     h: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Window binding snapshot at annotation time; used for runtime scale calculation.
-    window_title: Mapped[str | None] = mapped_column(String, nullable=True)
-    window_process: Mapped[str | None] = mapped_column(String, nullable=True)
+    # FK to the window this capture was annotated against.
+    client_window_id: Mapped[str | None] = mapped_column(String, ForeignKey("project_client_windows.id", ondelete="SET NULL"), nullable=True)
+    # Window size snapshot at annotation time; used for runtime scale calculation.
     window_w: Mapped[int | None] = mapped_column(Integer, nullable=True)
     window_h: Mapped[int | None] = mapped_column(Integer, nullable=True)
     captured_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -178,11 +178,13 @@ class ServiceApiKey(Base):
 
 
 class ProjectClientWindow(Base):
-    """Per-(project, client) window binding — canonical source for restore/resize."""
+    """Per-(project, client, window_title) binding — one row per distinct window a client uses."""
     __tablename__ = "project_client_windows"
+    __table_args__ = (UniqueConstraint("project_id", "client_id", "window_title"),)
 
-    project_id: Mapped[str] = mapped_column(String, ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
-    client_id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id: Mapped[str] = mapped_column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    client_id: Mapped[str] = mapped_column(String, nullable=False)
     window_title: Mapped[str] = mapped_column(String, nullable=False)
     window_process: Mapped[str | None] = mapped_column(String, nullable=True)
     window_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
