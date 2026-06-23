@@ -2,6 +2,7 @@ import logging
 import os
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 import asyncio
 
@@ -538,6 +539,7 @@ async def copy_captures(
 
 class ResizeWindowInteractiveRequest(BaseModel):
     client_id: str
+    window_title: Optional[str] = None
 
 
 @router.post("/{project_id}/markers/resize-window-interactive")
@@ -555,6 +557,10 @@ async def resize_window_interactive(
     pcws = pcw_result.scalars().all()
     if not pcws:
         raise HTTPException(400, "No window info recorded for this client — please annotate markers first")
+    if body.window_title:
+        pcws = [p for p in pcws if p.window_title == body.window_title]
+    if not pcws:
+        raise HTTPException(400, f"Window '{body.window_title}' not found for this client")
 
     from ws_manager import client_ws_manager
     for pcw in pcws:
@@ -577,6 +583,7 @@ class ResizeWindowToSizeRequest(BaseModel):
     client_id: str
     target_w: int
     target_h: int
+    window_title: Optional[str] = None
 
 
 @router.post("/{project_id}/markers/resize-window-to-size")
@@ -594,6 +601,10 @@ async def resize_window_to_size(
     pcws = pcw_result.scalars().all()
     if not pcws:
         raise HTTPException(400, "No window info recorded for this client — please annotate markers first")
+    if body.window_title:
+        pcws = [p for p in pcws if p.window_title == body.window_title]
+    if not pcws:
+        raise HTTPException(400, f"Window '{body.window_title}' not found for this client")
 
     from ws_manager import client_ws_manager
     for pcw in pcws:

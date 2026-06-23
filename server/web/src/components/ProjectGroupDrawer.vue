@@ -112,16 +112,10 @@
                               :loading="restoringWindow && resizeModalClientId === cid"
                               @click="restoreClientWindow(cid)">还原窗口</a-button>
                           </a-tooltip>
-                          <a-tooltip title="拖拽调节窗口大小，标注坐标自动按比例缩放">
+                          <a-tooltip title="调节窗口大小，标注坐标自动按比例缩放">
                             <a-button size="small" class="icon-btn resize-window-btn"
                               :disabled="clientStatus(cid) === 'disconnected'"
-                              :loading="resizingWindow && resizeModalClientId === cid"
-                              @click="resizeClientWindowInteractive(cid)">拖拽调节</a-button>
-                          </a-tooltip>
-                          <a-tooltip title="输入目标宽高，标注坐标自动按比例缩放">
-                            <a-button size="small" class="icon-btn resize-window-btn"
-                              :disabled="clientStatus(cid) === 'disconnected'"
-                              @click="openClientResizeModal(cid)">数字调节</a-button>
+                              @click="openResizeMethodModal(cid)">调节大小</a-button>
                           </a-tooltip>
                           <a-button size="small" type="link" class="goto-markers-btn" @click="navigateToMarkersFor(cid)">
                             <TagsOutlined /> 查看标注
@@ -181,20 +175,12 @@
                       :class="markerCaptureMap[m.name] ? 'badge-ok' : 'badge-missing'"
                     >{{ markerCaptureMap[m.name] ? '已标注' : '未标注' }}</span>
                     <a-tooltip
-                      v-if="capturePreviewClientId && windowBinding && markerCaptureMap[m.name]"
-                      :title="`绑定窗口: ${windowBinding.window_title} · ${windowBinding.window_w}×${windowBinding.window_h}`"
+                      v-if="capturePreviewClientId && previewCaptureWindows.length > 0 && markerCaptureMap[m.name]"
+                      :title="previewCaptureWindows.length === 1
+                        ? `绑定窗口: ${previewCaptureWindows[0].window_title} · ${previewCaptureWindows[0].window_w}×${previewCaptureWindows[0].window_h}`
+                        : `绑定 ${previewCaptureWindows.length} 个窗口`"
                     >
                       <span class="marker-window-tag"><DesktopOutlined /></span>
-                    </a-tooltip>
-                    <!-- Preview button -->
-                    <a-tooltip :title="capturePreviewClientId ? '预览标注' : '请先选择预览客户端'">
-                      <a-button
-                        type="text" size="small" class="icon-btn preview-marker-btn"
-                        :disabled="!capturePreviewClientId"
-                        @click.stop="openMarkerPreview(m.name)"
-                      >
-                        <EyeOutlined />
-                      </a-button>
                     </a-tooltip>
                     <!-- Usage info popover -->
                     <a-popover trigger="click" placement="rightTop" overlay-class-name="marker-usage-popover">
@@ -251,24 +237,46 @@
                       title="刷新标注状态"
                     ><ReloadOutlined /></a-button>
                   </div>
-                  <!-- Window binding display - all capture windows -->
+                  <!-- Window binding display / selector -->
                   <div v-if="capturePreviewClientId">
                     <div v-if="loadingWindowBinding" style="padding:4px 0"><a-spin size="small" /></div>
                     <template v-else>
                       <div v-if="previewCaptureWindows.length === 0" class="window-binding-row">
                         <span class="window-binding-none">未绑定窗口</span>
                       </div>
+                      <!-- Single window: display only -->
                       <div
-                        v-for="w in previewCaptureWindows"
-                        :key="w.window_title"
+                        v-else-if="previewCaptureWindows.length === 1"
                         class="window-binding-row"
                       >
                         <DesktopOutlined class="window-binding-icon" />
-                        <span class="window-binding-title">{{ w.window_title }}</span>
-                        <span v-if="w.window_w && w.window_h" class="window-binding-size">{{ w.window_w }}×{{ w.window_h }}</span>
+                        <span class="window-binding-title">{{ previewCaptureWindows[0].window_title }}</span>
+                        <span v-if="previewCaptureWindows[0].window_w && previewCaptureWindows[0].window_h" class="window-binding-size">{{ previewCaptureWindows[0].window_w }}×{{ previewCaptureWindows[0].window_h }}</span>
                       </div>
+                      <!-- Multiple windows: let user pick which to preview -->
+                      <template v-else>
+                        <div class="ops-row" style="margin-bottom:4px">
+                          <span class="ops-label">窗口</span>
+                          <a-select
+                            v-model:value="capturePreviewWindowTitle"
+                            size="small"
+                            placeholder="选择要预览标注的窗口"
+                            style="flex:1;min-width:0"
+                            allow-clear
+                            :options="previewCaptureWindows.map(w => ({
+                              label: `${w.window_title}${w.window_w && w.window_h ? '  ' + w.window_w + '×' + w.window_h : ''}`,
+                              value: w.window_title,
+                            }))"
+                          />
+                        </div>
+                      </template>
                     </template>
-                  </div>
+                    <a-button
+                    size="small" type="primary" block style="margin-top:6px"
+                    :disabled="!capturePreviewClientId"
+                    @click="openMarkerPreview()"
+                  ><EyeOutlined /> 预览标注</a-button>
+                </div>
                 </div>
 
                 <!-- ── 发送标注 ── -->
@@ -560,32 +568,60 @@
       <img :src="previewTemplateUrl" style="max-width:100%;max-height:75vh;object-fit:contain;border-radius:4px;" />
     </a-modal>
 
-    <!-- 客户端窗口 数字调节 Modal -->
+    <!-- 调节窗口大小 Modal -->
     <a-modal
-      v-model:open="resizeSizeModalOpen"
-      title="自定义窗口大小"
-      :width="320"
-      :ok-button-props="{ loading: resizeSizeConfirming }"
-      ok-text="确认调整"
-      @ok="confirmClientResize"
+      v-model:open="resizeMethodModalOpen"
+      title="调节窗口大小"
+      :width="360"
+      :footer="null"
+      :body-style="{ padding: '16px 20px 20px' }"
     >
-      <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
-        <a-input-number
-          v-model:value="resizeSizeW"
-          :min="100" :max="9999"
-          size="small" style="flex:1"
-          addonBefore="宽" addonAfter="px"
-          @pressEnter="confirmClientResize"
+      <!-- Window selector (only if multiple windows) -->
+      <template v-if="(clientWindowMap[resizeModalClientId ?? ''] ?? []).length > 1">
+        <div class="resize-modal-label">选择窗口</div>
+        <a-select
+          v-model:value="resizeSelectedWindowTitle"
+          size="small"
+          style="width:100%;margin-bottom:14px"
+          :options="(clientWindowMap[resizeModalClientId ?? ''] ?? []).map(w => ({
+            label: `${w.window_title}  (${w.window_w}×${w.window_h})`,
+            value: w.window_title,
+          }))"
         />
-        <span style="color:#555;flex-shrink:0">×</span>
-        <a-input-number
-          v-model:value="resizeSizeH"
-          :min="100" :max="9999"
-          size="small" style="flex:1"
-          addonBefore="高" addonAfter="px"
-          @pressEnter="confirmClientResize"
-        />
-      </div>
+      </template>
+      <!-- Method selection -->
+      <div class="resize-modal-label">调节方式</div>
+      <a-radio-group v-model:value="resizeMethod" size="small" button-style="solid" style="width:100%;margin-bottom:14px;display:flex">
+        <a-radio-button value="drag" style="flex:1;text-align:center">拖拽调节</a-radio-button>
+        <a-radio-button value="numeric" style="flex:1;text-align:center">数字调节</a-radio-button>
+      </a-radio-group>
+      <!-- Numeric inputs -->
+      <template v-if="resizeMethod === 'numeric'">
+        <div class="resize-modal-label">目标尺寸</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+          <a-input-number
+            v-model:value="resizeSizeW"
+            :min="100" :max="9999"
+            size="small" style="flex:1"
+            addonBefore="宽" addonAfter="px"
+          />
+          <span style="color:#555;flex-shrink:0">×</span>
+          <a-input-number
+            v-model:value="resizeSizeH"
+            :min="100" :max="9999"
+            size="small" style="flex:1"
+            addonBefore="高" addonAfter="px"
+          />
+        </div>
+      </template>
+      <p v-if="resizeMethod === 'drag'" style="font-size:11px;color:#555;margin-bottom:14px">
+        发送指令后，请在客户端拖拽调整窗口大小，完成后确认。标注坐标将自动按比例缩放。
+      </p>
+      <a-button
+        type="primary" block
+        :loading="resizingWindow || resizeSizeConfirming"
+        @click="confirmResizeMethod"
+      >确认调节</a-button>
     </a-modal>
 
     <!-- 标注预览 Modal -->
@@ -597,10 +633,17 @@
     >
       <template #title>
         <div style="display:flex;flex-direction:column;gap:2px">
-          <span>标注预览 — {{ previewFocusMarker }}</span>
-          <span v-if="windowBinding" class="preview-modal-window-sub">
-            <DesktopOutlined style="margin-right:4px" />{{ windowBinding.window_title }}
-            <span style="margin-left:6px;color:#444">{{ windowBinding.window_w }}×{{ windowBinding.window_h }}</span>
+          <span>标注预览</span>
+          <span v-if="previewCaptureWindows.length > 0" class="preview-modal-window-sub">
+            <DesktopOutlined style="margin-right:4px" />
+            <template v-if="capturePreviewWindowTitle">
+              {{ capturePreviewWindowTitle }}
+            </template>
+            <template v-else-if="previewCaptureWindows.length === 1">
+              {{ previewCaptureWindows[0].window_title }}
+              <span style="margin-left:6px;color:#444">{{ previewCaptureWindows[0].window_w }}×{{ previewCaptureWindows[0].window_h }}</span>
+            </template>
+            <template v-else>全屏</template>
           </span>
         </div>
       </template>
@@ -694,11 +737,14 @@ const clientWindowMap = ref<Record<string, CaptureWindow[]>>({})
 const loadingClientWindows = ref(new Set<string>())
 const restoringWindow = ref(false)
 const resizingWindow = ref(false)
-const resizeSizeModalOpen = ref(false)
-const resizeSizeW = ref<number>(800)
-const resizeSizeH = ref<number>(600)
 const resizeSizeConfirming = ref(false)
 const resizeModalClientId = ref<string | null>(null)
+// Combined resize modal
+const resizeMethodModalOpen = ref(false)
+const resizeMethod = ref<'drag' | 'numeric'>('drag')
+const resizeSelectedWindowTitle = ref<string | null>(null)
+const resizeSizeW = ref<number>(800)
+const resizeSizeH = ref<number>(600)
 
 // Markers tab
 const newMarkerName = ref('')
@@ -708,7 +754,7 @@ const sending = ref(false)
 const sendResult = ref<{ ok: boolean; text: string } | null>(null)
 // Marker capture status preview
 const capturePreviewClientId = ref<string | null>(null)
-const windowBinding = ref<WindowBinding | null>(null)
+const capturePreviewWindowTitle = ref<string | null>(null)
 const loadingWindowBinding = ref(false)
 const previewCaptureWindows = ref<CaptureWindow[]>([])
 // Copy captures
@@ -819,12 +865,7 @@ async function refreshCaptureStatus() {
 async function fetchWindowBinding(projectId: string, clientId: string) {
   loadingWindowBinding.value = true
   try {
-    const [wb, wins] = await Promise.all([
-      api.getWindowBinding(projectId, clientId).catch(() => null),
-      api.getClientCaptureWindows(projectId, clientId).catch(() => []),
-    ])
-    windowBinding.value = wb
-    previewCaptureWindows.value = wins
+    previewCaptureWindows.value = await api.getClientCaptureWindows(projectId, clientId).catch(() => [])
   } finally {
     loadingWindowBinding.value = false
   }
@@ -886,6 +927,7 @@ async function selectProject(id: string) {
   sendClientIds.value = []
   sendResult.value = null
   capturePreviewClientId.value = null
+  capturePreviewWindowTitle.value = null
   expandedClientId.value = null
   clientWindowMap.value = {}
   copyResult.value = null
@@ -979,41 +1021,43 @@ async function restoreClientWindow(cid: string) {
   }
 }
 
-async function resizeClientWindowInteractive(cid: string) {
-  if (!selectedId.value) return
-  resizingWindow.value = true
-  resizeModalClientId.value = cid
-  try {
-    await api.resizeWindowInteractive(selectedId.value, cid)
-    message.info('已发送指令，请在客户端调整窗口大小后确认')
-  } catch (e: any) {
-    message.error(e?.response?.data?.detail ?? '发送失败')
-  } finally {
-    resizingWindow.value = false
-    resizeModalClientId.value = null
-  }
-}
-
-function openClientResizeModal(cid: string) {
+function openResizeMethodModal(cid: string) {
   const wins = clientWindowMap.value[cid] ?? []
+  resizeModalClientId.value = cid
+  resizeMethod.value = 'drag'
+  // Pre-select the only window, or null for multi-window (user picks)
+  resizeSelectedWindowTitle.value = wins.length === 1 ? wins[0].window_title : null
   const first = wins[0]
   resizeSizeW.value = first?.window_w ?? 800
   resizeSizeH.value = first?.window_h ?? 600
-  resizeModalClientId.value = cid
-  resizeSizeModalOpen.value = true
+  resizeMethodModalOpen.value = true
 }
 
-async function confirmClientResize() {
+async function confirmResizeMethod() {
   if (!resizeModalClientId.value || !selectedId.value) return
-  resizeSizeConfirming.value = true
-  try {
-    await api.resizeWindowToSize(selectedId.value, resizeModalClientId.value, resizeSizeW.value, resizeSizeH.value)
-    message.info(`已发送指令，目标大小 ${resizeSizeW.value}×${resizeSizeH.value}`)
-    resizeSizeModalOpen.value = false
-  } catch (e: any) {
-    message.error(e?.response?.data?.detail ?? '发送失败')
-  } finally {
-    resizeSizeConfirming.value = false
+  const windowTitle = resizeSelectedWindowTitle.value ?? undefined
+  if (resizeMethod.value === 'drag') {
+    resizingWindow.value = true
+    try {
+      await api.resizeWindowInteractive(selectedId.value, resizeModalClientId.value, windowTitle)
+      message.info('已发送指令，请在客户端调整窗口大小后确认')
+      resizeMethodModalOpen.value = false
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail ?? '发送失败')
+    } finally {
+      resizingWindow.value = false
+    }
+  } else {
+    resizeSizeConfirming.value = true
+    try {
+      await api.resizeWindowToSize(selectedId.value, resizeModalClientId.value, resizeSizeW.value, resizeSizeH.value, windowTitle)
+      message.info(`已发送指令，目标大小 ${resizeSizeW.value}×${resizeSizeH.value}`)
+      resizeMethodModalOpen.value = false
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail ?? '发送失败')
+    } finally {
+      resizeSizeConfirming.value = false
+    }
   }
 }
 
@@ -1108,12 +1152,12 @@ function selectUncaptured() {
   )
 }
 
-async function openMarkerPreview(markerName: string) {
+async function openMarkerPreview(markerName?: string) {
   if (!capturePreviewClientId.value || !selectedId.value) {
     message.warning('请先选择预览客户端')
     return
   }
-  previewFocusMarker.value = markerName
+  previewFocusMarker.value = markerName ?? ''
   previewScreenshot.value = null
   previewMarkerData.value = []
   previewImgNaturalWidth.value = 1
@@ -1121,9 +1165,10 @@ async function openMarkerPreview(markerName: string) {
   previewOpen.value = true
   previewLoading.value = true
   try {
+    const windowTitleParam = capturePreviewWindowTitle.value ?? undefined
     const [screenshot, markerData] = await Promise.all([
-      api.captureClientScreenshot(capturePreviewClientId.value, selectedId.value),
-      api.getMarkerCaptureData(selectedId.value, capturePreviewClientId.value),
+      api.captureClientScreenshot(capturePreviewClientId.value, selectedId.value, windowTitleParam),
+      api.getMarkerCaptureData(selectedId.value, capturePreviewClientId.value, windowTitleParam),
     ])
     previewScreenshot.value = screenshot
     previewMarkerData.value = markerData
@@ -1297,6 +1342,7 @@ watch(() => props.open, async (v) => {
 })
 
 watch(capturePreviewClientId, async (cid) => {
+  capturePreviewWindowTitle.value = null
   if (cid && selectedId.value) {
     await Promise.all([
       fetchCaptureStatus(selectedId.value, cid),
@@ -1304,7 +1350,6 @@ watch(capturePreviewClientId, async (cid) => {
     ])
   } else {
     markerCaptureMap.value = {}
-    windowBinding.value = null
     previewCaptureWindows.value = []
     selectedMarkerNames.value = new Set(currentMarkers.value.map(m => m.name))
   }
@@ -1350,6 +1395,15 @@ watch(currentMarkers, (markers) => {
     selectedMarkerNames.value = new Set(markers.map(m => m.name))
   }
 }, { deep: true })
+
+watch(resizeSelectedWindowTitle, (title) => {
+  const wins = clientWindowMap.value[resizeModalClientId.value ?? ''] ?? []
+  const win = title ? wins.find(w => w.window_title === title) : wins[0]
+  if (win) {
+    resizeSizeW.value = win.window_w
+    resizeSizeH.value = win.window_h
+  }
+})
 
 </script>
 
@@ -1412,6 +1466,7 @@ watch(currentMarkers, (markers) => {
 .window-action-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .resize-window-btn { color: #fa8c16 !important; border-color: transparent !important; }
 .resize-window-btn:hover:not(:disabled) { color: #ffa940 !important; background: #2b1b07 !important; }
+.resize-modal-label { font-size: 11px; color: #555; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
 .goto-markers-btn { font-size: 11px; padding: 0 4px !important; height: 22px !important; margin-left: auto; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .dot-idle { background: #52c41a; }
