@@ -29,12 +29,16 @@ for _lg_name in ("routers", "engine", "cv", "main"):
     if memory_handler not in _lg.handlers:
         _lg.addHandler(memory_handler)
 
-# uvicorn logger：直接挂 handler，不依赖传播链
+# uvicorn logger：挂 memory_handler 捕获日志，同时保留 stderr 输出供终端可见
+_stderr_handler = logging.StreamHandler(sys.stderr)
 for _lg_name in ("uvicorn.error", "uvicorn.access"):
     _lg = logging.getLogger(_lg_name)
     _lg.propagate = False
     if memory_handler not in _lg.handlers:
         _lg.addHandler(memory_handler)
+    if not any(isinstance(h, logging.StreamHandler) and getattr(h, "stream", None) is sys.stderr
+               for h in _lg.handlers):
+        _lg.addHandler(_stderr_handler)
 
 
 async def _periodic_cleanup(session_factory):
