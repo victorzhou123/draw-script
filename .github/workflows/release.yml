@@ -1,0 +1,102 @@
+name: Build & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（不含 v 前缀，例: 1.0.0）'
+        required: true
+        default: '0.1.0'
+      prerelease:
+        description: '标记为预发布版本'
+        type: boolean
+        default: false
+
+jobs:
+  # ── 服务端：Linux 上构建，打包含预编译前端的 tar.gz ─────────────────────────
+  build-server:
+    name: Build Server (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Build server package
+        run: bash server/build.sh ${{ github.event.inputs.version }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-linux
+          path: server/dist/draw-script-server-${{ github.event.inputs.version }}-linux-amd64.tar.gz
+
+  # ── 客户端：Windows 上用 PyInstaller 打包成 .exe ────────────────────────────
+  build-client:
+    name: Build Client (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        working-directory: client
+        run: |
+          pip install -r requirements.txt --quiet
+          pip install pyinstaller --quiet
+
+      - name: Build client executable
+        working-directory: client
+        run: pyinstaller draw-script-client.spec --noconfirm
+
+      - name: Zip client package
+        working-directory: client
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path dist/draw-script-client `
+            -DestinationPath dist/draw-script-client-${{ github.event.inputs.version }}-windows-amd64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-windows
+          path: client/dist/draw-script-client-${{ github.event.inputs.version }}-windows-amd64.zip
+
+  # ── 发布：等两个构建完成后创建 GitHub Release ────────────────────────────────
+  release:
+    name: Create Release
+    needs: [build-server, build-client]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: release-assets
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRERELEASE_FLAG=""
+          if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          gh release create "v${{ github.event.inputs.version }}" \
+            --title "v${{ github.event.inputs.version }}" \
+            --generate-notes \
+            $PRERELEASE_FLAG \
+            release-assets/*
