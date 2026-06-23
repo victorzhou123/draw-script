@@ -119,11 +119,19 @@ if os.path.isdir(static_dir):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "main:app",
-        host=settings.host,
-        port=settings.port,
-        log_level=settings.log_level,
-        reload=settings.reload,
-        reload_includes=["*.py"] if settings.reload else None,
-    )
+    if settings.reload and not getattr(__import__("sys"), "frozen", False):
+        uvicorn.run(
+            "main:app",
+            host=settings.host,
+            port=settings.port,
+            log_level=settings.log_level,
+            reload=True,
+            reload_includes=["*.py"],
+        )
+    else:
+        uvicorn.run(
+            app,
+            host=settings.host,
+            port=settings.port,
+            log_level=settings.log_level,
+        )
