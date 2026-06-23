@@ -31,8 +31,10 @@ a = Analysis(
         # psutil, pyperclip
         'psutil',
         'pyperclip',
-        # TOML 解析（Python 3.11+ 内置 tomllib，低版本用 tomli）
+        # TOML 解析：tomllib 是 Python 3.11+ 内置，3.10 用 tomli 作为 fallback
+        # 两者都写进来，PyInstaller 打包哪个取决于构建时的 Python 版本
         'tomllib',
+        'tomli',
         # Windows 键鼠控制依赖（pyautogui 用到）
         'pynput',
         'pynput.keyboard',
