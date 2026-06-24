@@ -28,6 +28,8 @@ function nodeContributions(data: any): string[] {
       .map((op: any) => op.op === 'set' ? op.key?.trim() : op.to?.trim())
       .filter(Boolean)
   }
+  if ((data.type === 'crawl' || data.type === 'parse') && data.output_var?.trim())
+    return [data.output_var.trim()]
   return []
 }
 

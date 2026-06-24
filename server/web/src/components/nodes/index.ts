@@ -19,6 +19,7 @@ import {
   DatabaseOutlined,
   EditOutlined,
   CloudDownloadOutlined,
+  FilterOutlined,
 } from '@ant-design/icons-vue'
 
 export const ICON_MAP: Record<string, Component> = {
@@ -38,6 +39,7 @@ export const ICON_MAP: Record<string, Component> = {
   DatabaseOutlined,
   EditOutlined,
   CloudDownloadOutlined,
+  FilterOutlined,
 }
 
 // Port appearance: hidden by default, revealed by graph hover events
@@ -148,6 +150,7 @@ const NODE_DEFS = [
   { shape: 'node-global-var',    icon: 'DatabaseOutlined',      label: 'Global Var',    w: 120, h: 60  },
   { shape: 'node-context-edit', icon: 'EditOutlined',           label: 'Context Edit',  w: 120, h: 60  },
   { shape: 'node-crawl',        icon: 'CloudDownloadOutlined',  label: 'Crawl',         w: 120, h: 60  },
+  { shape: 'node-parse',        icon: 'FilterOutlined',         label: 'Parse',         w: 120, h: 60  },
 ]
 
 export function registerNodes() {

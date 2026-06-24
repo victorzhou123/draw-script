@@ -151,13 +151,14 @@ import GlobalVarForm from './node-forms/GlobalVarForm.vue'
 import ContextEditForm from './node-forms/ContextEditForm.vue'
 import WaitForm from './node-forms/WaitForm.vue'
 import CrawlForm from './node-forms/CrawlForm.vue'
+import ParseForm from './node-forms/ParseForm.vue'
 
 const FORM_MAP: Record<string, any> = {
   action: ActionForm, vision: VisionForm, condition: ConditionForm,
   loop: LoopForm, delay: DelayForm, http: HttpForm,
   start: StartForm, end: EndForm, script: ScriptForm, compute: ComputeForm,
   screenshot: ScreenshotForm, 'global-var': GlobalVarForm,
-  'context-edit': ContextEditForm, wait: WaitForm, crawl: CrawlForm,
+  'context-edit': ContextEditForm, wait: WaitForm, crawl: CrawlForm, parse: ParseForm,
 }
 
 const props = defineProps<{
@@ -313,7 +314,7 @@ const nodeLabel = computed(() => {
     http: 'HTTP', compute: 'Compute', script: 'Script',
     'global-var': 'Global Var',
     'context-edit': 'Context Edit',
-    wait: 'Wait', crawl: 'Crawl',
+    wait: 'Wait', crawl: 'Crawl', parse: 'Parse',
   }
   return map[nodeType.value] || nodeType.value
 })
@@ -386,6 +387,8 @@ watch(() => props.selectedNode, (node) => {
     output_mappings: node.data.output_mappings || [],
     crawl_engine: node.data.crawl_engine || 'native',
     output_var: node.data.output_var || '',
+    input_var: node.data.input_var || '',
+    input_format: node.data.input_format || 'html',
   }))
   // Normalize condition node: migrate old single-condition to new multi-condition format
   if (d.type === 'condition') {
@@ -455,6 +458,7 @@ defineExpose({ setActiveTab: (tab: 'props' | 'debug') => { activeTab.value = tab
 .badge-context-edit { color: #eb2f96; border-color: #eb2f96; background: #1a0a14; }
 .badge-wait        { color: #2db7f5; border-color: #2db7f5; background: #0d1f2b; }
 .badge-crawl       { color: #52c41a; border-color: #389e0d; background: #0d1a0a; }
+.badge-parse       { color: #fa8c16; border-color: #d46b08; background: #1f1100; }
 .prop-form :deep(.ant-form-item) { margin-bottom: 12px; }
 .prop-form :deep(.ant-form-item-label > label) { font-size: 11px; color: #666; }
 .section-title { font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.8px; margin: 14px 0 6px; display: flex; align-items: center; gap: 6px; }
