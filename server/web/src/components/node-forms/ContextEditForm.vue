@@ -6,6 +6,7 @@
           <a-select-option value="set">Set</a-select-option>
           <a-select-option value="delete">Delete</a-select-option>
           <a-select-option value="rename">Rename</a-select-option>
+          <a-select-option value="clipboard-read">Read Clipboard</a-select-option>
         </a-select>
         <a-button type="text" size="small" danger class="op-del" @click="removeOp(idx)">✕</a-button>
       </div>
@@ -82,6 +83,24 @@
         </div>
       </template>
 
+      <!-- Clipboard Read: read clipboard → key -->
+      <template v-else-if="op.op === 'clipboard-read'">
+        <div class="op-row">
+          <span class="op-sym">剪切板 →</span>
+          <a-auto-complete
+            v-model:value="op.key"
+            :options="contextOptions"
+            placeholder="key"
+            class="op-flex"
+            @change="update()"
+          />
+          <a-select v-model:value="op.value_type" size="small" class="op-vtype" @change="update()">
+            <a-select-option value="">auto</a-select-option>
+            <a-select-option v-for="t in VALUE_TYPES" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
+        </div>
+      </template>
+
       <a-divider v-if="idx < operations.length - 1" style="margin: 8px 0; border-color: #222;" />
     </div>
 
@@ -94,10 +113,11 @@
 import { computed, inject, watch } from 'vue'
 import { FORM_CTX } from './useFormContext'
 
-interface SetOp    { op: 'set';    key: string; value: string; value_type: string }
-interface DeleteOp { op: 'delete'; key: string }
-interface RenameOp { op: 'rename'; from: string; to: string }
-type Operation = SetOp | DeleteOp | RenameOp
+interface SetOp          { op: 'set';            key: string; value: string; value_type: string }
+interface DeleteOp       { op: 'delete';         key: string }
+interface RenameOp       { op: 'rename';         from: string; to: string }
+interface ClipboardReadOp { op: 'clipboard-read'; key: string; value_type: string }
+type Operation = SetOp | DeleteOp | RenameOp | ClipboardReadOp
 
 const VALUE_TYPES = ['str', 'int', 'float', 'bool', 'list', 'dict']
 

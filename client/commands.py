@@ -1223,6 +1223,7 @@ class CommandHandler:
             "compute_node":               self.handle_compute_node,
             "get_window_list":            self.handle_get_window_list,
             "capture_template_region":    self.handle_capture_template_region,
+            "read_clipboard":             self.handle_read_clipboard,
         }
         self._stop_flag = False
         self._active_tasks = 0
@@ -1832,6 +1833,31 @@ class CommandHandler:
             "window_h": win["h"],
             "window_title": win["title"],
         })
+
+    async def handle_read_clipboard(self, msg: dict) -> None:
+        request_id = msg.get("request_id")
+        node_id = msg.get("node_id")
+        try:
+            import pyperclip
+            text = await _run_blocking(pyperclip.paste)
+            await self._send({
+                "type": "node_result",
+                "request_id": request_id,
+                "node_id": node_id,
+                "success": True,
+                "output": {"text": text},
+                "error": None,
+            })
+        except Exception as e:
+            logger.error(f"read_clipboard failed: {e}")
+            await self._send({
+                "type": "node_result",
+                "request_id": request_id,
+                "node_id": node_id,
+                "success": False,
+                "output": {},
+                "error": str(e),
+            })
 
     async def handle_stop(self, msg: dict) -> None:
         logger.info(f"Stop signal received: {msg.get('reason')}")
