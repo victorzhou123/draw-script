@@ -24,12 +24,14 @@ function nodeContributions(data: any): string[] {
     return data.output_mappings.map((m: any) => m.to?.trim()).filter(Boolean)
   if (data.type === 'context-edit' && Array.isArray(data.params?.operations)) {
     return data.params.operations
-      .filter((op: any) => op.op === 'set' || op.op === 'rename')
-      .map((op: any) => op.op === 'set' ? op.key?.trim() : op.to?.trim())
+      .filter((op: any) => op.op === 'set' || op.op === 'rename' || op.op === 'clipboard-read')
+      .map((op: any) => op.op === 'rename' ? op.to?.trim() : op.key?.trim())
       .filter(Boolean)
   }
   if ((data.type === 'crawl' || data.type === 'parse') && data.output_var?.trim())
     return [data.output_var.trim()]
+  if (data.type === 'loop' && data.params?.mode === 'iterate' && data.params?.item_var?.trim())
+    return [data.params.item_var.trim()]
   return []
 }
 

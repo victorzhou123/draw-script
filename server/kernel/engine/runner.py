@@ -136,11 +136,16 @@ async def run_branch(
             loop_nodes = [n for n in next_nodes if n.node_type == "loop"]
             if loop_nodes:
                 loop_node = loop_nodes[0]
-                try:
-                    max_count = resolve_loop_count(ctx.variables, loop_node.data.get("params", {}))
-                except LoopCountError as e:
-                    return f"Loop node {loop_node.id}: {e}"
-                if ctx.loop_counters.get(loop_node.id, 1) >= max_count:
+                params = loop_node.data.get("params", {})
+                if params.get("mode") == "iterate":
+                    is_exhausted = _is_iterate_exhausted(ctx, loop_node.id, params)
+                else:
+                    try:
+                        max_count = resolve_loop_count(ctx.variables, params)
+                    except LoopCountError as e:
+                        return f"Loop node {loop_node.id}: {e}"
+                    is_exhausted = ctx.loop_counters.get(loop_node.id, 1) >= max_count
+                if is_exhausted:
                     if ctx.graph.get_next_nodes(loop_node.id, "exit"):
                         next_nodes = [loop_node]
                     else:
@@ -208,3 +213,19 @@ def _log_bg_branch_error(task: asyncio.Task) -> None:
         pass
     except Exception as exc:
         logger.warning("Background branch error after end: %s", exc)
+
+
+def _is_iterate_exhausted(ctx, loop_node_id: str, params: dict) -> bool:
+    """Return True when the iterate-mode loop has consumed all items.
+
+    If the source variable is missing or not iterable we return False so the
+    loop node itself runs and produces a proper error message.
+    """
+    iter_var = params.get("iter_var", "")
+    raw = ctx.variables.get(iter_var) if iter_var else None
+    if isinstance(raw, (list, dict)):
+        iterable_len = len(raw)
+    else:
+        return False  # let the loop node handle the error
+    current_idx = ctx.loop_counters.get(loop_node_id, 0)
+    return current_idx >= iterable_len

@@ -3,18 +3,14 @@
     <!-- 输入变量 + 数据格式（同行） -->
     <a-form-item label="输入变量">
       <div class="var-row">
-        <a-select
+        <a-auto-complete
           v-model:value="d.input_var"
           placeholder="选择或输入变量名"
           allow-clear
-          show-search
+          :options="contextOptions"
           class="var-select"
           @change="update()"
-        >
-          <a-select-option v-for="f in ctx.contextFields.value" :key="f.name" :value="f.name">
-            {{ f.name }}
-          </a-select-option>
-        </a-select>
+        />
         <!-- 如需支持更多格式（如 xml、json），在此添加选项并在后端 parse_node.py 中实现对应处理逻辑 -->
         <a-select v-model:value="d.input_format" size="small" class="format-select" @change="update()">
           <a-select-option value="html">HTML</a-select-option>
@@ -79,11 +75,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, inject } from 'vue'
+import { ref, watch, inject, computed } from 'vue'
 import { FORM_CTX } from './useFormContext'
 
 const ctx = inject(FORM_CTX)!
 const d = ctx.localData
+
+const contextOptions = computed(() =>
+  ctx.contextFields.value.map(f => ({ value: f.name, label: f.name }))
+)
 
 interface ParseField {
   name: string

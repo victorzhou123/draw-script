@@ -60,7 +60,14 @@ class FlowGraph:
                 if not branch:
                     src_port = source.get("port") if isinstance(source, dict) else None
                     if src_port and src_port not in ("in", "out"):
-                        branch = src_port
+                        src_node = nodes.get(source_id)
+                        # Flexible loop ports (top/bottom/left/right) carry no
+                        # inherent branch — routing comes from data.branch above.
+                        # Default to "loop" (body) when data.branch is absent.
+                        if src_node and src_node.node_type == "loop" and src_port in {"top", "bottom", "left", "right"}:
+                            branch = "loop"
+                        else:
+                            branch = src_port
                     elif src_port == "out":
                         # Backward compat: loop nodes saved with an "out" port
                         # (before the port was renamed to "loop") should still route
@@ -68,6 +75,13 @@ class FlowGraph:
                         src_node = nodes.get(source_id)
                         if src_node and src_node.node_type == "loop":
                             branch = "loop"
+                # Normalize data.branch="out" on loop edges → "loop" for routing.
+                # The UI stores "out" as the user-visible label; internally "loop"
+                # is what get_next_nodes matches.
+                if branch == "out":
+                    src_node = nodes.get(source_id)
+                    if src_node and src_node.node_type == "loop":
+                        branch = "loop"
                 edges.append(FlowEdge(
                     id=cell.get("id", ""),
                     source_id=source_id,

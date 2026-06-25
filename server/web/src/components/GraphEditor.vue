@@ -1,6 +1,26 @@
 <template>
   <div class="graph-editor-wrap">
     <div ref="containerEl" class="graph-container" />
+    <div
+      v-if="loopBranchPopup"
+      class="loop-branch-popup"
+      :style="{ left: loopBranchPopup.x + 'px', top: loopBranchPopup.y + 'px' }"
+      @mouseenter="cancelLoopPopupHide"
+      @mouseleave="scheduleLoopPopupHide()"
+    >
+      <div v-for="entry in loopBranchPopup.entries" :key="entry.edgeId" class="loop-edge-row">
+        <span class="loop-edge-target">→ {{ entry.targetLabel }}</span>
+        <a-radio-group
+          :value="entry.branch"
+          size="small"
+          button-style="solid"
+          @change="(e: any) => setLoopEdgeBranch(entry.edgeId, e.target.value)"
+        >
+          <a-radio-button value="out">out</a-radio-button>
+          <a-radio-button value="exit">exit</a-radio-button>
+        </a-radio-group>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -37,6 +57,58 @@ const isLoadingGraph = ref(false)
 // Track last mouse position over the canvas for paste placement
 const lastMousePos = { x: 0, y: 0 }
 let mouseMoveHandler: ((e: MouseEvent) => void) | null = null
+
+// ── Loop edge branch popup ────────────────────────────────────────────────────
+interface LoopEdgeEntry { edgeId: string; branch: 'out' | 'exit'; targetLabel: string }
+interface LoopBranchPopup { nodeId: string; x: number; y: number; entries: LoopEdgeEntry[] }
+const loopBranchPopup = ref<LoopBranchPopup | null>(null)
+let loopPopupHideTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleLoopPopupHide(nodeId?: string) {
+  loopPopupHideTimer = setTimeout(() => {
+    if (!nodeId || loopBranchPopup.value?.nodeId === nodeId)
+      loopBranchPopup.value = null
+    loopPopupHideTimer = null
+  }, 250)
+}
+
+function cancelLoopPopupHide() {
+  if (loopPopupHideTimer) { clearTimeout(loopPopupHideTimer); loopPopupHideTimer = null }
+}
+
+function _loopEdgeBranch(edge: any): 'out' | 'exit' {
+  const dataBranch = edge.getData()?.branch
+  if (dataBranch === 'exit') return 'exit'
+  if (dataBranch === 'out') return 'out'
+  return edge.getSourcePortId() === 'exit' ? 'exit' : 'out'
+}
+
+
+function _showLoopNodePopup(srcNode: any) {
+  const g = graph.value
+  if (!g || !containerEl.value) return
+  const outEdges: any[] = g.getConnectedEdges(srcNode, { outgoing: true }) ?? []
+  if (!outEdges.length) return
+  const entries: LoopEdgeEntry[] = outEdges.map(edge => {
+    const tgt = edge.getTargetNode()
+    const targetLabel = tgt?.getData()?.label?.trim() || tgt?.getData()?.type || '...'
+    return { edgeId: edge.id, branch: _loopEdgeBranch(edge), targetLabel }
+  })
+  const bbox = srcNode.getBBox()
+  const screenPt = g.localToClient({ x: bbox.x + bbox.width + 6, y: bbox.y })
+  const rect = containerEl.value.getBoundingClientRect()
+  loopBranchPopup.value = { nodeId: srcNode.id, x: screenPt.x - rect.left, y: screenPt.y - rect.top, entries }
+}
+
+function setLoopEdgeBranch(edgeId: string, branch: 'out' | 'exit') {
+  const entry = loopBranchPopup.value?.entries.find(e => e.edgeId === edgeId)
+  if (!entry) return
+  const edge = graph.value?.getCellById(edgeId)
+  if (!edge) return
+  edge.setData({ ...(edge.getData() ?? {}), branch })
+  entry.branch = branch
+  emit('graphChanged')
+}
 
 const hasPortLabel = (node: any, portId: string) =>
   node.getPort(portId)?.attrs?.labelText?.text !== undefined
@@ -311,8 +383,15 @@ onMounted(() => {
     edge.addTools([segmentsTool])
   }
 
-  g.on('node:mouseenter', ({ node }) => showPorts(node))
-  g.on('node:mouseleave', ({ node }) => { if (portNode?.id === node.id) hidePorts() })
+  g.on('node:mouseenter', ({ node }) => {
+    showPorts(node)
+    if (node.shape === 'node-loop') _showLoopNodePopup(node)
+  })
+  g.on('node:mouseleave', ({ node }) => {
+    if (portNode?.id === node.id) hidePorts()
+    if (node.shape === 'node-loop' && loopBranchPopup.value?.nodeId === node.id)
+      scheduleLoopPopupHide(node.id)
+  })
   g.on('blank:mousemove', hidePorts)
   g.on('edge:mouseenter', ({ edge }) => { hidePorts(); showSegmentsTool(edge) })
   g.on('edge:mouseleave', ({ edge }) => { if (!(g as any).isSelected?.(edge)) edge.removeTools() })
@@ -341,9 +420,22 @@ onMounted(() => {
   })
   g.on('blank:click', () => {
     g.cleanSelection()
+    loopBranchPopup.value = null
     emit('selectionCleared')
   })
-  g.on('cell:removed', () => emit('selectionCleared'))
+  g.on('cell:removed', ({ cell }: any) => {
+    if (loopBranchPopup.value) {
+      // Close if the loop node was removed; refresh if an outgoing edge was removed
+      const popup = loopBranchPopup.value
+      if (cell?.id === popup.nodeId) {
+        loopBranchPopup.value = null
+      } else {
+        popup.entries = popup.entries.filter(e => e.edgeId !== cell?.id)
+        if (!popup.entries.length) loopBranchPopup.value = null
+      }
+    }
+    emit('selectionCleared')
+  })
 
   const onChanged = () => { if (!isLoadingGraph.value) emit('graphChanged') }
   g.on('cell:added', onChanged)
@@ -369,6 +461,11 @@ onMounted(() => {
         },
         position: { distance: 0.4 },
       })
+    }
+    if (sourceNode?.shape === 'node-loop') {
+      const defaultBranch: 'out' | 'exit' = sourcePort === 'exit' ? 'exit' : 'out'
+      edge.setData({ ...(edge.getData() ?? {}), branch: defaultBranch })
+      _showLoopNodePopup(sourceNode)
     }
     onChanged()
   })
@@ -498,6 +595,7 @@ defineExpose({ getJSON, loadJSON, undo, redo, startDragNode, updateNodeData, foc
 
 <style scoped>
 .graph-editor-wrap {
+  position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -506,5 +604,34 @@ defineExpose({ getJSON, loadJSON, undo, redo, startDragNode, updateNodeData, foc
 .graph-container {
   width: 100%;
   height: 100%;
+}
+.loop-branch-popup {
+  position: absolute;
+  z-index: 20;
+  background: rgba(26, 26, 26, 0.95);
+  border: 1px solid #303030;
+  border-radius: 6px;
+  padding: 5px 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 160px;
+}
+.loop-edge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+.loop-edge-target {
+  font-size: 11px;
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70px;
+  flex-shrink: 1;
 }
 </style>

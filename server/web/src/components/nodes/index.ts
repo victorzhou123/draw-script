@@ -112,17 +112,31 @@ const PORTS_CONDITION = {
   ],
 }
 
-// Loop: in=bottom, out=top, exit=right
+// Loop: 4 symmetric flex ports — any side accepts in or out edges.
+// Branch (out vs exit) is stored on each outgoing edge via the popup in GraphEditor.
+// Each port gets its own group so x6 can resolve the position correctly (position
+// must live in the group definition, not in the item).
+// Explicit markup (circle only) is required on each new group: when a registration
+// mixes labeled groups (markup: circle+text) with plain groups (no markup), x6 falls
+// back to the labeled markup for all ports, producing a stray text node at (0,0).
+// Legacy groups (in/loop/exit) are retained so old saved scripts still render correctly.
+const PORT_CIRCLE_MARKUP = [{ tagName: 'circle', selector: 'circle' }]
 const PORTS_LOOP = {
   groups: {
+    top:    { position: 'top',    markup: PORT_CIRCLE_MARKUP, attrs: { circle: PORT_CIRCLE_ATTRS } },
+    bottom: { position: 'bottom', markup: PORT_CIRCLE_MARKUP, attrs: { circle: PORT_CIRCLE_ATTRS } },
+    left:   { position: 'left',   markup: PORT_CIRCLE_MARKUP, attrs: { circle: PORT_CIRCLE_ATTRS } },
+    right:  { position: 'right',  markup: PORT_CIRCLE_MARKUP, attrs: { circle: PORT_CIRCLE_ATTRS } },
+    // Legacy groups — kept for backward compat with old saved JSON
     in:   labeledGroup('bottom', { dy: 14,  textAnchor: 'middle' }),
     loop: labeledGroup('top',    { dy: -10, textAnchor: 'middle' }),
     exit: labeledGroup('right',  { dx: 10,  textAnchor: 'start',  dy: 4 }),
   },
   items: [
-    { group: 'in',   id: 'in',   attrs: { labelText: { text: 'in' } } },
-    { group: 'loop', id: 'loop', attrs: { labelText: { text: 'out' } } },
-    { group: 'exit', id: 'exit', attrs: { labelText: { text: 'exit' } } },
+    { group: 'top',    id: 'top'    },
+    { group: 'bottom', id: 'bottom' },
+    { group: 'left',   id: 'left'   },
+    { group: 'right',  id: 'right'  },
   ],
 }
 
